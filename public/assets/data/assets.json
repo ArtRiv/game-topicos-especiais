@@ -129,6 +129,18 @@
         "key": "FIRE_BOLT_IMPACT",
         "url": "Firebolt SpriteSheet.png",
         "frameConfig": { "frameWidth": 48, "frameHeight": 48 }
+      },
+      {
+        "type": "spritesheet",
+        "key": "FIRE_BREATH_BEAM",
+        "url": "Fire Breath SpriteSheet.png",
+        "frameConfig": { "frameWidth": 48, "frameHeight": 48 }
+      },
+      {
+        "type": "spritesheet",
+        "key": "FIRE_BREATH_HIT",
+        "url": "Fire Breath hit effect SpriteSheet.png",
+        "frameConfig": { "frameWidth": 48, "frameHeight": 48 }
       }
     ]
   },

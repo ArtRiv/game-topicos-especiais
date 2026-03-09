@@ -102,5 +102,37 @@ export class PreloadScene extends Phaser.Scene {
       repeat: 0,
       delay: 0,
     });
+
+    // Fire Breath beam animations (channeled spell, spritesheet: 8 frames/row, 48x48)
+    // START: row 1, frames 0-2 (initial burst)
+    this.anims.create({
+      key: `${ASSET_KEYS.FIRE_BREATH_BEAM}_START`,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.FIRE_BREATH_BEAM, { start: 0, end: 2 }),
+      frameRate: 12,
+      repeat: 0,
+    });
+    // LOOP: row 2, frames 8-11 (active looping flame)
+    this.anims.create({
+      key: `${ASSET_KEYS.FIRE_BREATH_BEAM}_LOOP`,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.FIRE_BREATH_BEAM, { start: 8, end: 11 }),
+      frameRate: 10,
+      repeat: -1,
+    });
+    // END: row 3, frames 16-22 (fade out)
+    this.anims.create({
+      key: `${ASSET_KEYS.FIRE_BREATH_BEAM}_END`,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.FIRE_BREATH_BEAM, { start: 16, end: 22 }),
+      frameRate: 12,
+      repeat: 0,
+      hideOnComplete: true,
+    });
+
+    // Fire Breath hit effect animation (5 frames, looping)
+    this.anims.create({
+      key: ASSET_KEYS.FIRE_BREATH_HIT,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.FIRE_BREATH_HIT),
+      frameRate: 14,
+      repeat: -1,
+    });
   }
 }

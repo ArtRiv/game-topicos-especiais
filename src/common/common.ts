@@ -39,11 +39,13 @@ export const ELEMENT = {
 export const SPELL_TYPE = {
   PROJECTILE: 'PROJECTILE',
   AREA: 'AREA',
+  CHANNELED: 'CHANNELED',
 } as const;
 
 export const SPELL_ID = {
   FIRE_BOLT: 'FIRE_BOLT',
   FIRE_AREA: 'FIRE_AREA',
+  FIRE_BREATH: 'FIRE_BREATH',
 } as const;
 
 export const DEFAULT_UI_TEXT_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {

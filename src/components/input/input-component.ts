@@ -10,6 +10,7 @@ export class InputComponent {
   #isMovementLocked: boolean;
   #spell1Key: boolean;
   #spell2Key: boolean;
+  #spell3Key: boolean;
   #mouseX: number;
   #mouseY: number;
 
@@ -25,6 +26,7 @@ export class InputComponent {
     this.#isMovementLocked = false;
     this.#spell1Key = false;
     this.#spell2Key = false;
+    this.#spell3Key = false;
     this.#mouseX = 0;
     this.#mouseY = 0;
   }
@@ -123,6 +125,14 @@ export class InputComponent {
 
   set isSpell2KeyJustDown(val: boolean) {
     this.#spell2Key = val;
+  }
+
+  get isSpell3KeyDown(): boolean {
+    return this.#spell3Key;
+  }
+
+  set isSpell3KeyDown(val: boolean) {
+    this.#spell3Key = val;
   }
 
   get mouseWorldX(): number {

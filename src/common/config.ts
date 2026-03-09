@@ -72,3 +72,12 @@ export const FIRE_AREA_MANA_COST = 1; // 1/4 of max mana
 export const FIRE_AREA_COOLDOWN = 3000; // ms
 export const FIRE_AREA_DURATION = 5000; // ms - longer duration for easier combos
 export const FIRE_AREA_TICK_INTERVAL = 500; // ms between damage ticks
+
+// Fire Breath (channeled)
+export const FIRE_BREATH_DAMAGE_PER_TICK = 1;
+export const FIRE_BREATH_MANA_PER_TICK = 2;
+export const FIRE_BREATH_MANA_DRAIN_INTERVAL = 300; // ms between mana drain ticks
+export const FIRE_BREATH_DAMAGE_TICK_INTERVAL = 250; // ms between damage ticks
+export const FIRE_BREATH_MAX_REACH = 96; // max pixels from player to wall
+export const FIRE_BREATH_STEP_SIZE = 8; // pixels per wall detection step
+export const FIRE_BREATH_ANGLE_TOLERANCE = 0.45; // radians (~26 degrees half-cone)

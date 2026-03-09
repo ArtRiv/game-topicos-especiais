@@ -45,6 +45,7 @@ import { DataManager } from '../common/data-manager';
 import { Drow } from '../game-objects/enemies/boss/drow';
 import { FireBolt } from '../game-objects/spells/fire-bolt';
 import { FireArea } from '../game-objects/spells/fire-area';
+import { FireBreath } from '../game-objects/spells/fire-breath';
 
 export class GameScene extends Phaser.Scene {
   #levelData!: LevelData;
@@ -71,6 +72,8 @@ export class GameScene extends Phaser.Scene {
   #switchGroup!: Phaser.GameObjects.Group;
   #rewardItem!: Phaser.GameObjects.Image;
   #activeFireAreaOverlapsByBolt: Map<FireBolt, Set<FireArea>> = new Map();
+  #activeFireBreath: FireBreath | undefined;
+  #fireBreathDamageTimer: Phaser.Time.TimerEvent | undefined;
 
   constructor() {
     super({
@@ -113,6 +116,88 @@ export class GameScene extends Phaser.Scene {
 
   public update(): void {
     this.#updateFireSpellCombos();
+    this.#updateFireBreathChanneling();
+  }
+
+  #updateFireBreathChanneling(): void {
+    if (!this.#player?.active) return;
+
+    const controls = this.#controls;
+    const isHolding = controls.isSpell3KeyDown;
+
+    // Key released or mana empty → end breath
+    if (!isHolding) {
+      if (this.#activeFireBreath?.active && !this.#activeFireBreath.isEnding) {
+        this.#activeFireBreath.beginEnding();
+        this.#fireBreathDamageTimer?.destroy();
+        this.#controls.isMovementLocked = false;
+      }
+      return;
+    }
+
+    // Key held but no active breath → start one
+    if (!this.#activeFireBreath || !this.#activeFireBreath.active) {
+      if (this.#player.manaComponent.mana < CONFIG.FIRE_BREATH_MANA_PER_TICK) {
+        return;
+      }
+
+      this.#activeFireBreath = new FireBreath(
+        this,
+        this.#player.x,
+        this.#player.y,
+        controls.mouseWorldX,
+        controls.mouseWorldY,
+        this.#collisionLayer,
+        this.#player.manaComponent,
+      );
+
+      // Damage tick while breath is active
+      this.#fireBreathDamageTimer = this.time.addEvent({
+        delay: CONFIG.FIRE_BREATH_DAMAGE_TICK_INTERVAL,
+        callback: this.#applyFireBreathDamage,
+        callbackScope: this,
+        loop: true,
+      });
+
+      // Clean up when breath object is destroyed
+      this.#activeFireBreath.once(Phaser.GameObjects.Events.DESTROY, () => {
+        this.#fireBreathDamageTimer?.destroy();
+        this.#activeFireBreath = undefined;
+        this.#controls.isMovementLocked = false;
+      });
+
+      return;
+    }
+
+    if (this.#activeFireBreath.isEnding) return;
+
+    // Breath is active: lock player movement and update aim
+    this.#controls.isMovementLocked = true;
+    (this.#player.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
+    this.#activeFireBreath.update(
+      this.#player.x,
+      this.#player.y,
+      controls.mouseWorldX,
+      controls.mouseWorldY,
+    );
+  }
+
+  #applyFireBreathDamage(): void {
+    if (!this.#activeFireBreath?.active || this.#activeFireBreath.isEnding) {
+      return;
+    }
+
+    const enemyGroup = this.#objectsByRoomId[this.#currentRoomId]?.enemyGroup;
+    if (!enemyGroup) return;
+
+    enemyGroup.getChildren().forEach((child) => {
+      if (!child.active) return;
+      const enemy = child as CharacterGameObject;
+      if (enemy.isDefeated) return;
+      if (this.#activeFireBreath!.isEnemyInBreath(enemy.x, enemy.y)) {
+        enemy.hit(DIRECTION.DOWN, this.#activeFireBreath!.baseDamage);
+      }
+    });
   }
 
   #updateFireSpellCombos(): void {
@@ -354,6 +439,8 @@ export class GameScene extends Phaser.Scene {
       EVENT_BUS.off(CUSTOM_EVENTS.PLAYER_DEFEATED, this.#handlePlayerDefeatedEvent, this);
       EVENT_BUS.off(CUSTOM_EVENTS.DIALOG_CLOSED, this.#handleDialogClosed, this);
       EVENT_BUS.off(CUSTOM_EVENTS.BOSS_DEFEATED, this.#handleBossDefeated, this);
+      this.#fireBreathDamageTimer?.destroy();
+      this.#activeFireBreath?.destroy();
     });
   }
 

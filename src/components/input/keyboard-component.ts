@@ -9,6 +9,7 @@ export class KeyboardComponent extends InputComponent {
   #dKey: Phaser.Input.Keyboard.Key;
   #spell1Key: Phaser.Input.Keyboard.Key;
   #spell2Key: Phaser.Input.Keyboard.Key;
+  #spell3Key: Phaser.Input.Keyboard.Key;
   #actionKey: Phaser.Input.Keyboard.Key;
   #enterKey: Phaser.Input.Keyboard.Key;
 
@@ -21,12 +22,14 @@ export class KeyboardComponent extends InputComponent {
     this.#dKey = keyboardPlugin.addKey(Phaser.Input.Keyboard.KeyCodes.D);
     this.#spell1Key = keyboardPlugin.addKey(Phaser.Input.Keyboard.KeyCodes.ONE);
     this.#spell2Key = keyboardPlugin.addKey(Phaser.Input.Keyboard.KeyCodes.TWO);
+    this.#spell3Key = keyboardPlugin.addKey(Phaser.Input.Keyboard.KeyCodes.THREE);
     this.#actionKey = keyboardPlugin.addKey(Phaser.Input.Keyboard.KeyCodes.E);
     this.#enterKey = keyboardPlugin.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
 
     // WASD = movement
     // 1 = spell slot 1 (Fire Bolt)
     // 2 = spell slot 2 (Fire Area)
+    // 3 = spell slot 3 (Fire Breath - hold)
     // E = interact / action
     // mouse = aim target position
   }
@@ -77,6 +80,11 @@ export class KeyboardComponent extends InputComponent {
 
   get isSpell2KeyJustDown(): boolean {
     return Phaser.Input.Keyboard.JustDown(this.#spell2Key);
+  }
+
+  // isSpell3KeyDown returns true while THREE is held (not just-down)
+  get isSpell3KeyDown(): boolean {
+    return this.#spell3Key.isDown;
   }
 
   get mouseWorldX(): number {
