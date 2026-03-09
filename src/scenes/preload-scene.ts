@@ -56,21 +56,50 @@ export class PreloadScene extends Phaser.Scene {
       delay: 0,
     });
 
-    // Fire Bolt animation (projectile)
+    // Fire Bolt animation (projectile - frames 0-3 looping)
     this.anims.create({
       key: ASSET_KEYS.FIRE_BOLT,
-      frames: this.anims.generateFrameNumbers(ASSET_KEYS.FIRE_BOLT),
-      frameRate: 16,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.FIRE_BOLT, { start: 0, end: 3 }),
+      frameRate: 12,
       repeat: -1,
       delay: 0,
     });
 
-    // Fire Area Explosion animation (area of effect, loops for duration)
+    // Fire Bolt impact animation (frames 5-10, frame 4 is skipped empty space)
     this.anims.create({
-      key: ASSET_KEYS.FIRE_AREA_EXPLOSION,
-      frames: this.anims.generateFrameNumbers(ASSET_KEYS.FIRE_AREA_EXPLOSION),
-      frameRate: 10,
+      key: ASSET_KEYS.FIRE_BOLT_IMPACT,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.FIRE_BOLT_IMPACT, { start: 5, end: 10 }),
+      frameRate: 18,
+      repeat: 0,
+      delay: 0,
+      hideOnComplete: true,
+    });
+
+    // Fire Area Explosion animations (area of effect)
+    // Start: Initial white explosion (frames 0-9)
+    this.anims.create({
+      key: `${ASSET_KEYS.FIRE_AREA_EXPLOSION}_START`,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.FIRE_AREA_EXPLOSION, { start: 0, end: 8 }),
+      frameRate: 15,
+      repeat: 0,
+      delay: 0,
+    });
+    
+    // Loop: Active fire area (frames 10-12)
+    this.anims.create({
+      key: `${ASSET_KEYS.FIRE_AREA_EXPLOSION}_LOOP`,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.FIRE_AREA_EXPLOSION, { start: 9, end: 11 }),
+      frameRate: 8,
       repeat: -1,
+      delay: 0,
+    });
+    
+    // End: Fade out animation (frames 13+)
+    this.anims.create({
+      key: `${ASSET_KEYS.FIRE_AREA_EXPLOSION}_END`,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.FIRE_AREA_EXPLOSION, { start: 13 }),
+      frameRate: 12,
+      repeat: 0,
       delay: 0,
     });
   }

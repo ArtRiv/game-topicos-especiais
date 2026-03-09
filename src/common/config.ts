@@ -56,14 +56,19 @@ export const PLAYER_MANA_REGEN_RATE = 5; // per second
 
 // Fire Bolt (projectile)
 export const FIRE_BOLT_DAMAGE = 1;
-export const FIRE_BOLT_MANA_COST = 10;
+export const FIRE_BOLT_MANA_COST = 1;
 export const FIRE_BOLT_COOLDOWN = 500; // ms
-export const FIRE_BOLT_SPEED = 200;
+export const FIRE_BOLT_SPEED = 750;
 export const FIRE_BOLT_LIFETIME = 2000; // ms before auto-destroy
+export const FIRE_BOLT_IMPACT_FORWARD_OFFSET = 8;
+export const FIRE_BOLT_FIRE_AREA_DAMAGE_MULTIPLIER = 2;
+export const FIRE_BOLT_FIRE_AREA_SPEED_MULTIPLIER = 1.35;
+export const FIRE_BOLT_FIRE_AREA_SCALE_MULTIPLIER = 1.25;
+export const FIRE_BOLT_FIRE_AREA_IMPACT_SCALE_MULTIPLIER = 1.45;
 
 // Fire Area
 export const FIRE_AREA_DAMAGE_PER_TICK = 1;
-export const FIRE_AREA_MANA_COST = 25; // 1/4 of max mana
+export const FIRE_AREA_MANA_COST = 1; // 1/4 of max mana
 export const FIRE_AREA_COOLDOWN = 3000; // ms
-export const FIRE_AREA_DURATION = 3000; // ms
+export const FIRE_AREA_DURATION = 5000; // ms - longer duration for easier combos
 export const FIRE_AREA_TICK_INTERVAL = 500; // ms between damage ticks

@@ -116,14 +116,25 @@
     ]
   },
   {
-    "path": "assets/Fire Effect 2",
+    "path": "assets/spells/Fire Effect 1",
     "files": [
       {
         "type": "spritesheet",
         "key": "FIRE_BOLT",
-        "url": "Explosion SpriteSheet.png",
-        "frameConfig": { "frameWidth": 32, "frameHeight": 32 }
+        "url": "Firebolt SpriteSheet.png",
+        "frameConfig": { "frameWidth": 48, "frameHeight": 48 }
       },
+      {
+        "type": "spritesheet",
+        "key": "FIRE_BOLT_IMPACT",
+        "url": "Firebolt SpriteSheet.png",
+        "frameConfig": { "frameWidth": 48, "frameHeight": 48 }
+      }
+    ]
+  },
+  {
+    "path": "assets/spells/Fire Effect 2",
+    "files": [
       {
         "type": "spritesheet",
         "key": "FIRE_AREA_EXPLOSION",

@@ -70,6 +70,7 @@ export class GameScene extends Phaser.Scene {
   #lockedDoorGroup!: Phaser.GameObjects.Group;
   #switchGroup!: Phaser.GameObjects.Group;
   #rewardItem!: Phaser.GameObjects.Image;
+  #activeFireAreaOverlapsByBolt: Map<FireBolt, Set<FireArea>> = new Map();
 
   constructor() {
     super({
@@ -108,6 +109,62 @@ export class GameScene extends Phaser.Scene {
     this.#registerCustomEvents();
 
     this.scene.launch(SCENE_KEYS.UI_SCENE);
+  }
+
+  public update(): void {
+    this.#updateFireSpellCombos();
+  }
+
+  #updateFireSpellCombos(): void {
+    if (!this.#player?.spellCastingComponent?.spellGroup) {
+      return;
+    }
+
+    const spellChildren = this.#player.spellCastingComponent.spellGroup.getChildren();
+    const fireBolts = spellChildren.filter((spell): spell is FireBolt => spell instanceof FireBolt && spell.active);
+    const fireAreas = spellChildren.filter((spell): spell is FireArea => spell instanceof FireArea && spell.active);
+
+    const activeBolts = new Set(fireBolts);
+
+    this.#activeFireAreaOverlapsByBolt.forEach((previousAreas, trackedBolt) => {
+      if (activeBolts.has(trackedBolt)) {
+        return;
+      }
+      previousAreas.forEach((area) => area.onFireBoltExit());
+      this.#activeFireAreaOverlapsByBolt.delete(trackedBolt);
+    });
+
+    fireBolts.forEach((bolt) => {
+      const previousAreas = this.#activeFireAreaOverlapsByBolt.get(bolt) ?? new Set<FireArea>();
+      const currentAreas = new Set<FireArea>();
+
+      fireAreas.forEach((area) => {
+        if (!area.active) {
+          return;
+        }
+        if (this.physics.overlap(bolt, area)) {
+          currentAreas.add(area);
+        }
+      });
+
+      currentAreas.forEach((area) => {
+        if (previousAreas.has(area)) {
+          return;
+        }
+        bolt.onEnterFireArea(area);
+        area.onFireBoltEnter();
+      });
+
+      previousAreas.forEach((area) => {
+        if (currentAreas.has(area)) {
+          return;
+        }
+        bolt.onExitFireArea(area);
+        area.onFireBoltExit();
+      });
+
+      this.#activeFireAreaOverlapsByBolt.set(bolt, currentAreas);
+    });
   }
 
   #registerColliders(): void {
