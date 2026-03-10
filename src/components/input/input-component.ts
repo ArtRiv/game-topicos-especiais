@@ -3,6 +3,7 @@ export class InputComponent {
   #down: boolean;
   #left: boolean;
   #right: boolean;
+  #debugToggleKey: boolean;
   #actionKey: boolean;
   #attackKey: boolean;
   #selectKey: boolean;
@@ -19,6 +20,7 @@ export class InputComponent {
     this.#left = false;
     this.#right = false;
     this.#down = false;
+    this.#debugToggleKey = false;
     this.#actionKey = false;
     this.#attackKey = false;
     this.#selectKey = false;
@@ -99,6 +101,14 @@ export class InputComponent {
     return this.#selectKey;
   }
 
+  get isDebugToggleKeyJustDown(): boolean {
+    return this.#debugToggleKey;
+  }
+
+  set isDebugToggleKeyJustDown(val: boolean) {
+    this.#debugToggleKey = val;
+  }
+
   set isSelectKeyJustDown(val: boolean) {
     this.#selectKey = val;
   }
@@ -163,5 +173,6 @@ export class InputComponent {
     this.#isMovementLocked = false;
     this.#spell1Key = false;
     this.#spell2Key = false;
+    this.#debugToggleKey = false;
   }
 }

@@ -51,6 +51,7 @@ export class GameScene extends Phaser.Scene {
   #levelData!: LevelData;
   #controls!: KeyboardComponent;
   #player!: Player;
+  #isHitboxDebugEnabled = false;
   #blockingGroup!: Phaser.GameObjects.Group;
   #objectsByRoomId!: {
     [key: number]: {
@@ -96,6 +97,7 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     this.#controls = new KeyboardComponent(this, this.input.keyboard);
+    this.#configureArcadeDebug();
 
     this.#createLevel();
     if (this.#collisionLayer === undefined || this.#enemyCollisionLayer === undefined) {
@@ -115,8 +117,38 @@ export class GameScene extends Phaser.Scene {
   }
 
   public update(): void {
+    this.#handleHitboxDebugToggle();
     this.#updateFireSpellCombos();
     this.#updateFireBreathChanneling();
+  }
+
+  #configureArcadeDebug(): void {
+    this.physics.world.defaults.debugShowBody = true;
+    this.physics.world.defaults.debugShowStaticBody = true;
+    this.physics.world.defaults.debugShowVelocity = false;
+  }
+
+  #handleHitboxDebugToggle(): void {
+    if (!this.#controls.isDebugToggleKeyJustDown) {
+      return;
+    }
+
+    this.#isHitboxDebugEnabled = !this.#isHitboxDebugEnabled;
+
+    if (this.#isHitboxDebugEnabled) {
+      if (!this.physics.world.debugGraphic) {
+        this.physics.world.createDebugGraphic();
+      } else {
+        this.physics.world.debugGraphic.setVisible(true);
+      }
+
+      this.physics.world.drawDebug = true;
+      return;
+    }
+
+    this.physics.world.drawDebug = false;
+    this.physics.world.debugGraphic?.clear();
+    this.physics.world.debugGraphic?.setVisible(false);
   }
 
   #updateFireBreathChanneling(): void {
@@ -148,6 +180,7 @@ export class GameScene extends Phaser.Scene {
         controls.mouseWorldX,
         controls.mouseWorldY,
         this.#collisionLayer,
+        this.#blockingGroup,
         this.#player.manaComponent,
       );
 
@@ -180,6 +213,10 @@ export class GameScene extends Phaser.Scene {
       controls.mouseWorldX,
       controls.mouseWorldY,
     );
+
+    this.#player.direction = this.#activeFireBreath.facingDirection;
+    this.#player.setFlipX(this.#activeFireBreath.facingDirection === DIRECTION.LEFT);
+    this.#player.animationComponent.playAnimation(`IDLE_${this.#player.direction}`);
   }
 
   #applyFireBreathDamage(): void {

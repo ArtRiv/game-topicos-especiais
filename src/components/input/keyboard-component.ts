@@ -10,6 +10,7 @@ export class KeyboardComponent extends InputComponent {
   #spell1Key: Phaser.Input.Keyboard.Key;
   #spell2Key: Phaser.Input.Keyboard.Key;
   #spell3Key: Phaser.Input.Keyboard.Key;
+  #debugToggleKey: Phaser.Input.Keyboard.Key;
   #actionKey: Phaser.Input.Keyboard.Key;
   #enterKey: Phaser.Input.Keyboard.Key;
 
@@ -25,11 +26,13 @@ export class KeyboardComponent extends InputComponent {
     this.#spell3Key = keyboardPlugin.addKey(Phaser.Input.Keyboard.KeyCodes.THREE);
     this.#actionKey = keyboardPlugin.addKey(Phaser.Input.Keyboard.KeyCodes.E);
     this.#enterKey = keyboardPlugin.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
+    this.#debugToggleKey = keyboardPlugin.addKey(Phaser.Input.Keyboard.KeyCodes.P);
 
     // WASD = movement
     // 1 = spell slot 1 (Fire Bolt)
     // 2 = spell slot 2 (Fire Area)
     // 3 = spell slot 3 (Fire Breath - hold)
+    // P = toggle arcade physics hitboxes
     // E = interact / action
     // mouse = aim target position
   }
@@ -85,6 +88,10 @@ export class KeyboardComponent extends InputComponent {
   // isSpell3KeyDown returns true while THREE is held (not just-down)
   get isSpell3KeyDown(): boolean {
     return this.#spell3Key.isDown;
+  }
+
+  get isDebugToggleKeyJustDown(): boolean {
+    return Phaser.Input.Keyboard.JustDown(this.#debugToggleKey);
   }
 
   get mouseWorldX(): number {
