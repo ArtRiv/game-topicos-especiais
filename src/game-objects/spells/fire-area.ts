@@ -9,6 +9,7 @@ import {
   FIRE_AREA_COOLDOWN,
   FIRE_AREA_DURATION,
   FIRE_AREA_TICK_INTERVAL,
+  FIRE_BREATH_FIRE_AREA_AREA_SCALE,
 } from '../../common/config';
 import { CharacterGameObject } from '../common/character-game-object';
 import { DIRECTION } from '../../common/common';
@@ -26,6 +27,7 @@ export class FireArea extends Phaser.Physics.Arcade.Sprite implements ActiveSpel
   #isEnding: boolean = false;
   #boltsInsideCount: number = 0;
   #comboPulseTween: Phaser.Tweens.Tween | undefined;
+  #breathActive: boolean = false;
 
   constructor(scene: Phaser.Scene, x: number, y: number) {
     super(scene, x, y, ASSET_KEYS.FIRE_AREA_EXPLOSION);
@@ -79,7 +81,7 @@ export class FireArea extends Phaser.Physics.Arcade.Sprite implements ActiveSpel
 
   public onFireBoltEnter(): void {
     this.#boltsInsideCount += 1;
-    if (this.#boltsInsideCount > 1) {
+    if (this.#boltsInsideCount > 1 || this.#breathActive) {
       return;
     }
 
@@ -97,7 +99,7 @@ export class FireArea extends Phaser.Physics.Arcade.Sprite implements ActiveSpel
 
   public onFireBoltExit(): void {
     this.#boltsInsideCount = Math.max(0, this.#boltsInsideCount - 1);
-    if (this.#boltsInsideCount > 0) {
+    if (this.#boltsInsideCount > 0 || this.#breathActive) {
       return;
     }
 
@@ -105,6 +107,44 @@ export class FireArea extends Phaser.Physics.Arcade.Sprite implements ActiveSpel
     this.#comboPulseTween = undefined;
     this.clearTint();
     this.setScale(1);
+  }
+
+  public onFireBreathEnter(): void {
+    if (this.#breathActive || this.#isEnding) return;
+    this.#breathActive = true;
+
+    // Breath combo overrides bolt visuals
+    this.#comboPulseTween?.stop();
+    this.#comboPulseTween = undefined;
+
+    this.setTint(0xffaa66);
+    this.setScale(FIRE_BREATH_FIRE_AREA_AREA_SCALE);
+    const body = this.body as Phaser.Physics.Arcade.Body;
+    body.setSize(32 * FIRE_BREATH_FIRE_AREA_AREA_SCALE, 32 * FIRE_BREATH_FIRE_AREA_AREA_SCALE, true);
+  }
+
+  public onFireBreathExit(): void {
+    if (!this.#breathActive) return;
+    this.#breathActive = false;
+
+    this.clearTint();
+    this.setScale(1);
+    const body = this.body as Phaser.Physics.Arcade.Body;
+    body.setSize(32, 32, true);
+
+    // Restore bolt combo visuals if a bolt is still inside
+    if (this.#boltsInsideCount > 0) {
+      this.setTint(0xffd27f);
+      this.#comboPulseTween = this.scene.tweens.add({
+        targets: this,
+        scaleX: 1.15,
+        scaleY: 1.15,
+        duration: 90,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+      });
+    }
   }
 
   #applyTickDamage(): void {

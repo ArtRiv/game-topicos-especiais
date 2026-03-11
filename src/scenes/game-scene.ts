@@ -75,6 +75,7 @@ export class GameScene extends Phaser.Scene {
   #activeFireAreaOverlapsByBolt: Map<FireBolt, Set<FireArea>> = new Map();
   #activeFireBreath: FireBreath | undefined;
   #fireBreathDamageTimer: Phaser.Time.TimerEvent | undefined;
+  #activeFireBreathAreaCombos: Set<FireArea> = new Set();
 
   constructor() {
     super({
@@ -120,6 +121,7 @@ export class GameScene extends Phaser.Scene {
     this.#handleHitboxDebugToggle();
     this.#updateFireSpellCombos();
     this.#updateFireBreathChanneling();
+    this.#updateFireBreathAreaCombo();
   }
 
   #configureArcadeDebug(): void {
@@ -197,6 +199,11 @@ export class GameScene extends Phaser.Scene {
         this.#fireBreathDamageTimer?.destroy();
         this.#activeFireBreath = undefined;
         this.#controls.isMovementLocked = false;
+        // Clear any active breath+area combos
+        this.#activeFireBreathAreaCombos.forEach((area) => {
+          if (area.active) area.onFireBreathExit();
+        });
+        this.#activeFireBreathAreaCombos.clear();
       });
 
       return;
@@ -217,6 +224,47 @@ export class GameScene extends Phaser.Scene {
     this.#player.direction = this.#activeFireBreath.facingDirection;
     this.#player.setFlipX(this.#activeFireBreath.facingDirection === DIRECTION.LEFT);
     this.#player.animationComponent.playAnimation(`IDLE_${this.#player.direction}`);
+  }
+
+  #updateFireBreathAreaCombo(): void {
+    const breath = this.#activeFireBreath;
+
+    if (!breath?.active || breath.isEnding) {
+      if (this.#activeFireBreathAreaCombos.size > 0) {
+        this.#activeFireBreathAreaCombos.forEach((area) => {
+          if (area.active) area.onFireBreathExit();
+        });
+        this.#activeFireBreathAreaCombos.clear();
+      }
+      return;
+    }
+
+    const spellChildren = this.#player?.spellCastingComponent?.spellGroup?.getChildren() ?? [];
+    const fireAreas = spellChildren.filter((s): s is FireArea => s instanceof FireArea && s.active);
+
+    const currentCombos = new Set<FireArea>();
+    for (const area of fireAreas) {
+      if (breath.isAreaInBreath(area.x, area.y)) {
+        currentCombos.add(area);
+      }
+    }
+
+    // Start new combos
+    currentCombos.forEach((area) => {
+      if (!this.#activeFireBreathAreaCombos.has(area)) {
+        area.onFireBreathEnter();
+      }
+    });
+
+    // End removed combos
+    this.#activeFireBreathAreaCombos.forEach((area) => {
+      if (!currentCombos.has(area)) {
+        if (area.active) area.onFireBreathExit();
+      }
+    });
+
+    this.#activeFireBreathAreaCombos = currentCombos;
+    breath.setComboActive(currentCombos.size > 0);
   }
 
   #applyFireBreathDamage(): void {

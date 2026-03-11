@@ -82,7 +82,14 @@ export const FIRE_BREATH_MAX_REACH = 96; // max pixels from player to wall
 export const FIRE_BREATH_STEP_SIZE = 8; // pixels per wall detection step
 export const FIRE_BREATH_ANGLE_TOLERANCE = 0.45; // radians (~26 degrees half-cone)
 export const FIRE_BREATH_TURN_SPEED = Math.PI * 0.95; // radians per second
+export const FIRE_BREATH_MAX_DEVIATION = Math.PI / 9; // ~20 degrees max turn from initial cast angle
 export const FIRE_BREATH_MOUTH_FORWARD_OFFSET = 2; // pixels forward from the mouth anchor
+// FireBreath + FireArea combo
+export const FIRE_BREATH_FIRE_AREA_DAMAGE_MULTIPLIER = 2.5;
+export const FIRE_BREATH_FIRE_AREA_BEAM_HEIGHT = 72; // wider beam height in combo (normal is 48)
+export const FIRE_BREATH_FIRE_AREA_REACH_MULTIPLIER = 1.35; // extended reach in combo
+export const FIRE_BREATH_FIRE_AREA_AREA_SCALE = 1.4; // how much the fire area grows
+export const FIRE_BREATH_FIRE_AREA_ANGLE_TOLERANCE = 0.7; // wider cone to detect areas (~40 deg)
 export const FIRE_BREATH_MOUTH_VERTICAL_OFFSET = 6; // pixels upward from player center
 export const FIRE_BREATH_HIT_SURFACE_OFFSET = 0; // pixels pulled away from the impact surface
 export const FIRE_BREATH_BEAM_CONTACT_OVERLAP = 10; // pixels of visual overlap so the flame reaches the hit point

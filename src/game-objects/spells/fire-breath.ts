@@ -15,6 +15,11 @@ import {
   FIRE_BREATH_MOUTH_FORWARD_OFFSET,
   FIRE_BREATH_MOUTH_VERTICAL_OFFSET,
   FIRE_BREATH_TURN_SPEED,
+  FIRE_BREATH_MAX_DEVIATION,
+  FIRE_BREATH_FIRE_AREA_DAMAGE_MULTIPLIER,
+  FIRE_BREATH_FIRE_AREA_BEAM_HEIGHT,
+  FIRE_BREATH_FIRE_AREA_REACH_MULTIPLIER,
+  FIRE_BREATH_FIRE_AREA_ANGLE_TOLERANCE,
 } from '../../common/config';
 import { ManaComponent } from '../../components/game-object/mana-component';
 
@@ -28,13 +33,19 @@ export class FireBreath extends Phaser.GameObjects.Container implements ActiveSp
   readonly element: Element = ELEMENT.FIRE;
   readonly spellId: SpellId = SPELL_ID.FIRE_BREATH;
   readonly spellType: SpellType = SPELL_TYPE.CHANNELED;
-  readonly baseDamage: number = FIRE_BREATH_DAMAGE_PER_TICK;
   readonly manaCost: number = FIRE_BREATH_MANA_PER_TICK;
   readonly cooldown: number = 0;
+
+  get baseDamage(): number {
+    return this.#comboActive
+      ? FIRE_BREATH_DAMAGE_PER_TICK * FIRE_BREATH_FIRE_AREA_DAMAGE_MULTIPLIER
+      : FIRE_BREATH_DAMAGE_PER_TICK;
+  }
 
   #beamSprite: Phaser.GameObjects.Sprite;
   #hitEffectSprite: Phaser.GameObjects.Sprite;
   #angle: number = 0;
+  #initialAngle: number = 0;
   #wallDistance: number = FIRE_BREATH_MAX_REACH;
   #isEnding: boolean = false;
   #phase: 'start' | 'loop' | 'end' = 'start';
@@ -43,6 +54,7 @@ export class FireBreath extends Phaser.GameObjects.Container implements ActiveSp
   #manaTimer: Phaser.Time.TimerEvent;
   #impact: FireBreathImpact | undefined;
   #facingDirection: Direction = DIRECTION.RIGHT;
+  #comboActive: boolean = false;
 
   constructor(
     scene: Phaser.Scene,
@@ -61,6 +73,7 @@ export class FireBreath extends Phaser.GameObjects.Container implements ActiveSp
     this.setDepth(1);
 
     this.#angle = Phaser.Math.Angle.Between(playerX, playerY, targetX, targetY);
+    this.#initialAngle = this.#angle;
     this.setRotation(this.#angle);
 
     // Beam sprite: origin at left edge so it extends rightward from player
@@ -123,6 +136,34 @@ export class FireBreath extends Phaser.GameObjects.Container implements ActiveSp
     return this.#facingDirection;
   }
 
+  /** Activates or deactivates the FireArea combo, boosting damage, reach, and beam width. */
+  public setComboActive(active: boolean): void {
+    if (this.#comboActive === active) return;
+    this.#comboActive = active;
+    if (active) {
+      this.#beamSprite.setTint(0xffaa66);
+      this.#hitEffectSprite.setTint(0xffaa66);
+    } else {
+      this.#beamSprite.clearTint();
+      this.#hitEffectSprite.clearTint();
+    }
+  }
+
+  /** Returns true if a fire area centered at (areaX, areaY) is within the active breath beam. */
+  public isAreaInBreath(areaX: number, areaY: number): boolean {
+    if (this.#phase !== 'loop' || this.#isEnding) return false;
+
+    const dx = areaX - this.x;
+    const dy = areaY - this.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+
+    if (distance > FIRE_BREATH_MAX_REACH + 20) return false; // +20 for area half-size buffer
+
+    const areaAngle = Math.atan2(dy, dx);
+    const angleDiff = Math.abs(Phaser.Math.Angle.Wrap(areaAngle - this.#angle));
+    return angleDiff < FIRE_BREATH_FIRE_AREA_ANGLE_TOLERANCE;
+  }
+
   /** Called each frame while the player holds the key. Updates position and aim. */
   public update(playerX: number, playerY: number, targetX: number, targetY: number): void {
     if (this.#isEnding || !this.active) return;
@@ -166,13 +207,23 @@ export class FireBreath extends Phaser.GameObjects.Container implements ActiveSp
   }
 
   #syncTransform(playerX: number, playerY: number, targetX: number, targetY: number, snapToTarget: boolean = false): void {
-    const targetAngle = Phaser.Math.Angle.Between(playerX, playerY, targetX, targetY);
+    const rawTargetAngle = Phaser.Math.Angle.Between(playerX, playerY, targetX, targetY);
     if (snapToTarget) {
-      this.#angle = targetAngle;
+      this.#angle = rawTargetAngle;
     } else {
+      // Clamp the target angle so it cannot deviate more than MAX_DEVIATION from the initial cast angle
+      const diff = Phaser.Math.Angle.Wrap(rawTargetAngle - this.#initialAngle);
+      let clampedTarget: number;
+      if (diff > FIRE_BREATH_MAX_DEVIATION) {
+        clampedTarget = Phaser.Math.Angle.Wrap(this.#initialAngle + FIRE_BREATH_MAX_DEVIATION);
+      } else if (diff < -FIRE_BREATH_MAX_DEVIATION) {
+        clampedTarget = Phaser.Math.Angle.Wrap(this.#initialAngle - FIRE_BREATH_MAX_DEVIATION);
+      } else {
+        clampedTarget = rawTargetAngle;
+      }
       const deltaSeconds = this.scene.game.loop.delta / 1000;
       const maxTurn = FIRE_BREATH_TURN_SPEED * deltaSeconds;
-      this.#angle = Phaser.Math.Angle.RotateTo(this.#angle, targetAngle, maxTurn);
+      this.#angle = Phaser.Math.Angle.RotateTo(this.#angle, clampedTarget, maxTurn);
     }
 
     this.#facingDirection = this.#getFacingDirection(this.#angle);
@@ -183,11 +234,13 @@ export class FireBreath extends Phaser.GameObjects.Container implements ActiveSp
     this.setRotation(this.#angle);
 
     this.#impact = this.#calculateImpact(sourcePosition);
-    this.#wallDistance = this.#impact?.distance ?? FIRE_BREATH_MAX_REACH;
+    const comboMaxReach = FIRE_BREATH_MAX_REACH * (this.#comboActive ? FIRE_BREATH_FIRE_AREA_REACH_MULTIPLIER : 1);
+    this.#wallDistance = this.#impact?.distance ?? comboMaxReach;
     const beamVisualLength = this.#impact === undefined
-      ? this.#wallDistance
-      : Math.min(FIRE_BREATH_MAX_REACH, this.#wallDistance + FIRE_BREATH_BEAM_CONTACT_OVERLAP);
-    this.#beamSprite.setDisplaySize(Math.max(beamVisualLength, 1), 48);
+      ? comboMaxReach
+      : Math.min(comboMaxReach, this.#wallDistance + FIRE_BREATH_BEAM_CONTACT_OVERLAP);
+    const beamHeight = this.#comboActive ? FIRE_BREATH_FIRE_AREA_BEAM_HEIGHT : 48;
+    this.#beamSprite.setDisplaySize(Math.max(beamVisualLength, 1), beamHeight);
     this.#syncImpactVisuals();
   }
 
@@ -223,9 +276,11 @@ export class FireBreath extends Phaser.GameObjects.Container implements ActiveSp
       mouthAnchor.x -= 6;
       mouthAnchor.y -= 1;
     } else if (facingDirection === DIRECTION.UP) {
-      mouthAnchor.y -= 6;
+      mouthAnchor.y -= -12; // align with top of 16x16 sprite (head area)
+      mouthAnchor.x += -12
     } else {
-      mouthAnchor.y += 2;
+      mouthAnchor.y += 15; // align with bottom of 16x16 sprite (feet area)
+      mouthAnchor.x += 12;
     }
 
     mouthAnchor.x += Math.cos(angle) * FIRE_BREATH_MOUTH_FORWARD_OFFSET;
