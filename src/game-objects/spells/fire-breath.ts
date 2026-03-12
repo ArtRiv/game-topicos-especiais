@@ -141,8 +141,8 @@ export class FireBreath extends Phaser.GameObjects.Container implements ActiveSp
     if (this.#comboActive === active) return;
     this.#comboActive = active;
     if (active) {
-      this.#beamSprite.setTint(0xffaa66);
-      this.#hitEffectSprite.setTint(0xffaa66);
+      this.#beamSprite.setTint(0xffd27f);
+      this.#hitEffectSprite.setTint(0xffd27f);
     } else {
       this.#beamSprite.clearTint();
       this.#hitEffectSprite.clearTint();

@@ -117,7 +117,7 @@ export class FireArea extends Phaser.Physics.Arcade.Sprite implements ActiveSpel
     this.#comboPulseTween?.stop();
     this.#comboPulseTween = undefined;
 
-    this.setTint(0xffaa66);
+    this.setTint(0xffd27f);
     this.setScale(FIRE_BREATH_FIRE_AREA_AREA_SCALE);
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.setSize(32 * FIRE_BREATH_FIRE_AREA_AREA_SCALE, 32 * FIRE_BREATH_FIRE_AREA_AREA_SCALE, true);
