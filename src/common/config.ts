@@ -62,6 +62,13 @@ export const EARTH_BOLT_SPEED = 600; // slower, heavier rock
 export const EARTH_BOLT_LIFETIME = 2200; // ms before auto-destroy
 export const EARTH_BOLT_IMPACT_FORWARD_OFFSET = 0;
 
+// EarthBolt + FireArea combo: Lava Pool
+export const LAVA_POOL_DAMAGE_PER_TICK = 1;
+export const LAVA_POOL_TICK_INTERVAL = 600; // ms between damage ticks
+export const LAVA_POOL_DURATION = 5000; // ms the pool stays active
+export const LAVA_POOL_SCALE = 1.5; // visual scale
+export const LAVA_POOL_BODY_RADIUS = 14; // AoE circle radius in px
+
 // Earth + Fire combo explosion
 export const EARTH_FIRE_EXPLOSION_DAMAGE = 5;
 export const EARTH_FIRE_EXPLOSION_SCALE = 2.0;

@@ -48,6 +48,7 @@ import { FireArea } from '../game-objects/spells/fire-area';
 import { FireBreath } from '../game-objects/spells/fire-breath';
 import { EarthBolt } from '../game-objects/spells/earth-bolt';
 import { EarthFireExplosion } from '../game-objects/spells/earth-fire-explosion';
+import { LavaPool } from '../game-objects/spells/lava-pool';
 
 export class GameScene extends Phaser.Scene {
   #levelData!: LevelData;
@@ -125,6 +126,7 @@ export class GameScene extends Phaser.Scene {
     this.#updateFireBreathChanneling();
     this.#updateFireBreathAreaCombo();
     this.#updateEarthFireCombo();
+    this.#updateEarthBoltFireAreaCombo();
     this.#handleRadialMenuInput();
   }
 
@@ -384,6 +386,41 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * Detects overlaps between EarthBolt projectiles and active FireAreas.
+   * When an EarthBolt enters a FireArea, the bolt is consumed and a LavaPool
+   * is spawned at the bolt's current position, lasting several seconds.
+   */
+  #updateEarthBoltFireAreaCombo(): void {
+    if (!this.#player?.spellCastingComponent?.spellGroup) {
+      return;
+    }
+
+    const spellChildren = this.#player.spellCastingComponent.spellGroup.getChildren();
+    const earthBolts = spellChildren.filter((s): s is EarthBolt => s instanceof EarthBolt && s.active);
+    const fireAreas = spellChildren.filter((s): s is FireArea => s instanceof FireArea && s.active);
+
+    if (earthBolts.length === 0 || fireAreas.length === 0) {
+      return;
+    }
+
+    for (const earthBolt of earthBolts) {
+      for (const fireArea of fireAreas) {
+        if (this.physics.overlap(earthBolt, fireArea)) {
+          const x = earthBolt.x;
+          const y = earthBolt.y;
+
+          // Consume the bolt and leave a lava pool in its wake.
+          earthBolt.triggerFireAreaCombo();
+
+          const lavaPool = new LavaPool(this, x, y);
+          this.#player.spellCastingComponent.spellGroup.add(lavaPool);
+          break;
+        }
+      }
+    }
+  }
+
   #registerColliders(): void {
     // collision between player and map walls
     this.#collisionLayer.setCollision([this.#collisionLayer.tileset[0].firstgid]);
@@ -517,6 +554,11 @@ export class GameScene extends Phaser.Scene {
 
             // FireArea overlap is handled via tick damage, just track enemies in area
             if (spellObj instanceof FireArea) {
+              spellObj.addEnemyInArea(enemyGameObject);
+            }
+
+            // LavaPool overlap — tick damage handled internally, just track enemies
+            if (spellObj instanceof LavaPool) {
               spellObj.addEnemyInArea(enemyGameObject);
             }
           },

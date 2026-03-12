@@ -152,6 +152,15 @@ export class PreloadScene extends Phaser.Scene {
       hideOnComplete: true,
     });
 
+    // Lava Pool looping animation (EarthBolt+FireArea combo) — frames 0-3 of
+    // the Impact Spritesheet, tinted red at runtime to look like lava.
+    this.anims.create({
+      key: ASSET_KEYS.EARTH_BOLT_LAVA_POOL,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.EARTH_BOLT_IMPACT, { start: 0, end: 3 }),
+      frameRate: 6,
+      repeat: -1,
+    });
+
     // Earth + Fire combo: rock burst (12 frames across 2 rows, play once)
     this.anims.create({
       key: ASSET_KEYS.EARTH_FIRE_ROCK_BURST,

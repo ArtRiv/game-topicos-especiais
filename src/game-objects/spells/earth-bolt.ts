@@ -107,4 +107,25 @@ export class EarthBolt extends Phaser.Physics.Arcade.Sprite implements ActiveSpe
 
     this.destroy();
   }
+
+  /**
+   * Called when this bolt enters a FireArea (EarthBolt + FireArea combo).
+   * The bolt is silently consumed so a LavaPool can be spawned in its place.
+   */
+  public triggerFireAreaCombo(): void {
+    if (this.#isConsumed || !this.active) {
+      return;
+    }
+
+    this.#isConsumed = true;
+    this.#lifetimeTimer?.destroy();
+
+    const body = this.body as Phaser.Physics.Arcade.Body;
+    if (body) {
+      body.setVelocity(0, 0);
+      body.enable = false;
+    }
+
+    this.destroy();
+  }
 }
