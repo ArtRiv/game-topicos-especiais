@@ -134,5 +134,38 @@ export class PreloadScene extends Phaser.Scene {
       frameRate: 14,
       repeat: -1,
     });
+
+    // Earth Bolt projectile animation (frames 0-5, looping spinning rock)
+    this.anims.create({
+      key: ASSET_KEYS.EARTH_BOLT,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.EARTH_BOLT, { start: 0, end: 5 }),
+      frameRate: 12,
+      repeat: -1,
+    });
+
+    // Earth Bolt impact animation (frames 0-6, play once)
+    this.anims.create({
+      key: ASSET_KEYS.EARTH_BOLT_IMPACT,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.EARTH_BOLT_IMPACT, { start: 0, end: 6 }),
+      frameRate: 14,
+      repeat: 0,
+      hideOnComplete: true,
+    });
+
+    // Earth + Fire combo: rock burst (12 frames across 2 rows, play once)
+    this.anims.create({
+      key: ASSET_KEYS.EARTH_FIRE_ROCK_BURST,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.EARTH_FIRE_ROCK_BURST, { start: 0, end: 11 }),
+      frameRate: 16,
+      repeat: 0,
+    });
+
+    // Earth + Fire combo: big explosion (16 frames 4×4 grid, play once)
+    this.anims.create({
+      key: ASSET_KEYS.EARTH_FIRE_EXPLOSION,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.EARTH_FIRE_EXPLOSION, { start: 0, end: 15 }),
+      frameRate: 18,
+      repeat: 0,
+    });
   }
 }

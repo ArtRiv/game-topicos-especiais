@@ -116,6 +116,29 @@
     ]
   },
   {
+    "path": "assets/spells/Earth Effect 01",
+    "files": [
+      {
+        "type": "spritesheet",
+        "key": "EARTH_BOLT",
+        "url": "Earth projectile Spritesheet .png",
+        "frameConfig": { "frameWidth": 48, "frameHeight": 32 }
+      },
+      {
+        "type": "spritesheet",
+        "key": "EARTH_BOLT_IMPACT",
+        "url": "Impact Spritesheet.png",
+        "frameConfig": { "frameWidth": 48, "frameHeight": 48 }
+      },
+      {
+        "type": "spritesheet",
+        "key": "EARTH_FIRE_ROCK_BURST",
+        "url": "Irregular rock Spritesheet.png",
+        "frameConfig": { "frameWidth": 48, "frameHeight": 48 }
+      }
+    ]
+  },
+  {
     "path": "assets/spells/Fire Effect 1",
     "files": [
       {
@@ -152,6 +175,12 @@
         "key": "FIRE_AREA_EXPLOSION",
         "url": "Explosion 2 SpriteSheet.png",
         "frameConfig": { "frameWidth": 48, "frameHeight": 48 }
+      },
+      {
+        "type": "spritesheet",
+        "key": "EARTH_FIRE_EXPLOSION",
+        "url": "Explosion SpriteSheet.png",
+        "frameConfig": { "frameWidth": 64, "frameHeight": 64 }
       }
     ]
   },

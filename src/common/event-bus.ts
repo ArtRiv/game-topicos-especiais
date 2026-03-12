@@ -1,4 +1,5 @@
 import * as Phaser from 'phaser';
+import { Element } from './types';
 
 export const EVENT_BUS = new Phaser.Events.EventEmitter();
 
@@ -12,6 +13,7 @@ export const CUSTOM_EVENTS = {
   BOSS_DEFEATED: 'BOSS_DEFEATED',
   SPELL_CAST: 'SPELL_CAST',
   MANA_UPDATED: 'MANA_UPDATED',
+  ELEMENT_CHANGED: 'ELEMENT_CHANGED',
 } as const;
 
 export const PLAYER_HEALTH_UPDATE_TYPE = {
@@ -25,4 +27,8 @@ export type PlayerHealthUpdated = {
   currentHealth: number;
   previousHealth: number;
   type: PlayerHealthUpdateType;
+};
+
+export type ElementChangedData = {
+  element: Element;
 };

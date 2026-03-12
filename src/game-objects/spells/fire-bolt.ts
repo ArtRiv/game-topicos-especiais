@@ -4,7 +4,6 @@ import { Element, SpellId, SpellType } from '../../common/types';
 import { ASSET_KEYS } from '../../common/assets';
 import { ELEMENT, SPELL_ID, SPELL_TYPE } from '../../common/common';
 import {
-  FIRE_BOLT_DAMAGE,
   FIRE_BOLT_FIRE_AREA_DAMAGE_MULTIPLIER,
   FIRE_BOLT_FIRE_AREA_IMPACT_SCALE_MULTIPLIER,
   FIRE_BOLT_FIRE_AREA_SCALE_MULTIPLIER,
@@ -13,8 +12,8 @@ import {
   FIRE_BOLT_LIFETIME,
   FIRE_BOLT_MANA_COST,
   FIRE_BOLT_COOLDOWN,
-  FIRE_BOLT_SPEED,
 } from '../../common/config';
+import { RUNTIME_CONFIG } from '../../common/runtime-config';
 import type { FireArea } from './fire-area';
 
 export class FireBolt extends Phaser.Physics.Arcade.Sprite implements ActiveSpell {
@@ -25,7 +24,7 @@ export class FireBolt extends Phaser.Physics.Arcade.Sprite implements ActiveSpel
   readonly cooldown: number = FIRE_BOLT_COOLDOWN;
   #lifetimeTimer: Phaser.Time.TimerEvent | undefined;
   #isExploding: boolean = false;
-  #damage: number = FIRE_BOLT_DAMAGE;
+  #damage: number = RUNTIME_CONFIG.FIRE_BOLT_DAMAGE;
   #isEmpowered: boolean = false;
   #overlappingAreas: Set<FireArea> = new Set();
 
@@ -47,8 +46,8 @@ export class FireBolt extends Phaser.Physics.Arcade.Sprite implements ActiveSpel
     // calculate velocity towards target
     const angle = Phaser.Math.Angle.Between(x, y, targetX, targetY);
     body.setVelocity(
-      Math.cos(angle) * FIRE_BOLT_SPEED,
-      Math.sin(angle) * FIRE_BOLT_SPEED,
+      Math.cos(angle) * RUNTIME_CONFIG.FIRE_BOLT_SPEED,
+      Math.sin(angle) * RUNTIME_CONFIG.FIRE_BOLT_SPEED,
     );
 
     // rotate sprite to face direction
@@ -99,7 +98,7 @@ export class FireBolt extends Phaser.Physics.Arcade.Sprite implements ActiveSpel
 
   #empowerFromFireArea(): void {
     this.#isEmpowered = true;
-    this.#damage = Math.max(1, Math.round(FIRE_BOLT_DAMAGE * FIRE_BOLT_FIRE_AREA_DAMAGE_MULTIPLIER));
+    this.#damage = Math.max(1, Math.round(RUNTIME_CONFIG.FIRE_BOLT_DAMAGE * FIRE_BOLT_FIRE_AREA_DAMAGE_MULTIPLIER));
 
     const body = this.body as Phaser.Physics.Arcade.Body;
     if (body) {

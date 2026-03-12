@@ -54,6 +54,19 @@ export const ROOM_TRANSITION_CAMERA_ANIMATION_DELAY = 500;
 export const PLAYER_MAX_MANA = 100;
 export const PLAYER_MANA_REGEN_RATE = 5; // per second
 
+// Earth Bolt (projectile)
+export const EARTH_BOLT_DAMAGE = 1;
+export const EARTH_BOLT_MANA_COST = 1;
+export const EARTH_BOLT_COOLDOWN = 600; // ms - slightly slower than fire bolt
+export const EARTH_BOLT_SPEED = 600; // slower, heavier rock
+export const EARTH_BOLT_LIFETIME = 2200; // ms before auto-destroy
+export const EARTH_BOLT_IMPACT_FORWARD_OFFSET = 0;
+
+// Earth + Fire combo explosion
+export const EARTH_FIRE_EXPLOSION_DAMAGE = 5;
+export const EARTH_FIRE_EXPLOSION_SCALE = 2.0;
+export const EARTH_FIRE_EXPLOSION_BODY_RADIUS = 20;
+
 // Fire Bolt (projectile)
 export const FIRE_BOLT_DAMAGE = 1;
 export const FIRE_BOLT_MANA_COST = 1;

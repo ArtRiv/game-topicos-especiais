@@ -34,6 +34,10 @@ export const DUNGEON_ITEM = {
 
 export const ELEMENT = {
   FIRE: 'FIRE',
+  ICE: 'ICE',
+  EARTH: 'EARTH',
+  WIND: 'WIND',
+  THUNDER: 'THUNDER',
 } as const;
 
 export const SPELL_TYPE = {
@@ -46,6 +50,7 @@ export const SPELL_ID = {
   FIRE_BOLT: 'FIRE_BOLT',
   FIRE_AREA: 'FIRE_AREA',
   FIRE_BREATH: 'FIRE_BREATH',
+  EARTH_BOLT: 'EARTH_BOLT',
 } as const;
 
 export const DEFAULT_UI_TEXT_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {

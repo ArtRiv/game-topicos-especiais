@@ -1,12 +1,15 @@
 import * as Phaser from 'phaser';
 import { GameObject, SpellId } from '../../common/types';
-import { SPELL_ID } from '../../common/common';
+import { ELEMENT, SPELL_ID } from '../../common/common';
 import { CUSTOM_EVENTS, EVENT_BUS } from '../../common/event-bus';
 import { BaseGameObjectComponent } from './base-game-object-component';
 import { ManaComponent } from './mana-component';
 import { ActiveSpell } from '../../game-objects/spells/base-spell';
 import { FireBolt } from '../../game-objects/spells/fire-bolt';
 import { FireArea } from '../../game-objects/spells/fire-area';
+import { EarthBolt } from '../../game-objects/spells/earth-bolt';
+import { ElementManager } from '../../common/element-manager';
+import { RUNTIME_CONFIG } from '../../common/runtime-config';
 import {
   FIRE_BOLT_COOLDOWN,
   FIRE_BOLT_MANA_COST,
@@ -66,13 +69,23 @@ export class SpellCastingComponent extends BaseGameObjectComponent {
     }
     const slot = this.#spellSlots[slotIndex];
     const now = this.#scene.time.now;
-    if (now - slot.lastCastTime < slot.cooldown) {
+    const cooldown = this.#getEffectiveCooldown(slot.spellId);
+    if (now - slot.lastCastTime < cooldown) {
       return false;
     }
     if (this.#manaComponent.mana < slot.manaCost) {
       return false;
     }
     return true;
+  }
+
+  #getEffectiveCooldown(spellId: SpellId): number {
+    if (spellId === SPELL_ID.FIRE_BOLT) {
+      return ElementManager.instance.activeElement === ELEMENT.EARTH
+        ? RUNTIME_CONFIG.EARTH_BOLT_COOLDOWN
+        : RUNTIME_CONFIG.FIRE_BOLT_COOLDOWN;
+    }
+    return this.#spellSlots.find((s) => s.spellId === spellId)?.cooldown ?? 0;
   }
 
   public castSpell(slotIndex: number, casterX: number, casterY: number, targetX: number, targetY: number): ActiveSpell | undefined {
@@ -87,9 +100,15 @@ export class SpellCastingComponent extends BaseGameObjectComponent {
     let spell: ActiveSpell | undefined;
 
     switch (slot.spellId) {
-      case SPELL_ID.FIRE_BOLT:
-        spell = new FireBolt(this.#scene, casterX, casterY, targetX, targetY);
+      case SPELL_ID.FIRE_BOLT: {
+        const activeElement = ElementManager.instance.activeElement;
+        if (activeElement === ELEMENT.EARTH) {
+          spell = new EarthBolt(this.#scene, casterX, casterY, targetX, targetY);
+        } else {
+          spell = new FireBolt(this.#scene, casterX, casterY, targetX, targetY);
+        }
         break;
+      }
       case SPELL_ID.FIRE_AREA:
         spell = new FireArea(this.#scene, targetX, targetY);
         break;

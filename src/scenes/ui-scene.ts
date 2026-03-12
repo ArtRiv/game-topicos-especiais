@@ -2,9 +2,11 @@ import * as Phaser from 'phaser';
 import { SCENE_KEYS } from './scene-keys';
 import { ASSET_KEYS, HEART_ANIMATIONS, HEART_TEXTURE_FRAME } from '../common/assets';
 import { DataManager } from '../common/data-manager';
-import { CUSTOM_EVENTS, EVENT_BUS, PLAYER_HEALTH_UPDATE_TYPE, PlayerHealthUpdated } from '../common/event-bus';
+import { CUSTOM_EVENTS, ElementChangedData, EVENT_BUS, PLAYER_HEALTH_UPDATE_TYPE, PlayerHealthUpdated } from '../common/event-bus';
 import { DEFAULT_UI_TEXT_STYLE } from '../common/common';
 import { ManaUpdatedData } from '../components/game-object/mana-component';
+import { ElementManager } from '../common/element-manager';
+import { Element } from '../common/types';
 
 export class UiScene extends Phaser.Scene {
   #hudContainer!: Phaser.GameObjects.Container;
@@ -14,6 +16,9 @@ export class UiScene extends Phaser.Scene {
   #manaBarBg!: Phaser.GameObjects.Rectangle;
   #manaBarFill!: Phaser.GameObjects.Rectangle;
   #manaText!: Phaser.GameObjects.Text;
+  #elementGem!: Phaser.GameObjects.Arc;
+  #elementLabel!: Phaser.GameObjects.Text;
+  #elementHintText!: Phaser.GameObjects.Text;
 
   constructor() {
     super({
@@ -68,15 +73,32 @@ export class UiScene extends Phaser.Scene {
     }).setOrigin(0);
     this.#hudContainer.add([this.#manaBarBg, this.#manaBarFill, this.#manaText]);
 
+    // Element indicator (bottom-left corner)
+    const elemX = 8;
+    const elemY = 290;
+    this.#elementGem = this.add.arc(elemX + 5, elemY + 5, 5, 0, 360, false, 0xff5500).setOrigin(0.5);
+    this.#elementLabel = this.add.text(elemX + 13, elemY + 1, 'FIRE', {
+      fontFamily: ASSET_KEYS.FONT_PRESS_START_2P,
+      fontSize: '5px',
+      color: '#ff5500',
+    }).setOrigin(0);
+    this.#elementHintText = this.add.text(elemX, elemY + 12, '[CTRL]', {
+      fontFamily: ASSET_KEYS.FONT_PRESS_START_2P,
+      fontSize: '4px',
+      color: '#888888',
+    }).setOrigin(0);
+
     // register event listeners
     EVENT_BUS.on(CUSTOM_EVENTS.PLAYER_HEALTH_UPDATED, this.updateHealthInHud, this);
     EVENT_BUS.on(CUSTOM_EVENTS.SHOW_DIALOG, this.showDialog, this);
     EVENT_BUS.on(CUSTOM_EVENTS.MANA_UPDATED, this.updateManaInHud, this);
+    EVENT_BUS.on(CUSTOM_EVENTS.ELEMENT_CHANGED, this.#updateElementIndicator, this);
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       EVENT_BUS.off(CUSTOM_EVENTS.PLAYER_HEALTH_UPDATED, this.updateHealthInHud, this);
       EVENT_BUS.off(CUSTOM_EVENTS.SHOW_DIALOG, this.showDialog, this);
       EVENT_BUS.off(CUSTOM_EVENTS.MANA_UPDATED, this.updateManaInHud, this);
+      EVENT_BUS.off(CUSTOM_EVENTS.ELEMENT_CHANGED, this.#updateElementIndicator, this);
     });
   }
 
@@ -120,5 +142,20 @@ export class UiScene extends Phaser.Scene {
   public updateManaInHud(data: ManaUpdatedData): void {
     const percent = data.currentMana / data.maxMana;
     this.#manaBarFill.setScale(percent, 1);
+  }
+
+  #updateElementIndicator(data: ElementChangedData): void {
+    const colorMap: Record<Element, number> = {
+      FIRE: 0xff5500,
+      THUNDER: 0xffdd00,
+      EARTH: 0x886633,
+      ICE: 0x22ccff,
+      WIND: 0x44ff99,
+    };
+    const hexColor = colorMap[data.element] ?? 0xffffff;
+    const cssColor = `#${hexColor.toString(16).padStart(6, '0')}`;
+    this.#elementGem.setFillStyle(hexColor);
+    this.#elementLabel.setText(data.element);
+    this.#elementLabel.setColor(cssColor);
   }
 }

@@ -13,6 +13,7 @@ export class KeyboardComponent extends InputComponent {
   #debugToggleKey: Phaser.Input.Keyboard.Key;
   #actionKey: Phaser.Input.Keyboard.Key;
   #enterKey: Phaser.Input.Keyboard.Key;
+  #ctrlKey: Phaser.Input.Keyboard.Key;
 
   constructor(scene: Phaser.Scene, keyboardPlugin: Phaser.Input.Keyboard.KeyboardPlugin) {
     super();
@@ -27,8 +28,10 @@ export class KeyboardComponent extends InputComponent {
     this.#actionKey = keyboardPlugin.addKey(Phaser.Input.Keyboard.KeyCodes.E);
     this.#enterKey = keyboardPlugin.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
     this.#debugToggleKey = keyboardPlugin.addKey(Phaser.Input.Keyboard.KeyCodes.P);
+    this.#ctrlKey = keyboardPlugin.addKey(Phaser.Input.Keyboard.KeyCodes.CTRL);
 
     // WASD = movement
+    // CTRL = hold to open radial element-selection menu
     // 1 = spell slot 1 (Fire Bolt)
     // 2 = spell slot 2 (Fire Area)
     // 3 = spell slot 3 (Fire Breath - hold)
@@ -92,6 +95,10 @@ export class KeyboardComponent extends InputComponent {
 
   get isDebugToggleKeyJustDown(): boolean {
     return Phaser.Input.Keyboard.JustDown(this.#debugToggleKey);
+  }
+
+  get isRadialMenuKeyJustDown(): boolean {
+    return Phaser.Input.Keyboard.JustDown(this.#ctrlKey);
   }
 
   get mouseWorldX(): number {

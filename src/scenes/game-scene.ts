@@ -46,6 +46,8 @@ import { Drow } from '../game-objects/enemies/boss/drow';
 import { FireBolt } from '../game-objects/spells/fire-bolt';
 import { FireArea } from '../game-objects/spells/fire-area';
 import { FireBreath } from '../game-objects/spells/fire-breath';
+import { EarthBolt } from '../game-objects/spells/earth-bolt';
+import { EarthFireExplosion } from '../game-objects/spells/earth-fire-explosion';
 
 export class GameScene extends Phaser.Scene {
   #levelData!: LevelData;
@@ -122,6 +124,14 @@ export class GameScene extends Phaser.Scene {
     this.#updateFireSpellCombos();
     this.#updateFireBreathChanneling();
     this.#updateFireBreathAreaCombo();
+    this.#updateEarthFireCombo();
+    this.#handleRadialMenuInput();
+  }
+
+  #handleRadialMenuInput(): void {
+    if (!this.#controls.isRadialMenuKeyJustDown) return;
+    if (this.scene.isActive(SCENE_KEYS.RADIAL_MENU_SCENE)) return;
+    this.scene.launch(SCENE_KEYS.RADIAL_MENU_SCENE);
   }
 
   #configureArcadeDebug(): void {
@@ -337,6 +347,43 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  /**
+   * Detects overlaps between EarthBolt and FireBolt projectiles.
+   * When the two meet, both are consumed and a large combo explosion is triggered.
+   */
+  #updateEarthFireCombo(): void {
+    if (!this.#player?.spellCastingComponent?.spellGroup) {
+      return;
+    }
+
+    const spellChildren = this.#player.spellCastingComponent.spellGroup.getChildren();
+    const earthBolts = spellChildren.filter((s): s is EarthBolt => s instanceof EarthBolt && s.active);
+    const fireBolts = spellChildren.filter((s): s is FireBolt => s instanceof FireBolt && s.active);
+
+    if (earthBolts.length === 0 || fireBolts.length === 0) {
+      return;
+    }
+
+    for (const earthBolt of earthBolts) {
+      for (const fireBolt of fireBolts) {
+        // physics.overlap returns false once either body is disabled, preventing double-triggers
+        if (this.physics.overlap(earthBolt, fireBolt)) {
+          const midX = (earthBolt.x + fireBolt.x) / 2;
+          const midY = (earthBolt.y + fireBolt.y) / 2;
+
+          // Consume both projectiles
+          earthBolt.triggerFireCombo();
+          fireBolt.explode();
+
+          // Spawn the combo explosion and add it to the spell group so existing
+          // overlap colliders detect it against enemies
+          const explosion = new EarthFireExplosion(this, midX, midY);
+          this.#player.spellCastingComponent.spellGroup.add(explosion);
+        }
+      }
+    }
+  }
+
   #registerColliders(): void {
     // collision between player and map walls
     this.#collisionLayer.setCollision([this.#collisionLayer.tileset[0].firstgid]);
@@ -453,6 +500,21 @@ export class GameScene extends Phaser.Scene {
               return;
             }
 
+            // check if it's an EarthBolt projectile - explode on hit
+            if (spellObj instanceof EarthBolt) {
+              enemyGameObject.hit(DIRECTION.DOWN, spellObj.baseDamage);
+              spellObj.explode();
+              return;
+            }
+
+            // EarthFireExplosion AoE damage (only when damage phase is active)
+            if (spellObj instanceof EarthFireExplosion) {
+              if (spellObj.isDamageActive && !enemyGameObject.isDefeated) {
+                enemyGameObject.hit(DIRECTION.DOWN, spellObj.baseDamage);
+              }
+              return;
+            }
+
             // FireArea overlap is handled via tick damage, just track enemies in area
             if (spellObj instanceof FireArea) {
               spellObj.addEnemyInArea(enemyGameObject);
@@ -499,12 +561,15 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
-    // Register spell projectile vs walls collider (FireBolt explodes on walls)
+    // Register spell projectile vs walls collider (FireBolt and EarthBolt explode on walls)
     this.physics.add.collider(
       this.#player.spellCastingComponent.spellGroup,
       this.#collisionLayer,
       (spellObj) => {
         if (spellObj instanceof FireBolt) {
+          spellObj.explode();
+        }
+        if (spellObj instanceof EarthBolt) {
           spellObj.explode();
         }
       },

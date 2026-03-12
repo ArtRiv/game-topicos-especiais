@@ -1,0 +1,28 @@
+/**
+ * Runtime-mutable copy of the static config constants.
+ * Spells read values from here at cast-time so the debug panel can
+ * change them live without reloading the page.
+ */
+import {
+  FIRE_BOLT_SPEED,
+  FIRE_BOLT_DAMAGE,
+  FIRE_BOLT_COOLDOWN,
+  EARTH_BOLT_SPEED,
+  EARTH_BOLT_DAMAGE,
+  EARTH_BOLT_COOLDOWN,
+  EARTH_FIRE_EXPLOSION_DAMAGE,
+  EARTH_FIRE_EXPLOSION_SCALE,
+  EARTH_FIRE_EXPLOSION_BODY_RADIUS,
+} from './config';
+
+export const RUNTIME_CONFIG = {
+  FIRE_BOLT_SPEED,
+  FIRE_BOLT_DAMAGE,
+  FIRE_BOLT_COOLDOWN,
+  EARTH_BOLT_SPEED,
+  EARTH_BOLT_DAMAGE,
+  EARTH_BOLT_COOLDOWN,
+  EARTH_FIRE_EXPLOSION_DAMAGE,
+  EARTH_FIRE_EXPLOSION_SCALE,
+  EARTH_FIRE_EXPLOSION_BODY_RADIUS,
+};
