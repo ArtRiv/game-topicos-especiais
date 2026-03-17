@@ -5,6 +5,7 @@ import { ASSET_KEYS } from '../../common/assets';
 import { ELEMENT, SPELL_ID, SPELL_TYPE } from '../../common/common';
 import {
   EARTH_BOLT_IMPACT_FORWARD_OFFSET,
+  EARTH_BOLT_IMPACT_ROTATION_OFFSET,
   EARTH_BOLT_LIFETIME,
   EARTH_BOLT_MANA_COST,
   EARTH_BOLT_COOLDOWN,
@@ -79,7 +80,7 @@ export class EarthBolt extends Phaser.Physics.Arcade.Sprite implements ActiveSpe
       this.x + Math.cos(impactAngle) * EARTH_BOLT_IMPACT_FORWARD_OFFSET,
       this.y + Math.sin(impactAngle) * EARTH_BOLT_IMPACT_FORWARD_OFFSET,
     );
-    this.setRotation(impactAngle);
+    this.setRotation(impactAngle + EARTH_BOLT_IMPACT_ROTATION_OFFSET);
     this.setVisible(true);
     this.play(ASSET_KEYS.EARTH_BOLT_IMPACT);
     this.once(`animationcomplete-${ASSET_KEYS.EARTH_BOLT_IMPACT}`, () => {

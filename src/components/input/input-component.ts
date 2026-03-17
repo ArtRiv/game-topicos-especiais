@@ -147,6 +147,10 @@ export class InputComponent {
     this.#spell3Key = val;
   }
 
+  get isSpell3KeyJustDown(): boolean {
+    return false;
+  }
+
   get isRadialMenuKeyJustDown(): boolean {
     return this.#radialMenuKey;
   }

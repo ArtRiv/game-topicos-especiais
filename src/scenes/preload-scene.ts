@@ -3,6 +3,7 @@ import { SCENE_KEYS } from './scene-keys';
 import { ASSET_KEYS, ASSET_PACK_KEYS } from '../common/assets';
 import { LevelData } from '../common/types';
 import { DataManager } from '../common/data-manager';
+import { EARTH_WALL_ANIM } from '../game-objects/spells/earth-wall-pillar';
 
 export class PreloadScene extends Phaser.Scene {
   constructor() {
@@ -175,6 +176,23 @@ export class PreloadScene extends Phaser.Scene {
       frames: this.anims.generateFrameNumbers(ASSET_KEYS.EARTH_FIRE_EXPLOSION, { start: 0, end: 15 }),
       frameRate: 18,
       repeat: 0,
+    });
+
+    // Earth Wall: emerge animation — frames 1–4 (frame 0 is empty/padding)
+    this.anims.create({
+      key: EARTH_WALL_ANIM.EMERGE,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.EARTH_WALL, { start: 1, end: 4 }),
+      frameRate: 10,
+      repeat: 0,
+    });
+
+    // Earth Wall: disappear animation — frames 5–13 (frames 14–15 are empty)
+    this.anims.create({
+      key: EARTH_WALL_ANIM.DISAPPEAR,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.EARTH_WALL, { start: 5, end: 13 }),
+      frameRate: 12,
+      repeat: 0,
+      hideOnComplete: true,
     });
   }
 }

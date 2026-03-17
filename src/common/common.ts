@@ -51,6 +51,7 @@ export const SPELL_ID = {
   FIRE_AREA: 'FIRE_AREA',
   FIRE_BREATH: 'FIRE_BREATH',
   EARTH_BOLT: 'EARTH_BOLT',
+  EARTH_WALL: 'EARTH_WALL',
 } as const;
 
 export const DEFAULT_UI_TEXT_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {

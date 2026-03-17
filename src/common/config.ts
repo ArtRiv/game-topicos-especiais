@@ -60,7 +60,9 @@ export const EARTH_BOLT_MANA_COST = 1;
 export const EARTH_BOLT_COOLDOWN = 600; // ms - slightly slower than fire bolt
 export const EARTH_BOLT_SPEED = 600; // slower, heavier rock
 export const EARTH_BOLT_LIFETIME = 2200; // ms before auto-destroy
-export const EARTH_BOLT_IMPACT_FORWARD_OFFSET = 0;
+export const EARTH_BOLT_IMPACT_FORWARD_OFFSET = 16;
+// The impact sprite is drawn horizontally while the firebolt's is vertical — offset by 90° so both align the same way.
+export const EARTH_BOLT_IMPACT_ROTATION_OFFSET = Math.PI / 2;
 
 // EarthBolt + FireArea combo: Lava Pool
 export const LAVA_POOL_DAMAGE_PER_TICK = 1;
@@ -73,6 +75,15 @@ export const LAVA_POOL_BODY_RADIUS = 14; // AoE circle radius in px
 export const EARTH_FIRE_EXPLOSION_DAMAGE = 5;
 export const EARTH_FIRE_EXPLOSION_SCALE = 2.0;
 export const EARTH_FIRE_EXPLOSION_BODY_RADIUS = 20;
+
+// Earth Wall (area protection)
+export const EARTH_WALL_PILLAR_HP = 5;
+export const EARTH_WALL_PILLAR_COUNT = 3;
+export const EARTH_WALL_PILLAR_SPACING = 32;
+export const EARTH_WALL_DURATION = 8000; // ms the wall stays up
+export const EARTH_WALL_MANA_COST = 10;
+export const EARTH_WALL_COOLDOWN = 5000; // ms
+export const EARTH_WALL_HIT_FLASH_DURATION = 80; // ms white flash on hit
 
 // Fire Bolt (projectile)
 export const FIRE_BOLT_DAMAGE = 1;

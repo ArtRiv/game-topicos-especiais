@@ -139,6 +139,17 @@
     ]
   },
   {
+    "path": "assets/spells/Earth Effect 02",
+    "files": [
+      {
+        "type": "spritesheet",
+        "key": "EARTH_WALL",
+        "url": "Earth Wall.png",
+        "frameConfig": { "frameWidth": 48, "frameHeight": 48 }
+      }
+    ]
+  },
+  {
     "path": "assets/spells/Fire Effect 1",
     "files": [
       {

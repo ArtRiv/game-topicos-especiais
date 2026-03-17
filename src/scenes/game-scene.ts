@@ -6,7 +6,7 @@ import { KeyboardComponent } from '../components/input/keyboard-component';
 import { Spider } from '../game-objects/enemies/spider';
 import { Wisp } from '../game-objects/enemies/wisp';
 import { CharacterGameObject } from '../game-objects/common/character-game-object';
-import { CHEST_REWARD_TO_DIALOG_MAP, DIRECTION } from '../common/common';
+import { CHEST_REWARD_TO_DIALOG_MAP, DIRECTION, ELEMENT } from '../common/common';
 import * as CONFIG from '../common/config';
 import { Pot } from '../game-objects/objects/pot';
 import { Chest } from '../game-objects/objects/chest';
@@ -49,6 +49,14 @@ import { FireBreath } from '../game-objects/spells/fire-breath';
 import { EarthBolt } from '../game-objects/spells/earth-bolt';
 import { EarthFireExplosion } from '../game-objects/spells/earth-fire-explosion';
 import { LavaPool } from '../game-objects/spells/lava-pool';
+import { EarthWallPillar } from '../game-objects/spells/earth-wall-pillar';
+import { ElementManager } from '../common/element-manager';
+import {
+  EARTH_WALL_COOLDOWN,
+  EARTH_WALL_MANA_COST,
+  EARTH_WALL_PILLAR_COUNT,
+  EARTH_WALL_PILLAR_SPACING,
+} from '../common/config';
 
 export class GameScene extends Phaser.Scene {
   #levelData!: LevelData;
@@ -79,6 +87,8 @@ export class GameScene extends Phaser.Scene {
   #activeFireBreath: FireBreath | undefined;
   #fireBreathDamageTimer: Phaser.Time.TimerEvent | undefined;
   #activeFireBreathAreaCombos: Set<FireArea> = new Set();
+  #earthWallGroup!: Phaser.GameObjects.Group;
+  #earthWallLastCastTime: number = 0;
 
   constructor() {
     super({
@@ -113,6 +123,7 @@ export class GameScene extends Phaser.Scene {
     this.#setupPlayer();
     this.#setupCamera();
     this.#rewardItem = this.add.image(0, 0, ASSET_KEYS.UI_ICONS, 0).setVisible(false).setOrigin(0, 1);
+    this.#earthWallGroup = this.add.group();
 
     this.#registerColliders();
     this.#registerCustomEvents();
@@ -127,6 +138,7 @@ export class GameScene extends Phaser.Scene {
     this.#updateFireBreathAreaCombo();
     this.#updateEarthFireCombo();
     this.#updateEarthBoltFireAreaCombo();
+    this.#updateEarthWallSpell();
     this.#handleRadialMenuInput();
   }
 
@@ -167,6 +179,8 @@ export class GameScene extends Phaser.Scene {
 
   #updateFireBreathChanneling(): void {
     if (!this.#player?.active) return;
+    // When Earth element is active, key 3 casts EarthWall — skip fire breath
+    if (ElementManager.instance.activeElement === ELEMENT.EARTH) return;
 
     const controls = this.#controls;
     const isHolding = controls.isSpell3KeyDown;
@@ -226,12 +240,7 @@ export class GameScene extends Phaser.Scene {
     // Breath is active: lock player movement and update aim
     this.#controls.isMovementLocked = true;
     (this.#player.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
-    this.#activeFireBreath.update(
-      this.#player.x,
-      this.#player.y,
-      controls.mouseWorldX,
-      controls.mouseWorldY,
-    );
+    this.#activeFireBreath.update(this.#player.x, this.#player.y, controls.mouseWorldX, controls.mouseWorldY);
 
     this.#player.direction = this.#activeFireBreath.facingDirection;
     this.#player.setFlipX(this.#activeFireBreath.facingDirection === DIRECTION.LEFT);
@@ -421,6 +430,49 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * When the Earth element is active and key 3 is just-pressed, spawn a row
+   * of EarthWall pillars perpendicular to the player→cursor direction, centred
+   * on the cursor position.
+   */
+  #updateEarthWallSpell(): void {
+    if (!this.#player?.active) return;
+    if (ElementManager.instance.activeElement !== ELEMENT.EARTH) return;
+    if (!this.#controls.isSpell3KeyJustDown) return;
+
+    const now = this.time.now;
+    if (now - this.#earthWallLastCastTime < EARTH_WALL_COOLDOWN) return;
+    if (this.#player.manaComponent.mana < EARTH_WALL_MANA_COST) return;
+
+    this.#earthWallLastCastTime = now;
+    this.#player.manaComponent.consume(EARTH_WALL_MANA_COST);
+
+    const px = this.#player.x;
+    const py = this.#player.y;
+    const tx = this.#controls.mouseWorldX;
+    const ty = this.#controls.mouseWorldY;
+
+    const dx = tx - px;
+    const dy = ty - py;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    const ndx = len > 0 ? dx / len : 1;
+    const ndy = len > 0 ? dy / len : 0;
+
+    // Perpendicular to the player→cursor forward vector
+    const perpX = -ndy;
+    const perpY = ndx;
+
+    const half = Math.floor(EARTH_WALL_PILLAR_COUNT / 2);
+    for (let i = -half; i <= half; i++) {
+      const pillar = new EarthWallPillar(
+        this,
+        tx + perpX * i * EARTH_WALL_PILLAR_SPACING,
+        ty + perpY * i * EARTH_WALL_PILLAR_SPACING,
+      );
+      this.#earthWallGroup.add(pillar);
+    }
+  }
+
   #registerColliders(): void {
     // collision between player and map walls
     this.#collisionLayer.setCollision([this.#collisionLayer.tileset[0].firstgid]);
@@ -582,7 +634,20 @@ export class GameScene extends Phaser.Scene {
             weaponComponent.weapon.onCollisionCallback();
             this.#player.hit(DIRECTION.DOWN, weaponComponent.weaponDamage);
           });
+
+          // Enemy projectiles / weapons also damage earth wall pillars
+          this.physics.add.overlap(enemyWeapons, this.#earthWallGroup, (enemyWeaponBody, wallObj) => {
+            const pillar = wallObj as EarthWallPillar;
+            if (!pillar.active || pillar.isBeingDestroyed) return;
+            const weaponComponent = WeaponComponent.getComponent<WeaponComponent>(enemyWeaponBody as GameObject);
+            if (weaponComponent === undefined || weaponComponent.weapon === undefined) return;
+            weaponComponent.weapon.onCollisionCallback();
+            pillar.takeDamage(weaponComponent.weaponDamage);
+          });
         }
+
+        // Enemies collide with (cannot walk through) earth wall pillars
+        this.physics.add.collider(this.#objectsByRoomId[roomId].enemyGroup, this.#earthWallGroup);
       }
 
       // handle collisions between thrown pots and other objects in the current room
@@ -604,14 +669,27 @@ export class GameScene extends Phaser.Scene {
     });
 
     // Register spell projectile vs walls collider (FireBolt and EarthBolt explode on walls)
-    this.physics.add.collider(
+    this.physics.add.collider(this.#player.spellCastingComponent.spellGroup, this.#collisionLayer, (spellObj) => {
+      if (spellObj instanceof FireBolt) {
+        spellObj.explode();
+      }
+      if (spellObj instanceof EarthBolt) {
+        spellObj.explode();
+      }
+    });
+
+    // Player spell projectiles can crack Earth Wall pillars
+    this.physics.add.overlap(
       this.#player.spellCastingComponent.spellGroup,
-      this.#collisionLayer,
-      (spellObj) => {
+      this.#earthWallGroup,
+      (spellObj, wallObj) => {
+        const pillar = wallObj as EarthWallPillar;
+        if (!pillar.active || pillar.isBeingDestroyed) return;
         if (spellObj instanceof FireBolt) {
+          pillar.takeDamage(spellObj.baseDamage);
           spellObj.explode();
-        }
-        if (spellObj instanceof EarthBolt) {
+        } else if (spellObj instanceof EarthBolt) {
+          pillar.takeDamage(spellObj.baseDamage);
           spellObj.explode();
         }
       },
@@ -633,6 +711,7 @@ export class GameScene extends Phaser.Scene {
       EVENT_BUS.off(CUSTOM_EVENTS.BOSS_DEFEATED, this.#handleBossDefeated, this);
       this.#fireBreathDamageTimer?.destroy();
       this.#activeFireBreath?.destroy();
+      this.#earthWallGroup?.clear(true, true);
     });
   }
 
@@ -913,6 +992,9 @@ export class GameScene extends Phaser.Scene {
     const door = this.#objectsByRoomId[this.#currentRoomId].doorMap[doorTrigger.name] as Door;
     const modifiedLevelName = door.targetLevel.toUpperCase();
     if (isLevelName(modifiedLevelName)) {
+      // Disable the trigger immediately so overlap does not re-fire while
+      // the scene transition is being requested.
+      door.disableObject();
       const sceneData: LevelData = {
         level: modifiedLevelName,
         roomId: door.targetRoomId,
