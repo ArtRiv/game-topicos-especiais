@@ -6,13 +6,7 @@ import { ElementManager } from '../common/element-manager';
 import { Element } from '../common/types';
 
 // Elements shown in the radial menu, ordered clockwise from top
-const ELEMENTS: Element[] = [
-  ELEMENT.FIRE,
-  ELEMENT.THUNDER,
-  ELEMENT.EARTH,
-  ELEMENT.ICE,
-  ELEMENT.WIND,
-];
+const ELEMENTS: Element[] = [ELEMENT.FIRE, ELEMENT.THUNDER, ELEMENT.EARTH, ELEMENT.ICE, ELEMENT.WIND, ELEMENT.WATER];
 
 const ELEMENT_COLORS: Record<Element, number> = {
   FIRE: 0xff5500,
@@ -20,6 +14,7 @@ const ELEMENT_COLORS: Record<Element, number> = {
   EARTH: 0x886633,
   ICE: 0x22ccff,
   WIND: 0x44ff99,
+  WATER: 0x0088ff,
 };
 
 const ELEMENT_LABELS: Record<Element, string> = {
@@ -28,6 +23,7 @@ const ELEMENT_LABELS: Record<Element, string> = {
   EARTH: 'EARTH',
   ICE: 'ICE',
   WIND: 'WIND',
+  WATER: 'WATER',
 };
 
 // Layout constants (all values in game-space pixels, game is 480×320)
@@ -181,6 +177,10 @@ export class RadialMenuScene extends Phaser.Scene {
 
     // Update centre label
     this.#centerText.setText(ELEMENT_LABELS[this.#selectedElement]);
-    this.#centerText.setColor(ELEMENT_COLORS[this.#selectedElement] ? `#${ELEMENT_COLORS[this.#selectedElement].toString(16).padStart(6, '0')}` : '#ffffff');
+    this.#centerText.setColor(
+      ELEMENT_COLORS[this.#selectedElement]
+        ? `#${ELEMENT_COLORS[this.#selectedElement].toString(16).padStart(6, '0')}`
+        : '#ffffff',
+    );
   }
 }

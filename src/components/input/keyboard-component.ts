@@ -93,6 +93,11 @@ export class KeyboardComponent extends InputComponent {
     return this.#spell3Key.isDown;
   }
 
+  // isSpell3KeyJustDown returns true only on the frame THREE is first pressed
+  get isSpell3KeyJustDown(): boolean {
+    return Phaser.Input.Keyboard.JustDown(this.#spell3Key);
+  }
+
   get isDebugToggleKeyJustDown(): boolean {
     return Phaser.Input.Keyboard.JustDown(this.#debugToggleKey);
   }

@@ -1,0 +1,338 @@
+# AI Context — Legend of the Wispguard
+
+> Drop this file into your context window before working on this project.  
+> It covers architecture, conventions, and everything you need to navigate and extend the codebase efficiently.
+
+---
+
+## 1. Project Overview
+
+**Legend of the Wispguard** — a Zelda-like top-down 2D dungeon game built with **Phaser 3 + TypeScript + Vite**.  
+The long-term goal is co-op (1–4 players, multiplayer planned but not yet implemented).  
+The current MVP is single-player with an elemental magic system (Fire + Earth implemented, Ice/Wind/Thunder planned).
+
+- **Entry point:** `src/main.ts`
+- **Dev server:** `pnpm start` → `http://localhost:8080`
+- **Build:** `pnpm build` → `dist/`
+- **Lint:** `pnpm lint`
+
+---
+
+## 2. Tech Stack
+
+| Tool | Version | Role |
+|---|---|---|
+| Phaser | 3.87.0 | Game framework |
+| TypeScript | latest | Language |
+| Vite | latest | Bundler / dev server |
+| Tiled | (map editor) | Level design — exports JSON |
+
+Static assets live in `public/`. Tiled map JSON and sprite sheets are in `public/assets/`.
+
+---
+
+## 3. Directory Structure
+
+```
+src/
+  main.ts                      ← Phaser.Game boot (registers all scenes)
+  common/
+    assets.ts                  ← ASSET_KEYS, CHARACTER_ANIMATIONS enums
+    common.ts                  ← Core enums: DIRECTION, ELEMENT, SPELL_ID, LEVEL_NAME, DUNGEON_ITEM …
+    config.ts                  ← ALL numeric constants (speeds, damage, cooldowns, durations)
+    runtime-config.ts          ← Mutable copy of some config values (for live debug panel tweaking)
+    types.ts                   ← TypeScript types re-exported from enums + shared types
+    event-bus.ts               ← Global Phaser EventEmitter (EVENT_BUS) + CUSTOM_EVENTS map
+    data-manager.ts            ← Singleton: persists player health, mana, chest/door state across rooms
+    element-manager.ts         ← Singleton: tracks actively selected element; emits ELEMENT_CHANGED
+    utils.ts                   ← Pure helpers (exhaustiveGuard, getDirectionOfObject, isLevelName …)
+    juice-utils.ts             ← Screen-shake, flash, tween helpers
+    tiled/
+      common.ts                ← Tiled layer names, door types, trap types, switch actions as enums
+      types.ts                 ← TiledRoomObject and related TS types
+      tiled-utils.ts           ← parsers: getTiledDoorObjectsFromMap, getTiledEnemyObjectsFromMap …
+  components/
+    game-object/               ← Attach-to-sprite components (composition over inheritance)
+      animation-component.ts
+      mana-component.ts        ← mana, maxMana, regen, consume()
+      life-component.ts        ← health, maxHealth, takeDamage()
+      speed-component.ts
+      direction-component.ts
+      weapon-component.ts      ← wraps a weapon game-object; tracks weaponDamage
+      spell-casting-component.ts  ← manages spell slots, cooldowns, mana check, castSpell()
+      invulnerable-component.ts
+      controls-component.ts
+      held-game-object-component.ts
+      throwable-object-component.ts
+      colliding-objects-component.ts
+      interactive-object-component.ts
+    input/
+      keyboard-component.ts    ← wraps Phaser keyboard; exposes isSpell1KeyJustDown etc.
+    inventory/
+      inventory-manager.ts     ← Singleton: area-scoped keys/bossKey/map/compass
+    state-machine/
+      state-machine.ts
+      states/character/        ← All player/enemy states
+  game-objects/
+    common/
+      character-game-object.ts ← Base class for Player + enemies; owns StateMachine + components
+    player/
+      player.ts                ← Extends CharacterGameObject; owns SpellCastingComponent + ManaComponent
+    enemies/
+      spider.ts
+      wisp.ts
+      boss/drow.ts
+    objects/
+      door.ts
+      chest.ts
+      pot.ts
+    spells/
+      base-spell.ts            ← SpellConfig + ActiveSpell interfaces
+      fire-bolt.ts             ← Projectile (FIRE)
+      fire-area.ts             ← AoE pool (FIRE)
+      fire-breath.ts           ← Channeled cone (FIRE)
+      earth-bolt.ts            ← Projectile (EARTH)
+      earth-wall-pillar.ts     ← Instantiated N-at-a-time; blocks enemies + takes damage
+      earth-fire-explosion.ts  ← Combo effect: EarthBolt hits FireArea
+      lava-pool.ts             ← Combo effect: FireArea + EarthBolt overlap
+    weapons/
+  scenes/
+    scene-keys.ts              ← SCENE_KEYS enum
+    preload-scene.ts           ← Loads all assets; boots into GameScene
+    game-scene.ts              ← Main scene — map, player, enemies, spells, transitions ← most code lives here
+    ui-scene.ts                ← HUD overlay (health, mana, element indicator)
+    radial-menu-scene.ts       ← Element/spell selector (pause overlay)
+    game-over-scene.ts
+  debug/
+    debug-panel.ts             ← dat.GUI panel; writes to RUNTIME_CONFIG
+```
+
+---
+
+## 4. Singletons (Module-level, not scene-scoped)
+
+| Class | Import from | Purpose |
+|---|---|---|
+| `DataManager.instance` | `common/data-manager` | Player HP/mana + chest & door persistence per room |
+| `InventoryManager.instance` | `components/inventory/inventory-manager` | Keys, boss key, map, compass per area |
+| `ElementManager.instance` | `common/element-manager` | Active element; call `setElement(ELEMENT.FIRE)` |
+| `EVENT_BUS` | `common/event-bus` | Global Phaser EventEmitter for cross-system events |
+| `RUNTIME_CONFIG` | `common/runtime-config` | Live-tweakable copy of some config constants |
+
+**Important:** These singletons are created once and survive scene restarts. Reset state manually if needed (e.g., `DataManager` resets health on game-over).
+
+---
+
+## 5. Event Bus — CUSTOM_EVENTS
+
+```ts
+OPENED_CHEST          // payload: Chest
+ENEMY_DESTROYED       // payload: none
+PLAYER_DEFEATED       // payload: none
+PLAYER_HEALTH_UPDATED // payload: PlayerHealthUpdated { currentHealth, previousHealth, type }
+SHOW_DIALOG           // payload: string
+DIALOG_CLOSED         // payload: none
+BOSS_DEFEATED         // payload: none
+SPELL_CAST            // payload: { spellId, slotIndex }
+MANA_UPDATED          // payload: { current, max }
+ELEMENT_CHANGED       // payload: ElementChangedData { element }
+```
+
+**Pattern:** Subscribe in `create()` / `init()`, always unsubscribe in `SHUTDOWN` event handler.
+
+```ts
+EVENT_BUS.on(CUSTOM_EVENTS.EXAMPLE, this.#handler, this);
+this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+  EVENT_BUS.off(CUSTOM_EVENTS.EXAMPLE, this.#handler, this);
+});
+```
+
+---
+
+## 6. Scene Flow
+
+```
+PreloadScene
+  └─► GameScene (receives LevelData: { level, roomId, doorId })
+        ├─► launches UIScene (HUD overlay, always alongside GameScene)
+        └─► can launch RadialMenuScene (pauses GameScene while open)
+  └─► GameOverScene (on player death)
+```
+
+`GameScene` is restarted (with new `LevelData`) every time the player exits to a different **level** (e.g. DUNGEON_1 → WORLD). Room transitions *within* the same level are handled in-place (camera + player tween) without restarting the scene.
+
+---
+
+## 7. Level / Room System (Tiled)
+
+- Levels defined in `LEVEL_NAME`: `WORLD`, `DUNGEON_1`
+- Each level has a Tiled JSON tilemap loaded under `ASSET_KEYS[`${level}_LEVEL`]`
+- **Rooms** are rectangles on the `rooms` object layer; each has an `id` property
+- **Doors** connect rooms. Key Tiled properties: `id`, `targetDoorId`, `targetRoomId`, `targetLevel`, `doorType`, `direction`
+- `doorType` values: `OPEN | LOCK | TRAP | BOSS | OPEN_ENTRANCE`
+- `trapDoorTrigger` values: `NONE | ENEMIES_DEFEATED | SWITCH | BOSS_DEFEATED`
+- `#objectsByRoomId` in `GameScene` maps `roomId → { doors, doorMap, chests, chestMap, pots, switches, enemyGroup, room }`
+- Room objects are made **visible/active** only when the player enters that room (`#showObjectsInRoomById`)
+
+---
+
+## 8. Player
+
+`src/game-objects/player/player.ts` extends `CharacterGameObject`.
+
+**Key components attached:**
+- `animationComponent` — plays named animations like `IDLE_UP`, `RUN_LEFT`
+- `lifeComponent` — current/max HP
+- `manaComponent` — current/max mana, regen, `consume(n)`
+- `speedComponent`
+- `directionComponent`
+- `stateMachine` — see §9
+- `spellCastingComponent` — see §10
+- `weaponComponent` (sword, used for melee — still present but spell system is primary)
+
+**Controls (KeyboardComponent):**
+- Arrow keys — movement
+- `Z` — cast spell slot 1 (FireBolt / EarthBolt depending on element)
+- `X` — cast spell slot 2 (FireArea) / lift-throw objects
+- `3` key with EARTH element — cast EarthWall (handled directly in `GameScene.#updateEarthWallSpell`)
+- Hold `Z` with FIRE element — channels FireBreath (handled directly in `GameScene.#updateFireBreathChanneling`)
+- Tab/radial key — open RadialMenuScene to switch element
+- `F2` — toggle hitbox debug
+- `Enter` in menus
+
+---
+
+## 9. State Machine (CharacterGameObject)
+
+All characters use `StateMachine` composed of states from `CHARACTER_STATES`:
+
+```ts
+IDLE_STATE | MOVE_STATE | BOUNCE_MOVE_STATE | HURT_STATE | DEATH_STATE
+LIFT_STATE | OPEN_CHEST_STATE | IDLE_HOLDING_STATE | MOVE_HOLDING_STATE
+THROW_STATE | ATTACK_STATE | HIDDEN_STATE | TELEPORT_STATE
+PREPARE_ATTACK_STATE | CASTING_STATE
+```
+
+Transitions: call `character.stateMachine.setState(CHARACTER_STATES.X)`.
+
+---
+
+## 10. Spell System
+
+### Architecture
+
+```
+SpellCastingComponent (on Player)
+  ├── #spellSlots: SpellSlot[]  (indexed 0, 1)
+  ├── #spellGroup: Phaser.GameObjects.Group  ← colliders are registered against this
+  └── castSpell(slotIndex, casterX, casterY, targetX, targetY) → ActiveSpell | undefined
+```
+
+Slot 0 is context-sensitive: casts `FireBolt` when element=FIRE, `EarthBolt` when element=EARTH.  
+Slot 1 casts `FireArea` regardless of element.
+
+`EarthWall` and `FireBreath` bypass `SpellCastingComponent` — they are handled directly in `GameScene`:
+- `#updateEarthWallSpell()`: key 3 + EARTH element → spawns `EarthWallPillar` objects into `#earthWallGroup`
+- `#updateFireBreathChanneling()`: hold Z + FIRE element → creates/updates `FireBreath` instance
+
+### Spell classes (all in `src/game-objects/spells/`)
+
+| Class | Type | Element | Key details |
+|---|---|---|---|
+| `FireBolt` | Projectile | FIRE | Explodes on hit; triggers FireArea combo |
+| `FireArea` | AoE pool | FIRE | Periodic damage; reacts to FireBolt/FireBreath hits |
+| `FireBreath` | Channeled | FIRE | Held Z; drains mana per tick; cone detection |
+| `EarthBolt` | Projectile | EARTH | Like FireBolt but slower/heavier; triggers LavaPool combo |
+| `EarthWallPillar` | Static barrier | EARTH | Has HP; blocks enemies; destroyed on death anim |
+| `EarthFireExplosion` | Combo AoE | FIRE+EARTH | Spawned when EarthBolt hits FireArea |
+| `LavaPool` | Combo AoE | FIRE+EARTH | Spawned when FireArea+EarthBolt overlap |
+
+### Combos (tracked in GameScene)
+
+| Combo | Trigger | Result |
+|---|---|---|
+| FireBolt → FireArea | FireBolt overlaps FireArea | FireArea enters "boosted" state (more damage, bigger, faster) |
+| FireBreath → FireArea | FireBreath cone covers FireArea | FireArea enters "boosted" combo state |
+| EarthBolt → FireArea | EarthBolt hits FireArea | Spawns `EarthFireExplosion` |
+| EarthBolt + FireArea overlap | Ongoing overlap | Spawns `LavaPool` |
+
+Active combo tracking: `#activeFireAreaOverlapsByBolt: Map<FireBolt, Set<FireArea>>` and `#activeFireBreathAreaCombos: Set<FireArea>`.
+
+---
+
+## 11. Enemies
+
+| Class | File | Behaviour |
+|---|---|---|
+| `Spider` | `enemies/spider.ts` | Random walk (BounceMove state); basic melee |
+| `Wisp` | `enemies/wisp.ts` | Float/pulse; ignores thrown objects |
+| `Drow` (boss) | `enemies/boss/drow.ts` | State machine: IDLE→TELEPORT→PREPARE_ATTACK→ATTACK |
+
+Enemies extend `CharacterGameObject`. To add a new enemy: extend `CharacterGameObject`, register in `#createEnemiesForRoom()` in `GameScene`, add to `enemyGroup`.
+
+---
+
+## 12. config.ts — Key Constants
+
+All tunable numbers live here. Spells read from `RUNTIME_CONFIG` at cast-time (not directly from `config.ts`) so the debug panel can override them live.
+
+```
+PLAYER_SPEED = 80          PLAYER_START_MAX_HEALTH = 6
+PLAYER_MAX_MANA = 100      PLAYER_MANA_REGEN_RATE = 5 (per second)
+
+FIRE_BOLT_DAMAGE = 1       FIRE_BOLT_SPEED = 750     FIRE_BOLT_COOLDOWN = 500ms
+FIRE_AREA_DAMAGE_PER_TICK = 1                         FIRE_AREA_DURATION = 5000ms
+FIRE_BREATH_DAMAGE_PER_TICK = 1  FIRE_BREATH_MAX_REACH = 96px
+EARTH_BOLT_DAMAGE = 1      EARTH_BOLT_SPEED = 600
+EARTH_WALL_PILLAR_COUNT = 6  EARTH_WALL_PILLAR_HP = 5  EARTH_WALL_MANA_COST = 10
+LAVA_POOL_DURATION = 5000ms    EARTH_FIRE_EXPLOSION_DAMAGE = 5
+```
+
+---
+
+## 13. Common Patterns & Conventions
+
+### Components
+All components extend `BaseGameObjectComponent`. They receive the owning `GameObject` in their constructor. Access the owner via `this.gameObject`.
+
+### Phaser Group cleanup (IMPORTANT)
+`Phaser.GameObjects.Group` created via `scene.add.group()` registers its own `SHUTDOWN` listener that calls `group.destroy()` (sets `children = undefined`) **before** manually-registered `SHUTDOWN` handlers.  
+**Never call `group.clear()` or `group.destroy()` in your own `SHUTDOWN` handler** — Phaser already cleans up the group, and doing so will crash with `Cannot read properties of undefined (reading 'size')`.
+
+### Physics bodies
+- `isArcadePhysicsBody(body)` — utility guard from `utils.ts`
+- All enemy/player bodies are dynamic `Phaser.Physics.Arcade.Body`
+- `EarthWallPillar` body is immovable static — set `body.enable = false` when playing death anim
+
+### Tiled object parsing
+Use helpers from `tiled/tiled-utils.ts` — do not read Tiled object layers manually.
+
+### Asset keys
+All keys are in `ASSET_KEYS` (from `common/assets.ts`). Level assets follow pattern `${LEVEL_NAME}_LEVEL`, `${LEVEL_NAME}_BACKGROUND`, `${LEVEL_NAME}_FOREGROUND`.
+
+### TypeScript
+Private fields use `#` syntax (ES2022 private class fields), not `private` keyword.  
+`exhaustiveGuard(x)` in `utils.ts` ensures switch statements are exhaustive.
+
+---
+
+## 14. What's Implemented vs Planned
+
+### ✅ Implemented
+- Single-player dungeon traversal with room transitions
+- Two levels: WORLD and DUNGEON_1
+- Full elemental magic: Fire (Bolt, Area, Breath) + Earth (Bolt, Wall)
+- Spell combos: FireBolt→FireArea boost, FireBreath→FireArea boost, EarthBolt→FireArea explosion, Lava Pool
+- State machine (all player + boss states)
+- Enemies: Spider, Wisp, Drow boss
+- Inventory (keys, boss key, map, compass), chest system, locked doors
+- HUD scene, radial element menu, game-over scene
+- DataManager persistence across room transitions
+- Debug panel (dat.GUI) via `debug/debug-panel.ts`
+
+### 🔲 Planned / In Docs
+- Multiplayer (co-op, 1–4 players online) — networking not started
+- Additional elements: Ice, Wind, Thunder
+- More spell types, cross-element combos
+- More enemy types with elemental resistances/weaknesses
+- More levels/biomes

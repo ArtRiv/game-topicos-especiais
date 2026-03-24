@@ -123,6 +123,8 @@ export abstract class CharacterGameObject extends Phaser.Physics.Arcade.Sprite i
 
   public update(): void {
     this._stateMachine.update();
+    // Keep depth in sync with Y so entities lower on screen render in front
+    this.setDepth(this.y);
   }
 
   public hit(direction: Direction, damage: number): void {

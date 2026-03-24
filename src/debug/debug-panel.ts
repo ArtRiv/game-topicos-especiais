@@ -1,4 +1,5 @@
 import { RUNTIME_CONFIG } from '../common/runtime-config';
+import { CUSTOM_EVENTS, EVENT_BUS } from '../common/event-bus';
 
 interface ParamDef {
   key: keyof typeof RUNTIME_CONFIG;
@@ -113,6 +114,23 @@ const PANEL_CSS = `
     letter-spacing: 1px;
   }
   #game-debug-panel .reset-btn:hover { background: #333; color: #fff; }
+  #game-debug-panel .action-btn {
+    margin-top: 8px;
+    width: 100%;
+    background: #263238;
+    color: #cfe8ff;
+    border: 1px solid #4b6b7a;
+    border-radius: 3px;
+    padding: 6px 0;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 10px;
+    letter-spacing: 1px;
+  }
+  #game-debug-panel .action-btn:hover {
+    background: #34505d;
+    color: #ffffff;
+  }
 `;
 
 export class DebugPanel {
@@ -167,6 +185,14 @@ export class DebugPanel {
     resetBtn.textContent = 'RESET TO DEFAULTS';
     resetBtn.addEventListener('click', () => this.#resetAll(panel));
     panel.appendChild(resetBtn);
+
+    const spawnObeliskBtn = document.createElement('button');
+    spawnObeliskBtn.className = 'action-btn';
+    spawnObeliskBtn.textContent = 'SPAWN FLYING OBELISK';
+    spawnObeliskBtn.addEventListener('click', () => {
+      EVENT_BUS.emit(CUSTOM_EVENTS.DEBUG_SPAWN_FLYING_OBELISK);
+    });
+    panel.appendChild(spawnObeliskBtn);
 
     return panel;
   }

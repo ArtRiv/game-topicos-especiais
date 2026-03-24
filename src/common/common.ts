@@ -38,6 +38,7 @@ export const ELEMENT = {
   EARTH: 'EARTH',
   WIND: 'WIND',
   THUNDER: 'THUNDER',
+  WATER: 'WATER',
 } as const;
 
 export const SPELL_TYPE = {
@@ -51,6 +52,7 @@ export const SPELL_ID = {
   FIRE_AREA: 'FIRE_AREA',
   FIRE_BREATH: 'FIRE_BREATH',
   EARTH_BOLT: 'EARTH_BOLT',
+  WATER_SPIKE: 'WATER_SPIKE',
 } as const;
 
 export const DEFAULT_UI_TEXT_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {

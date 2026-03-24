@@ -139,6 +139,17 @@
     ]
   },
   {
+    "path": "assets/spells/Earth Effect 02",
+    "files": [
+      {
+        "type": "spritesheet",
+        "key": "EARTH_WALL",
+        "url": "Earth Wall.png",
+        "frameConfig": { "frameWidth": 48, "frameHeight": 48 }
+      }
+    ]
+  },
+  {
     "path": "assets/spells/Fire Effect 1",
     "files": [
       {
@@ -181,6 +192,28 @@
         "key": "EARTH_FIRE_EXPLOSION",
         "url": "Explosion SpriteSheet.png",
         "frameConfig": { "frameWidth": 64, "frameHeight": 64 }
+      }
+    ]
+  },
+  {
+    "path": "assets/spells/Water Effect 01/Water Effect SpriteSheet",
+    "files": [
+      {
+        "type": "spritesheet",
+        "key": "WATER_SPIKE",
+        "url": "Water Spike 01 - SpriteSheet.png",
+        "frameConfig": { "frameWidth": 64, "frameHeight": 80 }
+      }
+    ]
+  },
+  {
+    "path": "assets/spells/Water Effect 01/Start Up",
+    "files": [
+      {
+        "type": "spritesheet",
+        "key": "WATER_SPIKE_STARTUP",
+        "url": "Water StartUp 1 SpriteSheet.png",
+        "frameConfig": { "frameWidth": 64, "frameHeight": 16 }
       }
     ]
   },

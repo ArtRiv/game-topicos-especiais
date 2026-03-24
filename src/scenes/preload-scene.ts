@@ -84,7 +84,7 @@ export class PreloadScene extends Phaser.Scene {
       repeat: 0,
       delay: 0,
     });
-    
+
     // Loop: Active fire area (frames 10-12)
     this.anims.create({
       key: `${ASSET_KEYS.FIRE_AREA_EXPLOSION}_LOOP`,
@@ -93,7 +93,7 @@ export class PreloadScene extends Phaser.Scene {
       repeat: -1,
       delay: 0,
     });
-    
+
     // End: Fade out animation (frames 13+)
     this.anims.create({
       key: `${ASSET_KEYS.FIRE_AREA_EXPLOSION}_END`,
@@ -133,6 +133,28 @@ export class PreloadScene extends Phaser.Scene {
       frames: this.anims.generateFrameNumbers(ASSET_KEYS.FIRE_BREATH_HIT),
       frameRate: 14,
       repeat: -1,
+    });
+
+    // Earth Wall pillar animations (48x48 frames, 4x4 grid = 16 frames total)
+    // Frame 0 is empty; frames 14-15 are empty — skipped.
+    this.anims.create({
+      key: `${ASSET_KEYS.EARTH_WALL}_EMERGE`,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.EARTH_WALL, { start: 1, end: 2 }),
+      frameRate: 10,
+      repeat: 0,
+    });
+    this.anims.create({
+      key: `${ASSET_KEYS.EARTH_WALL}_IDLE`,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.EARTH_WALL, { start: 3, end: 4 }),
+      frameRate: 6,
+      repeat: -1,
+    });
+    this.anims.create({
+      key: `${ASSET_KEYS.EARTH_WALL}_CRUMBLE`,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.EARTH_WALL, { start: 5, end: 13 }),
+      frameRate: 12,
+      repeat: 0,
+      hideOnComplete: true,
     });
 
     // Earth Bolt projectile animation (frames 0-5, looping spinning rock)
@@ -175,6 +197,39 @@ export class PreloadScene extends Phaser.Scene {
       frames: this.anims.generateFrameNumbers(ASSET_KEYS.EARTH_FIRE_EXPLOSION, { start: 0, end: 15 }),
       frameRate: 18,
       repeat: 0,
+    });
+
+    // Water Spike startup anticipation (11 frames, 1-column sheet, 64×16 per frame)
+    this.anims.create({
+      key: `${ASSET_KEYS.WATER_SPIKE}_STARTUP`,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.WATER_SPIKE_STARTUP, { start: 0, end: 10 }),
+      frameRate: 10,
+      repeat: 0,
+    });
+
+    // Water Spike rise phase (frames 0-3, play once)
+    this.anims.create({
+      key: `${ASSET_KEYS.WATER_SPIKE}_RISE`,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.WATER_SPIKE, { start: 0, end: 3 }),
+      frameRate: 12,
+      repeat: 0,
+    });
+
+    // Water Spike loop phase (frames 4-7, looping)
+    this.anims.create({
+      key: `${ASSET_KEYS.WATER_SPIKE}_LOOP`,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.WATER_SPIKE, { start: 4, end: 7 }),
+      frameRate: 10,
+      repeat: -1,
+    });
+
+    // Water Spike fade phase (frames 8-15, play once then hide)
+    this.anims.create({
+      key: `${ASSET_KEYS.WATER_SPIKE}_FADE`,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.WATER_SPIKE, { start: 8, end: 15 }),
+      frameRate: 10,
+      repeat: 0,
+      hideOnComplete: true,
     });
   }
 }

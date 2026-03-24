@@ -8,14 +8,10 @@ import { ActiveSpell } from '../../game-objects/spells/base-spell';
 import { FireBolt } from '../../game-objects/spells/fire-bolt';
 import { FireArea } from '../../game-objects/spells/fire-area';
 import { EarthBolt } from '../../game-objects/spells/earth-bolt';
+import { WaterSpike } from '../../game-objects/spells/water-spike';
 import { ElementManager } from '../../common/element-manager';
 import { RUNTIME_CONFIG } from '../../common/runtime-config';
-import {
-  FIRE_BOLT_COOLDOWN,
-  FIRE_BOLT_MANA_COST,
-  FIRE_AREA_COOLDOWN,
-  FIRE_AREA_MANA_COST,
-} from '../../common/config';
+import { FIRE_BOLT_COOLDOWN, FIRE_BOLT_MANA_COST, FIRE_AREA_COOLDOWN, FIRE_AREA_MANA_COST } from '../../common/config';
 
 export type SpellSlot = {
   spellId: SpellId;
@@ -81,14 +77,24 @@ export class SpellCastingComponent extends BaseGameObjectComponent {
 
   #getEffectiveCooldown(spellId: SpellId): number {
     if (spellId === SPELL_ID.FIRE_BOLT) {
-      return ElementManager.instance.activeElement === ELEMENT.EARTH
-        ? RUNTIME_CONFIG.EARTH_BOLT_COOLDOWN
-        : RUNTIME_CONFIG.FIRE_BOLT_COOLDOWN;
+      if (ElementManager.instance.activeElement === ELEMENT.EARTH) {
+        return RUNTIME_CONFIG.EARTH_BOLT_COOLDOWN;
+      }
+      if (ElementManager.instance.activeElement === ELEMENT.WATER) {
+        return RUNTIME_CONFIG.WATER_SPIKE_COOLDOWN;
+      }
+      return RUNTIME_CONFIG.FIRE_BOLT_COOLDOWN;
     }
     return this.#spellSlots.find((s) => s.spellId === spellId)?.cooldown ?? 0;
   }
 
-  public castSpell(slotIndex: number, casterX: number, casterY: number, targetX: number, targetY: number): ActiveSpell | undefined {
+  public castSpell(
+    slotIndex: number,
+    casterX: number,
+    casterY: number,
+    targetX: number,
+    targetY: number,
+  ): ActiveSpell | undefined {
     if (!this.canCast(slotIndex)) {
       return undefined;
     }
@@ -104,6 +110,8 @@ export class SpellCastingComponent extends BaseGameObjectComponent {
         const activeElement = ElementManager.instance.activeElement;
         if (activeElement === ELEMENT.EARTH) {
           spell = new EarthBolt(this.#scene, casterX, casterY, targetX, targetY);
+        } else if (activeElement === ELEMENT.WATER) {
+          spell = new WaterSpike(this.#scene, targetX, targetY);
         } else {
           spell = new FireBolt(this.#scene, casterX, casterY, targetX, targetY);
         }

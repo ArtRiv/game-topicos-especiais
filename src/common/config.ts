@@ -60,7 +60,9 @@ export const EARTH_BOLT_MANA_COST = 1;
 export const EARTH_BOLT_COOLDOWN = 600; // ms - slightly slower than fire bolt
 export const EARTH_BOLT_SPEED = 600; // slower, heavier rock
 export const EARTH_BOLT_LIFETIME = 2200; // ms before auto-destroy
-export const EARTH_BOLT_IMPACT_FORWARD_OFFSET = 0;
+export const EARTH_BOLT_IMPACT_FORWARD_OFFSET = 16;
+// The impact sprite is drawn horizontally while the firebolt's is vertical — offset by 90° so both align the same way.
+export const EARTH_BOLT_IMPACT_ROTATION_OFFSET = Math.PI / 2;
 
 // EarthBolt + FireArea combo: Lava Pool
 export const LAVA_POOL_DAMAGE_PER_TICK = 1;
@@ -73,6 +75,16 @@ export const LAVA_POOL_BODY_RADIUS = 14; // AoE circle radius in px
 export const EARTH_FIRE_EXPLOSION_DAMAGE = 5;
 export const EARTH_FIRE_EXPLOSION_SCALE = 2.0;
 export const EARTH_FIRE_EXPLOSION_BODY_RADIUS = 20;
+
+// Earth Wall (area protection)
+export const EARTH_WALL_PILLAR_HP = 5;
+export const EARTH_WALL_PILLAR_COUNT = 8;
+export const EARTH_WALL_PILLAR_SPACING = 8;
+export const EARTH_WALL_DURATION = 16000; // ms the wall stays up
+export const EARTH_WALL_MANA_COST = 0;
+export const EARTH_WALL_COOLDOWN = 100; // ms
+export const EARTH_WALL_HIT_FLASH_DURATION = 80; // ms white flash on hit
+export const EARTH_WALL_FIREBOLT_SPLASH_RADIUS = 24; // px — FireBolt hit damages adjacent pillars within this radius
 
 // Fire Bolt (projectile)
 export const FIRE_BOLT_DAMAGE = 1;
@@ -113,3 +125,10 @@ export const FIRE_BREATH_FIRE_AREA_ANGLE_TOLERANCE = 0.7; // wider cone to detec
 export const FIRE_BREATH_MOUTH_VERTICAL_OFFSET = 6; // pixels upward from player center
 export const FIRE_BREATH_HIT_SURFACE_OFFSET = 0; // pixels pulled away from the impact surface
 export const FIRE_BREATH_BEAM_CONTACT_OVERLAP = 10; // pixels of visual overlap so the flame reaches the hit point
+
+// Water Spike (area damage spell)
+export const WATER_SPIKE_DAMAGE = 2;
+export const WATER_SPIKE_MANA_COST = 2;
+export const WATER_SPIKE_COOLDOWN = 800; // ms
+export const WATER_SPIKE_LOOP_DURATION = 300; // ms the spike stays active (damage window)
+export const WATER_SPIKE_BODY_RADIUS = 20; // AoE circle radius in px

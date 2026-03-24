@@ -6,7 +6,7 @@ import { KeyboardComponent } from '../components/input/keyboard-component';
 import { Spider } from '../game-objects/enemies/spider';
 import { Wisp } from '../game-objects/enemies/wisp';
 import { CharacterGameObject } from '../game-objects/common/character-game-object';
-import { CHEST_REWARD_TO_DIALOG_MAP, DIRECTION } from '../common/common';
+import { CHEST_REWARD_TO_DIALOG_MAP, DIRECTION, ELEMENT } from '../common/common';
 import * as CONFIG from '../common/config';
 import { Pot } from '../game-objects/objects/pot';
 import { Chest } from '../game-objects/objects/chest';
@@ -49,6 +49,15 @@ import { FireBreath } from '../game-objects/spells/fire-breath';
 import { EarthBolt } from '../game-objects/spells/earth-bolt';
 import { EarthFireExplosion } from '../game-objects/spells/earth-fire-explosion';
 import { LavaPool } from '../game-objects/spells/lava-pool';
+import { EarthWallPillar } from '../game-objects/spells/earth-wall-pillar';
+import { WaterSpike } from '../game-objects/spells/water-spike';
+import { ElementManager } from '../common/element-manager';
+import {
+  EARTH_WALL_MANA_COST,
+  EARTH_WALL_PILLAR_COUNT,
+  EARTH_WALL_PILLAR_SPACING,
+  EARTH_WALL_FIREBOLT_SPLASH_RADIUS,
+} from '../common/config';
 
 export class GameScene extends Phaser.Scene {
   #levelData!: LevelData;
@@ -79,6 +88,18 @@ export class GameScene extends Phaser.Scene {
   #activeFireBreath: FireBreath | undefined;
   #fireBreathDamageTimer: Phaser.Time.TimerEvent | undefined;
   #activeFireBreathAreaCombos: Set<FireArea> = new Set();
+  #earthWallGroup!: Phaser.GameObjects.Group;
+  #debugFlyingObeliskGroup!: Phaser.GameObjects.Group;
+  // Draw-mode state for the EarthWall spell
+  // Phase 1: key 3 pressed → #earthWallPendingClick = true (waiting for mouse click)
+  // Phase 2: mouse clicked  → #earthWallDrawingMode = true (pillars follow cursor)
+  #earthWallPendingClick: boolean = false;
+  #earthWallDrawingMode: boolean = false;
+  #earthWallDrawingPillarCount: number = 0;
+  #earthWallLastPlacedX: number = -Infinity;
+  #earthWallLastPlacedY: number = -Infinity;
+  // Tracks previous-frame left-mouse state so we can detect a fresh click
+  #earthWallMouseWasDown: boolean = false;
 
   constructor() {
     super({
@@ -113,6 +134,8 @@ export class GameScene extends Phaser.Scene {
     this.#setupPlayer();
     this.#setupCamera();
     this.#rewardItem = this.add.image(0, 0, ASSET_KEYS.UI_ICONS, 0).setVisible(false).setOrigin(0, 1);
+    this.#earthWallGroup = this.add.group();
+    this.#debugFlyingObeliskGroup = this.add.group();
 
     this.#registerColliders();
     this.#registerCustomEvents();
@@ -127,6 +150,7 @@ export class GameScene extends Phaser.Scene {
     this.#updateFireBreathAreaCombo();
     this.#updateEarthFireCombo();
     this.#updateEarthBoltFireAreaCombo();
+    this.#updateEarthWallSpell();
     this.#handleRadialMenuInput();
   }
 
@@ -167,6 +191,8 @@ export class GameScene extends Phaser.Scene {
 
   #updateFireBreathChanneling(): void {
     if (!this.#player?.active) return;
+    // When Earth element is active, key 3 casts EarthWall — skip fire breath
+    if (ElementManager.instance.activeElement === ELEMENT.EARTH) return;
 
     const controls = this.#controls;
     const isHolding = controls.isSpell3KeyDown;
@@ -226,12 +252,7 @@ export class GameScene extends Phaser.Scene {
     // Breath is active: lock player movement and update aim
     this.#controls.isMovementLocked = true;
     (this.#player.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
-    this.#activeFireBreath.update(
-      this.#player.x,
-      this.#player.y,
-      controls.mouseWorldX,
-      controls.mouseWorldY,
-    );
+    this.#activeFireBreath.update(this.#player.x, this.#player.y, controls.mouseWorldX, controls.mouseWorldY);
 
     this.#player.direction = this.#activeFireBreath.facingDirection;
     this.#player.setFlipX(this.#activeFireBreath.facingDirection === DIRECTION.LEFT);
@@ -421,11 +442,83 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * EarthWall draw flow (3 phases):
+   *  1. Press 3 → enters "pending click" state (checks mana, waits for a mouse click to confirm).
+   *  2. Left mouse click → begins drawing; pillars are spawned as the cursor moves.
+   *  3. Cursor moved ≥ EARTH_WALL_PILLAR_SPACING px from last pillar → new pillar placed.
+   * Drawing ends automatically once EARTH_WALL_PILLAR_COUNT pillars have been placed.
+   * Pressing 3 again at any phase cancels the spell.
+   */
+  #updateEarthWallSpell(): void {
+    if (!this.#player?.active) return;
+    if (ElementManager.instance.activeElement !== ELEMENT.EARTH) return;
+
+    // Press 3 → toggle / cancel
+    if (this.#controls.isSpell3KeyJustDown) {
+      if (this.#earthWallPendingClick || this.#earthWallDrawingMode) {
+        // Cancel whichever phase is active
+        this.#earthWallPendingClick = false;
+        this.#earthWallDrawingMode = false;
+      } else {
+        // Phase 1: check mana then wait for the confirming mouse click
+        if (this.#player.manaComponent.mana < EARTH_WALL_MANA_COST) return;
+        this.#earthWallPendingClick = true;
+      }
+      return;
+    }
+
+    // Phase 1 → Phase 2: left mouse click commits the spell
+    const mouseLeftDown = this.input.activePointer.leftButtonDown();
+    const mouseLeftJustDown = mouseLeftDown && !this.#earthWallMouseWasDown;
+    this.#earthWallMouseWasDown = mouseLeftDown;
+
+    if (this.#earthWallPendingClick) {
+      if (mouseLeftJustDown) {
+        this.#earthWallPendingClick = false;
+        if (EARTH_WALL_MANA_COST > 0) this.#player.manaComponent.consume(EARTH_WALL_MANA_COST);
+        this.#earthWallDrawingMode = true;
+        this.#earthWallDrawingPillarCount = 0;
+        this.#earthWallLastPlacedX = -Infinity;
+        this.#earthWallLastPlacedY = -Infinity;
+      }
+      return;
+    }
+
+    if (!this.#earthWallDrawingMode) return;
+
+    // Phase 2: place a pillar whenever the cursor moves far enough from the last one
+    const tx = this.#controls.mouseWorldX;
+    const ty = this.#controls.mouseWorldY;
+
+    const dx = tx - this.#earthWallLastPlacedX;
+    const dy = ty - this.#earthWallLastPlacedY;
+    const distSq = dx * dx + dy * dy;
+    const minSpacing = EARTH_WALL_PILLAR_SPACING;
+    if (distSq < minSpacing * minSpacing) return;
+
+    const pillar = new EarthWallPillar(this, tx, ty);
+    this.#earthWallGroup.add(pillar);
+    this.#earthWallLastPlacedX = tx;
+    this.#earthWallLastPlacedY = ty;
+    this.#earthWallDrawingPillarCount++;
+
+    if (this.#earthWallDrawingPillarCount >= EARTH_WALL_PILLAR_COUNT) {
+      this.#earthWallDrawingMode = false;
+    }
+  }
+
+  // Helper for any physics-enabled object/group that should treat Earth Wall as solid.
+  #registerEarthWallSolidCollider(collidable: Phaser.Types.Physics.Arcade.ArcadeColliderType): void {
+    this.physics.add.collider(collidable, this.#earthWallGroup);
+  }
+
   #registerColliders(): void {
     // collision between player and map walls
     this.#collisionLayer.setCollision([this.#collisionLayer.tileset[0].firstgid]);
     this.#enemyCollisionLayer.setCollision([this.#collisionLayer.tileset[0].firstgid]);
     this.physics.add.collider(this.#player, this.#collisionLayer);
+    this.#registerEarthWallSolidCollider(this.#player);
 
     // collision between player and game objects in the dungeon/room/world
     this.physics.add.overlap(this.#player, this.#doorTransitionGroup, (playerObj, doorObj) => {
@@ -561,6 +654,11 @@ export class GameScene extends Phaser.Scene {
             if (spellObj instanceof LavaPool) {
               spellObj.addEnemyInArea(enemyGameObject);
             }
+
+            // WaterSpike — damages each enemy once during the active phase
+            if (spellObj instanceof WaterSpike) {
+              spellObj.hitEnemy(enemyGameObject);
+            }
           },
         );
 
@@ -582,7 +680,20 @@ export class GameScene extends Phaser.Scene {
             weaponComponent.weapon.onCollisionCallback();
             this.#player.hit(DIRECTION.DOWN, weaponComponent.weaponDamage);
           });
+
+          // Enemy projectiles / weapons also damage earth wall pillars
+          this.physics.add.overlap(enemyWeapons, this.#earthWallGroup, (enemyWeaponBody, wallObj) => {
+            const pillar = wallObj as EarthWallPillar;
+            if (!pillar.active || pillar.isBeingDestroyed) return;
+            const weaponComponent = WeaponComponent.getComponent<WeaponComponent>(enemyWeaponBody as GameObject);
+            if (weaponComponent === undefined || weaponComponent.weapon === undefined) return;
+            weaponComponent.weapon.onCollisionCallback();
+            pillar.takeDamage(weaponComponent.weaponDamage);
+          });
         }
+
+        // Enemies collide with (cannot walk through) earth wall pillars
+        this.#registerEarthWallSolidCollider(this.#objectsByRoomId[roomId].enemyGroup);
       }
 
       // handle collisions between thrown pots and other objects in the current room
@@ -604,14 +715,39 @@ export class GameScene extends Phaser.Scene {
     });
 
     // Register spell projectile vs walls collider (FireBolt and EarthBolt explode on walls)
-    this.physics.add.collider(
+    this.physics.add.collider(this.#player.spellCastingComponent.spellGroup, this.#collisionLayer, (spellObj) => {
+      if (spellObj instanceof FireBolt) {
+        spellObj.explode();
+      }
+      if (spellObj instanceof EarthBolt) {
+        spellObj.explode();
+      }
+    });
+
+    // Player spell projectiles can crack Earth Wall pillars
+    this.physics.add.overlap(
       this.#player.spellCastingComponent.spellGroup,
-      this.#collisionLayer,
-      (spellObj) => {
+      this.#earthWallGroup,
+      (spellObj, wallObj) => {
+        const pillar = wallObj as EarthWallPillar;
+        if (!pillar.active || pillar.isBeingDestroyed) return;
         if (spellObj instanceof FireBolt) {
+          pillar.takeDamage(spellObj.baseDamage);
           spellObj.explode();
-        }
-        if (spellObj instanceof EarthBolt) {
+          // Splash: also damage adjacent pillars within EARTH_WALL_FIREBOLT_SPLASH_RADIUS
+          const splashRadiusSq = EARTH_WALL_FIREBOLT_SPLASH_RADIUS * EARTH_WALL_FIREBOLT_SPLASH_RADIUS;
+          this.#earthWallGroup.getChildren().forEach((child) => {
+            if (child === wallObj || !child.active) return;
+            const adjacent = child as EarthWallPillar;
+            if (adjacent.isBeingDestroyed) return;
+            const adx = adjacent.x - pillar.x;
+            const ady = adjacent.y - pillar.y;
+            if (adx * adx + ady * ady <= splashRadiusSq) {
+              adjacent.takeDamage(spellObj.baseDamage);
+            }
+          });
+        } else if (spellObj instanceof EarthBolt) {
+          pillar.takeDamage(spellObj.baseDamage);
           spellObj.explode();
         }
       },
@@ -624,6 +760,7 @@ export class GameScene extends Phaser.Scene {
     EVENT_BUS.on(CUSTOM_EVENTS.PLAYER_DEFEATED, this.#handlePlayerDefeatedEvent, this);
     EVENT_BUS.on(CUSTOM_EVENTS.DIALOG_CLOSED, this.#handleDialogClosed, this);
     EVENT_BUS.on(CUSTOM_EVENTS.BOSS_DEFEATED, this.#handleBossDefeated, this);
+    EVENT_BUS.on(CUSTOM_EVENTS.DEBUG_SPAWN_FLYING_OBELISK, this.#spawnDebugFlyingObelisk, this);
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       EVENT_BUS.off(CUSTOM_EVENTS.OPENED_CHEST, this.#handleOpenChest, this);
@@ -631,8 +768,38 @@ export class GameScene extends Phaser.Scene {
       EVENT_BUS.off(CUSTOM_EVENTS.PLAYER_DEFEATED, this.#handlePlayerDefeatedEvent, this);
       EVENT_BUS.off(CUSTOM_EVENTS.DIALOG_CLOSED, this.#handleDialogClosed, this);
       EVENT_BUS.off(CUSTOM_EVENTS.BOSS_DEFEATED, this.#handleBossDefeated, this);
+      EVENT_BUS.off(CUSTOM_EVENTS.DEBUG_SPAWN_FLYING_OBELISK, this.#spawnDebugFlyingObelisk, this);
       this.#fireBreathDamageTimer?.destroy();
       this.#activeFireBreath?.destroy();
+      // Note: #earthWallGroup is a Phaser.GameObjects.Group that registers its own
+      // SHUTDOWN listener (before ours) and calls destroy() on itself, setting
+      // this.children to undefined. Calling clear() here would crash. Phaser already
+      // cleans up the group and its EarthWallPillar children via scene lifecycle.
+    });
+  }
+
+  #spawnDebugFlyingObelisk(): void {
+    if (!this.#player?.active) {
+      return;
+    }
+
+    const spawnX = this.#controls.mouseWorldX;
+    const spawnY = this.#controls.mouseWorldY;
+    const obelisk = this.add
+      .image(spawnX, spawnY, ASSET_KEYS.FLYING_OBELISK)
+      .setDepth(3)
+      .setScale(0.45)
+      .setName('debug-flying-obelisk');
+
+    this.#debugFlyingObeliskGroup.add(obelisk);
+
+    this.tweens.add({
+      targets: obelisk,
+      y: obelisk.y - 6,
+      duration: 850,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
     });
   }
 
@@ -913,6 +1080,9 @@ export class GameScene extends Phaser.Scene {
     const door = this.#objectsByRoomId[this.#currentRoomId].doorMap[doorTrigger.name] as Door;
     const modifiedLevelName = door.targetLevel.toUpperCase();
     if (isLevelName(modifiedLevelName)) {
+      // Disable the trigger immediately so overlap does not re-fire while
+      // the scene transition is being requested.
+      door.disableObject();
       const sceneData: LevelData = {
         level: modifiedLevelName,
         roomId: door.targetRoomId,

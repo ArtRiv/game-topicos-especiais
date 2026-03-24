@@ -147,6 +147,14 @@ export class InputComponent {
     this.#spell3Key = val;
   }
 
+  get isSpell3KeyJustDown(): boolean {
+    return false;
+  }
+
+  set isSpell3KeyJustDown(_val: boolean) {
+    // base class no-op; overridden in KeyboardComponent
+  }
+
   get isRadialMenuKeyJustDown(): boolean {
     return this.#radialMenuKey;
   }
