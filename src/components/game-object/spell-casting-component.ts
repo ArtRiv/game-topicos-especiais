@@ -9,8 +9,11 @@ import { FireBolt } from '../../game-objects/spells/fire-bolt';
 import { FireArea } from '../../game-objects/spells/fire-area';
 import { EarthBolt } from '../../game-objects/spells/earth-bolt';
 import { WaterSpike } from '../../game-objects/spells/water-spike';
+import { WaterTornado } from '../../game-objects/spells/water-tornado';
+import { EarthBump } from '../../game-objects/spells/earth-bump';
 import { ElementManager } from '../../common/element-manager';
 import { RUNTIME_CONFIG } from '../../common/runtime-config';
+import { DIRECTION } from '../../common/common';
 import { FIRE_BOLT_COOLDOWN, FIRE_BOLT_MANA_COST, FIRE_AREA_COOLDOWN, FIRE_AREA_MANA_COST } from '../../common/config';
 
 export type SpellSlot = {
@@ -85,6 +88,15 @@ export class SpellCastingComponent extends BaseGameObjectComponent {
       }
       return RUNTIME_CONFIG.FIRE_BOLT_COOLDOWN;
     }
+    if (spellId === SPELL_ID.FIRE_AREA) {
+      if (ElementManager.instance.activeElement === ELEMENT.EARTH) {
+        return RUNTIME_CONFIG.EARTH_BUMP_COOLDOWN;
+      }
+      if (ElementManager.instance.activeElement === ELEMENT.WATER) {
+        return RUNTIME_CONFIG.WATER_TORNADO_COOLDOWN;
+      }
+      return RUNTIME_CONFIG.FIRE_AREA_COOLDOWN;
+    }
     return this.#spellSlots.find((s) => s.spellId === spellId)?.cooldown ?? 0;
   }
 
@@ -117,9 +129,18 @@ export class SpellCastingComponent extends BaseGameObjectComponent {
         }
         break;
       }
-      case SPELL_ID.FIRE_AREA:
-        spell = new FireArea(this.#scene, targetX, targetY);
+      case SPELL_ID.FIRE_AREA: {
+        const activeElement = ElementManager.instance.activeElement;
+        if (activeElement === ELEMENT.WATER) {
+          spell = new WaterTornado(this.#scene, targetX, targetY);
+        } else if (activeElement === ELEMENT.EARTH) {
+          const direction = targetX < casterX ? DIRECTION.LEFT : DIRECTION.RIGHT;
+          spell = new EarthBump(this.#scene, targetX, targetY, direction);
+        } else {
+          spell = new FireArea(this.#scene, targetX, targetY);
+        }
         break;
+      }
       default:
         return undefined;
     }

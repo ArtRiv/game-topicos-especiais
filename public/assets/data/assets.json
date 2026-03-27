@@ -145,8 +145,12 @@
         "type": "spritesheet",
         "key": "EARTH_WALL",
         "url": "Earth Wall.png",
-        "frameConfig": { "frameWidth": 48, "frameHeight": 48 }
-      }
+        "frameConfig": { "frameWidth": 48, "frameHeight": 48 }      },
+      {
+        "type": "spritesheet",
+        "key": "EARTH_BUMP",
+        "url": "Earth Bump.png",
+        "frameConfig": { "frameWidth": 48, "frameHeight": 48 }      }
     ]
   },
   {
@@ -214,6 +218,23 @@
         "key": "WATER_SPIKE_STARTUP",
         "url": "Water StartUp 1 SpriteSheet.png",
         "frameConfig": { "frameWidth": 64, "frameHeight": 16 }
+      }
+    ]
+  },
+  {
+    "path": "assets/spells/Water Effect 2/Water Blast - Spritesheet",
+    "files": [
+      {
+        "type": "spritesheet",
+        "key": "WATER_TORNADO_STARTUP_LOOP",
+        "url": "Water Blast - Startup and Infinite.png",
+        "frameConfig": { "frameWidth": 128, "frameHeight": 128 }
+      },
+      {
+        "type": "spritesheet",
+        "key": "WATER_TORNADO_END",
+        "url": "Water Blast - End.png",
+        "frameConfig": { "frameWidth": 128, "frameHeight": 128 }
       }
     ]
   },

@@ -86,6 +86,15 @@ export const EARTH_WALL_COOLDOWN = 100; // ms
 export const EARTH_WALL_HIT_FLASH_DURATION = 80; // ms white flash on hit
 export const EARTH_WALL_FIREBOLT_SPLASH_RADIUS = 24; // px — FireBolt hit damages adjacent pillars within this radius
 
+// Earth Bump (knockback spell)
+export const EARTH_BUMP_DAMAGE = 1;
+export const EARTH_BUMP_MANA_COST = 1;
+export const EARTH_BUMP_COOLDOWN = 1000; // ms
+export const EARTH_BUMP_DURATION = 800; // time it stays active
+export const EARTH_BUMP_BODY_RADIUS = 16;
+export const EARTH_BUMP_KNOCKBACK_FORCE = 300;
+export const EARTH_BUMP_KNOCKBACK_DURATION = 300;
+
 // Fire Bolt (projectile)
 export const FIRE_BOLT_DAMAGE = 1;
 export const FIRE_BOLT_MANA_COST = 1;
@@ -132,3 +141,12 @@ export const WATER_SPIKE_MANA_COST = 2;
 export const WATER_SPIKE_COOLDOWN = 800; // ms
 export const WATER_SPIKE_LOOP_DURATION = 300; // ms the spike stays active (damage window)
 export const WATER_SPIKE_BODY_RADIUS = 20; // AoE circle radius in px
+
+// Water Tornado (water blast spell)
+export const WATER_TORNADO_DAMAGE = 3;
+export const WATER_TORNADO_DAMAGE_PER_TICK = 1;
+export const WATER_TORNADO_MANA_COST = 3;
+export const WATER_TORNADO_COOLDOWN = 1500; // ms
+export const WATER_TORNADO_DURATION = 2000; // time it stays alive in ms
+export const WATER_TORNADO_TICK_INTERVAL = 300; // damage tick interval
+export const WATER_TORNADO_BODY_RADIUS = 24;

@@ -157,6 +157,27 @@ export class PreloadScene extends Phaser.Scene {
       hideOnComplete: true,
     });
 
+    // Earth Bump animations
+    this.anims.create({
+      key: `${ASSET_KEYS.EARTH_BUMP}_STARTUP`,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.EARTH_BUMP, { start: 1, end: 2 }),
+      frameRate: 10,
+      repeat: 0,
+    });
+    this.anims.create({
+      key: `${ASSET_KEYS.EARTH_BUMP}_LOOP`,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.EARTH_BUMP, { start: 3, end: 6 }),
+      frameRate: 10,
+      repeat: -1,
+    });
+    this.anims.create({
+      key: `${ASSET_KEYS.EARTH_BUMP}_END`,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.EARTH_BUMP, { start: 7, end: 15 }),
+      frameRate: 10,
+      repeat: 0,
+      hideOnComplete: true,
+    });
+
     // Earth Bolt projectile animation (frames 0-5, looping spinning rock)
     this.anims.create({
       key: ASSET_KEYS.EARTH_BOLT,
@@ -228,6 +249,31 @@ export class PreloadScene extends Phaser.Scene {
       key: `${ASSET_KEYS.WATER_SPIKE}_FADE`,
       frames: this.anims.generateFrameNumbers(ASSET_KEYS.WATER_SPIKE, { start: 8, end: 15 }),
       frameRate: 10,
+      repeat: 0,
+      hideOnComplete: true,
+    });
+
+    // Water Tornado (Water Blast) startup phase (frames 0-3)
+    this.anims.create({
+      key: `${ASSET_KEYS.WATER_TORNADO_STARTUP_LOOP}_START`,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.WATER_TORNADO_STARTUP_LOOP, { start: 0, end: 3 }),
+      frameRate: 12,
+      repeat: 0,
+    });
+
+    // Water Tornado loop phase (frames 4-11)
+    this.anims.create({
+      key: `${ASSET_KEYS.WATER_TORNADO_STARTUP_LOOP}_LOOP`,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.WATER_TORNADO_STARTUP_LOOP, { start: 4, end: 11 }),
+      frameRate: 12,
+      repeat: -1,
+    });
+
+    // Water Tornado end phase (frames 0-8 of the End spritesheet)
+    this.anims.create({
+      key: `${ASSET_KEYS.WATER_TORNADO_END}_END`,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.WATER_TORNADO_END, { start: 0, end: 8 }),
+      frameRate: 12,
       repeat: 0,
       hideOnComplete: true,
     });

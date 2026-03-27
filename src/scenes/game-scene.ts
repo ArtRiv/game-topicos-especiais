@@ -51,6 +51,8 @@ import { EarthFireExplosion } from '../game-objects/spells/earth-fire-explosion'
 import { LavaPool } from '../game-objects/spells/lava-pool';
 import { EarthWallPillar } from '../game-objects/spells/earth-wall-pillar';
 import { WaterSpike } from '../game-objects/spells/water-spike';
+import { WaterTornado } from '../game-objects/spells/water-tornado';
+import { EarthBump } from '../game-objects/spells/earth-bump';
 import { ElementManager } from '../common/element-manager';
 import {
   EARTH_WALL_MANA_COST,
@@ -655,8 +657,18 @@ export class GameScene extends Phaser.Scene {
               spellObj.addEnemyInArea(enemyGameObject);
             }
 
+            // WaterTornado overlap — tick damage handled internally, just track enemies
+            if (spellObj instanceof WaterTornado) {
+              spellObj.addEnemyInArea(enemyGameObject);
+            }
+
             // WaterSpike — damages each enemy once during the active phase
             if (spellObj instanceof WaterSpike) {
+              spellObj.hitEnemy(enemyGameObject);
+            }
+
+            // EarthBump - heavily knocks back enemies it touches
+            if (spellObj instanceof EarthBump) {
               spellObj.hitEnemy(enemyGameObject);
             }
           },
