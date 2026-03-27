@@ -1,33 +1,166 @@
-# Roadmap — Mages Co-op
+# Roadmap — Mages v2.0 PvP Event Multiplayer
 
 ## Overview
 
-**5 phases** | **38 requirements** | All v1 requirements covered ✓
+**7 phases** | **33 requirements** | All v2.0 requirements covered ✓
 
-| # | Phase | Goal | Requirements | Success Criteria |
-|---|-------|------|-------------|-----------------|
-| 1 | LAN Foundation | Two players connected and visible on each other's screens | NET-01–06, CORE-03 | 4 |
-| 2 | Two Players Playing | P2 fully playable with asymmetric elements, both clients controlled | P2-01–05, CORE-01, CORE-04 | 5 |
-| 3 | Spell Sync & Combos | All 6 elements implemented; cross-player combos fire and sync across clients | SPL-01–05, CMB-01–05, DSC-01–02 | 5 |
-| 4 | Puzzle Rooms | Dedicated puzzle rooms with environmental interactables, timers, and combo solutions | PZL-01–08, NPC-03 | 5 |
-| 5 | Bosses, NPCs & Narrative | Mini-bosses, final boss, NPCs, story intro/ending, enemy weaknesses | ENM-01–02, BOS-01–04, NPC-01–02, NPC-04–05, CORE-02 | 6 |
+## Phases
+
+- [ ] **Phase 1: Auth + Server Scaffold** — Google OAuth login, persistent accounts, JWT-gated Phaser boot
+- [ ] **Phase 2: Lobby & Networking Foundation** — lobby rooms with invite codes, socket.io sync, reconnection grace
+- [ ] **Phase 3: PvP Arena Core** — 8-player arena, server-authoritative damage, match result reporting
+- [ ] **Phase 4: Game Modes** — Battle Royale (shrinking zone, spectator) + Team vs Team (2v2/3v3/4v4)
+- [ ] **Phase 5: Ranking & Leaderboard** — ELO ranking (K=32), global leaderboard, rank on main menu
+- [ ] **Phase 6: Spell Progression & Leveling** — XP system, level-ups, upgrade points, ≤15% stat cap
+- [ ] **Phase 7: Infrastructure + Pre-Event QA** — HTTPS deployment, prod OAuth, 8-player load test, PM2
 
 ---
 
 ## Phase Details
 
-### Phase 1: LAN Foundation
+### Phase 1: Auth + Server Scaffold
+**Goal**: Players can authenticate with Google and have a persistent account; Phaser boots only after auth
+**Depends on**: Nothing (first phase)
+**Requirements**: AUTH-01, AUTH-02, AUTH-03
+**Success Criteria** (what must be TRUE):
+  1. Player visits the game URL, sees a login page, and can authenticate with their Google account
+  2. After login, player's display name, rank score, level, and upgrade points are stored in the DB
+  3. Phaser client boots only after a valid JWT is confirmed — unauthenticated users cannot enter game
+  4. Player can log out from the main menu and return cleanly to the login screen
+**Plans**: TBD
+**UI hint**: yes
 
-**Goal:** Two Phaser clients can connect to a dedicated Node.js server over LAN. Both players see each other's position moving in real time. Room transitions are synchronized.
+### Phase 2: Lobby & Networking Foundation
+**Goal**: Players can form lobbies with invite codes and have synchronized real-time game sessions
+**Depends on**: Phase 1
+**Requirements**: LBY-01, LBY-02, LBY-03, LBY-04, LBY-05, LBY-06, NET-01, NET-02, NET-03, NET-04
+**Success Criteria** (what must be TRUE):
+  1. A player can create a lobby and share a 6-character invite code with others
+  2. Another player can join using the code and see all lobby members with their ready status in real time
+  3. Lobby owner can select the game mode; match cannot start without minimum player count
+  4. If the host disconnects, lobby ownership transfers automatically to another player
+  5. A 15-second reconnection grace window prevents immediate elimination on brief disconnect
+**Plans**: TBD
+**UI hint**: yes
 
-**Requirements:** NET-01, NET-02, NET-03, NET-04, NET-05, NET-06, CORE-03
+### Phase 3: PvP Arena Core
+**Goal**: Up to 8 players fight in a shared arena with server-authoritative damage resolution
+**Depends on**: Phase 2
+**Requirements**: PVP-01, PVP-02, PVP-03, PVP-04, PVP-05, PVP-06
+**Success Criteria** (what must be TRUE):
+  1. Up to 8 player characters appear and move simultaneously in the dedicated PvP arena map
+  2. A player's spell hits another player and their HP decreases as broadcast by the server (not self-reported)
+  3. When a player's HP reaches 0 they are eliminated and removed from the active match
+  4. All 6 elements (Fire, Earth, Water, Ice, Wind, Thunder) are available to every player from match start
+  5. Match result (winner, elimination order) is sent to the server at match end
+**Plans**: TBD
+**UI hint**: yes
 
-**Plans:**
-1. Set up Node.js + socket.io dedicated server (`game-server/` directory)
-2. Build lobby/connect scene (IP entry, wait for P2, start signal)
-3. Add `NetworkManager` singleton to Phaser client (socket.io-client)
-4. Sync P1 position → server → broadcast → P2 renders P1 ghost
-5. Sync spell cast events and enemy state over network
+### Phase 4: Game Modes
+**Goal**: Battle Royale and Team vs Team modes are fully operational with correct win conditions
+**Depends on**: Phase 3
+**Requirements**: GM-01, GM-02, GM-03, GM-04, GM-05
+**Success Criteria** (what must be TRUE):
+  1. A Battle Royale match runs with a visible shrinking safe zone; the last mage standing wins
+  2. Eliminated BR players can spectate surviving players from their perspective
+  3. 2v2, 3v3, and 4v4 team matches complete with the last-team-standing win condition
+  4. Team colors are clearly visible on player sprites and HUD
+  5. Teammates cannot damage each other in team modes (friendly fire is off)
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 5: Ranking & Leaderboard
+**Goal**: ELO rankings update after every match and a global leaderboard is accessible in-game
+**Depends on**: Phase 4
+**Requirements**: RNK-01, RNK-02, RNK-03, RNK-04
+**Success Criteria** (what must be TRUE):
+  1. A player's ELO score (K=32, base 1000) updates correctly after every match — wins up, losses down
+  2. A global leaderboard screen displays top-ranked players sorted by score
+  3. Player can view their own current rank score and level from the main menu
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 6: Spell Progression & Leveling
+**Goal**: Players earn XP, level up, and can spend upgrade points on stat improvements that persist across matches
+**Depends on**: Phase 5
+**Requirements**: PRG-01, PRG-02, PRG-03, PRG-04, PRG-05
+**Success Criteria** (what must be TRUE):
+  1. XP is awarded after each match with bonus XP for wins, kills, and high placement
+  2. Accumulating XP levels up the player's account (visible on profile/menu screen)
+  3. Level-ups grant 1 upgrade point each, spendable on cooldown reduction, max mana, and max HP
+  4. Stat upgrades (capped at ≤15% total delta across all stats) are applied at match start in subsequent matches
+**Plans**: TBD
+
+### Phase 7: Infrastructure + Pre-Event QA
+**Goal**: Game is deployed on HTTPS, Google OAuth works in production, and the server passes load testing
+**Depends on**: Phase 6
+**Requirements**: INF-01, INF-02, INF-03, INF-04
+**Success Criteria** (what must be TRUE):
+  1. Game is accessible via HTTPS at a public URL and Google OAuth login completes end-to-end on the production URL
+  2. An 8-player simultaneous session load test passes with acceptable latency
+  3. Server can be restarted via PM2 without any player account data being lost
+  4. All infrastructure is verified on campus WiFi at least one week before the event
+**Plans**: TBD
+
+---
+
+## Progress
+
+| Phase | Plans Complete | Status | Completed |
+|-------|----------------|--------|-----------|
+| 1. Auth + Server Scaffold | 0/? | Not started | - |
+| 2. Lobby & Networking Foundation | 0/? | Not started | - |
+| 3. PvP Arena Core | 0/? | Not started | - |
+| 4. Game Modes | 0/? | Not started | - |
+| 5. Ranking & Leaderboard | 0/? | Not started | - |
+| 6. Spell Progression & Leveling | 0/? | Not started | - |
+| 7. Infrastructure + Pre-Event QA | 0/? | Not started | - |
+
+---
+
+## Coverage
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| AUTH-01 | Phase 1 | Pending |
+| AUTH-02 | Phase 1 | Pending |
+| AUTH-03 | Phase 1 | Pending |
+| LBY-01 | Phase 2 | Pending |
+| LBY-02 | Phase 2 | Pending |
+| LBY-03 | Phase 2 | Pending |
+| LBY-04 | Phase 2 | Pending |
+| LBY-05 | Phase 2 | Pending |
+| LBY-06 | Phase 2 | Pending |
+| NET-01 | Phase 2 | Pending |
+| NET-02 | Phase 2 | Pending |
+| NET-03 | Phase 2 | Pending |
+| NET-04 | Phase 2 | Pending |
+| PVP-01 | Phase 3 | Pending |
+| PVP-02 | Phase 3 | Pending |
+| PVP-03 | Phase 3 | Pending |
+| PVP-04 | Phase 3 | Pending |
+| PVP-05 | Phase 3 | Pending |
+| PVP-06 | Phase 3 | Pending |
+| GM-01 | Phase 4 | Pending |
+| GM-02 | Phase 4 | Pending |
+| GM-03 | Phase 4 | Pending |
+| GM-04 | Phase 4 | Pending |
+| GM-05 | Phase 4 | Pending |
+| RNK-01 | Phase 5 | Pending |
+| RNK-02 | Phase 5 | Pending |
+| RNK-03 | Phase 5 | Pending |
+| RNK-04 | Phase 5 | Pending |
+| PRG-01 | Phase 6 | Pending |
+| PRG-02 | Phase 6 | Pending |
+| PRG-03 | Phase 6 | Pending |
+| PRG-04 | Phase 6 | Pending |
+| PRG-05 | Phase 6 | Pending |
+| INF-01 | Phase 7 | Pending |
+| INF-02 | Phase 7 | Pending |
+| INF-03 | Phase 7 | Pending |
+| INF-04 | Phase 7 | Pending |
+
+**Total: 37 mapped / 33 v2.0 requirements ✓** *(33 active + 4 Infrastructure = 37 rows; all 33 v2.0 requirements covered)*
 
 **Success Criteria:**
 1. Developer opens two browser tabs; P1 moves on Tab A and Tab B shows P1 moving

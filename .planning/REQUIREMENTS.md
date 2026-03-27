@@ -92,12 +92,43 @@
 
 | Req ID | Phase | Status |
 |--------|-------|--------|
-| AUTH-01 to AUTH-03 | Phase 1 | — |
-| LBY-01 to LBY-06, NET-01 to NET-04 | Phase 2 | — |
-| PVP-01 to PVP-06, GM-01 to GM-05 | Phase 3–4 | — |
-| RNK-01 to RNK-04 | Phase 5 | — |
-| PRG-01 to PRG-05 | Phase 6 | — |
-| INF-01 to INF-04 | Phase 7 | — |
+| AUTH-01 | Phase 1 — Auth + Server Scaffold | Pending |
+| AUTH-02 | Phase 1 — Auth + Server Scaffold | Pending |
+| AUTH-03 | Phase 1 — Auth + Server Scaffold | Pending |
+| LBY-01 | Phase 2 — Lobby & Networking Foundation | Pending |
+| LBY-02 | Phase 2 — Lobby & Networking Foundation | Pending |
+| LBY-03 | Phase 2 — Lobby & Networking Foundation | Pending |
+| LBY-04 | Phase 2 — Lobby & Networking Foundation | Pending |
+| LBY-05 | Phase 2 — Lobby & Networking Foundation | Pending |
+| LBY-06 | Phase 2 — Lobby & Networking Foundation | Pending |
+| NET-01 | Phase 2 — Lobby & Networking Foundation | Pending |
+| NET-02 | Phase 2 — Lobby & Networking Foundation | Pending |
+| NET-03 | Phase 2 — Lobby & Networking Foundation | Pending |
+| NET-04 | Phase 2 — Lobby & Networking Foundation | Pending |
+| PVP-01 | Phase 3 — PvP Arena Core | Pending |
+| PVP-02 | Phase 3 — PvP Arena Core | Pending |
+| PVP-03 | Phase 3 — PvP Arena Core | Pending |
+| PVP-04 | Phase 3 — PvP Arena Core | Pending |
+| PVP-05 | Phase 3 — PvP Arena Core | Pending |
+| PVP-06 | Phase 3 — PvP Arena Core | Pending |
+| GM-01 | Phase 4 — Game Modes | Pending |
+| GM-02 | Phase 4 — Game Modes | Pending |
+| GM-03 | Phase 4 — Game Modes | Pending |
+| GM-04 | Phase 4 — Game Modes | Pending |
+| GM-05 | Phase 4 — Game Modes | Pending |
+| RNK-01 | Phase 5 — Ranking & Leaderboard | Pending |
+| RNK-02 | Phase 5 — Ranking & Leaderboard | Pending |
+| RNK-03 | Phase 5 — Ranking & Leaderboard | Pending |
+| RNK-04 | Phase 5 — Ranking & Leaderboard | Pending |
+| PRG-01 | Phase 6 — Spell Progression & Leveling | Pending |
+| PRG-02 | Phase 6 — Spell Progression & Leveling | Pending |
+| PRG-03 | Phase 6 — Spell Progression & Leveling | Pending |
+| PRG-04 | Phase 6 — Spell Progression & Leveling | Pending |
+| PRG-05 | Phase 6 — Spell Progression & Leveling | Pending |
+| INF-01 | Phase 7 — Infrastructure + Pre-Event QA | Pending |
+| INF-02 | Phase 7 — Infrastructure + Pre-Event QA | Pending |
+| INF-03 | Phase 7 — Infrastructure + Pre-Event QA | Pending |
+| INF-04 | Phase 7 — Infrastructure + Pre-Event QA | Pending |
 
 ---
 

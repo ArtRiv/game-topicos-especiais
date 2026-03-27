@@ -8,16 +8,27 @@
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: Phase 1 — Auth + Server Scaffold (not started)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-03-27 — Milestone v2.0 PvP Event Multiplayer started
+Status: Roadmap defined — ready to plan Phase 1
+Last activity: 2026-03-27 — Roadmap created (7 phases, 33 requirements)
 
 ## Phases
-*(to be defined by roadmapper)*
+
+| Phase | Name | Requirements | Status | Completed |
+|-------|------|-------------|--------|-----------|
+| 1 | Auth + Server Scaffold | AUTH-01–03 | Not started | - |
+| 2 | Lobby & Networking Foundation | LBY-01–06, NET-01–04 | Not started | - |
+| 3 | PvP Arena Core | PVP-01–06 | Not started | - |
+| 4 | Game Modes | GM-01–05 | Not started | - |
+| 5 | Ranking & Leaderboard | RNK-01–04 | Not started | - |
+| 6 | Spell Progression & Leveling | PRG-01–05 | Not started | - |
+| 7 | Infrastructure + Pre-Event QA | INF-01–04 | Not started | - |
+
+**Progress:** 0/7 phases complete ░░░░░░░░░░ 0%
 
 ## Active Phase
-None. Requirements and roadmap being defined.
+None. Roadmap defined — use `/gsd-plan-phase 1` to begin.
 
 ## Key Decisions
 - **Auth:** Google OAuth — players use Google email accounts
