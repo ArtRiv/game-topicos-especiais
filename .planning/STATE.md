@@ -26,6 +26,9 @@ None. Roadmap complete — begin with `/gsd-discuss-phase 1`.
 - **Puzzle failure:** Spawns a hard enemy wave (timer reaches zero)
 - **Architecture:** `NetworkManager` singleton, `RemoteInputComponent`, avoid polluting `GameScene` further
 
+## Pending Todos
+- `2026-03-27-pivot-game-to-pvp-event-multiplayer-with-google-accounts-and-ranking.md` — Pivot game to PvP event multiplayer with Google accounts and ranking (area: planning)
+
 ## GSD Workflow Config
 - mode: yolo
 - granularity: standard
