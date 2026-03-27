@@ -53,10 +53,10 @@ export class EarthBump extends Phaser.Physics.Arcade.Sprite implements ActiveSpe
     if (this.#direction === DIRECTION.LEFT) {
       this.setFlipX(true);
     }
-    
+
     // Slight offset depending on direction can be applied later if needed
     // Current setup spawns it directly on target X/Y
-    
+
     this.setDepth(3);
 
     const body = this.body as Phaser.Physics.Arcade.Body;
@@ -88,7 +88,7 @@ export class EarthBump extends Phaser.Physics.Arcade.Sprite implements ActiveSpe
 
   #startStartup(): void {
     this.#phase = 'startup';
-    
+
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.enable = true; // start hitting early during rise
 
@@ -112,7 +112,7 @@ export class EarthBump extends Phaser.Physics.Arcade.Sprite implements ActiveSpe
     if (!this.active || this.#isDying) return;
     this.#isDying = true;
     this.#phase = 'end';
-    
+
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.enable = false;
 
