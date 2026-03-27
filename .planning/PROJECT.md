@@ -1,12 +1,24 @@
-# Mages Co-op
+# Mages
+
+## Current Milestone: v2.0 — PvP Event Multiplayer
+
+**Goal:** Rebuild the game as a competitive PvP experience for the college event — players create accounts, form lobbies, pick game modes, and fight each other with elemental spells.
+
+**Target features:**
+- Google OAuth login (account per player, tied to Google email)
+- Lobby creation & joining (session-based matchmaking)
+- Multiple game modes: Battle Royale, 2v2 / 3v3 / 4v4 team vs team
+- PvP arena gameplay (spell combat, player elimination)
+- Ranking system + global leaderboard
+- Spell progression / leveling (upgrade cooldown, mana, HP per account)
 
 ## What This Is
 
-A 2-player LAN cooperative top-down wizard game built on a Phaser 3 + TypeScript codebase. Two players each control a mage with asymmetric element sets — one wields Fire, Earth, and Water; the other wields Ice, Wind, and Thunder. The core fun is combining spells mid-combat to trigger powerful combo effects, solving environmental puzzles that require cross-player thinking, and encountering bosses that have elemental weaknesses requiring coordinated strategy. Built for a college game event (3-4 months away), targeting ~15-minute play sessions with light narrative and comedy NPCs.
+A competitive top-down wizard PvP game built on Phaser 3 + TypeScript. Players at the event create an account with their Google email, join or create a lobby, choose a game mode (Battle Royale or team vs team), and fight using asymmetric elemental spells — Fire, Earth, Water, Ice, Wind, Thunder. The core loop is spell combat: cast, dodge, combo, and outplay opponents. A persistent ranking system and spell progression make each session matter beyond the single match. Built for a college game event, targeting quick matches with instant replayability.
 
 ## Core Value
 
-When two players discover a new spell combo that wrecks a tough enemy — that "we did it together" moment — is the reason this game exists.
+When a player lands a perfectly timed spell combo that eliminates an opponent in front of a crowd — that "I outplayed everyone" moment — is the reason this game exists.
 
 ## Requirements
 
@@ -15,106 +27,92 @@ When two players discover a new spell combo that wrecks a tough enemy — that "
 <!-- Capabilities confirmed by existing codebase -->
 
 - ✓ Top-down Phaser 3 game loop with Arcade Physics — existing
+- ✓ Top-down Phaser 3 game loop with Arcade Physics — existing
 - ✓ Tiled map integration (rooms, doors, chests, collision layers) — existing
 - ✓ Player movement with state machine (idle, walk, hurt, death) — existing
-- ✓ Enemy AI (spider random walk, wisp pulse, Drow boss) — existing
 - ✓ Basic spell system: FireBolt, FireArea, FireBreath, EarthBolt, EarthWallPillar, WaterSpike — existing
 - ✓ Element manager (active element switching via radial menu) — existing
 - ✓ Mana system (pool, consumption, regen) — existing
-- ✓ Spell-to-spell combo detection (Fire+Earth, Earth+FireArea, etc.) — existing
-- ✓ Room-based level transitions with camera animation — existing
 - ✓ HUD (health hearts, mana bar, element indicator) — existing
 - ✓ Global event bus for decoupled scene communication — existing
 - ✓ Runtime debug panel for live spell tuning — existing
 
 ### Active
 
-<!-- New features to build for the event -->
+<!-- New features to build for v2.0 PvP event -->
 
-**Networking / Multiplayer**
-- [ ] NET-01: Two players can connect on LAN (dedicated server model)
-- [ ] NET-02: Player positions, spell projectiles, and enemy states sync across clients
-- [ ] NET-03: Both players see the same game state in real time with acceptable latency
+**Authentication & Accounts**
+- [ ] AUTH-01: Players can log in with their Google account (Google OAuth)
+- [ ] AUTH-02: Each player has a persistent account tied to their Google email
+- [ ] AUTH-03: Account stores player name, rank, level, and spell stats
 
-**Second Player**
-- [ ] P2-01: A second distinct player character exists in the game world
-- [ ] P2-02: Player 1 is assigned Fire, Earth, Water elements; Player 2 has Ice, Wind, Thunder
-- [ ] P2-03: Each player has independent health, mana, and element state
+**Lobby & Matchmaking**
+- [ ] LBY-01: A player can create a lobby session from the main menu
+- [ ] LBY-02: Other players can join a lobby using a lobby code or session list
+- [ ] LBY-03: Lobby owner can choose the game mode before starting
+- [ ] LBY-04: All players in lobby see each other before the match starts
 
-**Spell Completion (Ice, Wind, Thunder)**
-- [ ] SPL-01: Ice spell(s) implemented (at least 1 projectile or area)
-- [ ] SPL-02: Wind spell(s) implemented (at least 1 projectile or area)
-- [ ] SPL-03: Thunder spell(s) implemented (at least 1 projectile or area)
-- [ ] SPL-04: Each new spell has at least 1 cross-player combo with an existing element
+**Game Modes**
+- [ ] GM-01: Battle Royale mode — all players fight, last mage standing wins
+- [ ] GM-02: Team vs Team modes — 2v2, 3v3, and 4v4 supported
+- [ ] GM-03: Team assignment is shown to all players at match start
 
-**Combo System — Cross-Player**
-- [ ] CMB-01: Spells from P1 and P2 can collide and trigger combo effects automatically
-- [ ] CMB-02: At least 6 distinct cross-player combos exist (one per new element pairing)
-- [ ] CMB-03: Combo journal/UI tracks which combos players have discovered
+**PvP Gameplay**
+- [ ] PVP-01: Multiple player characters exist in the same arena simultaneously
+- [ ] PVP-02: Player spells deal damage to other players (not enemies)
+- [ ] PVP-03: Eliminated players are removed from the match; last standing (or team) wins
+- [ ] PVP-04: All 6 elements available to players (Fire, Earth, Water, Ice, Wind, Thunder)
+- [ ] PVP-05: Match results (winner, placements) sent to server for ranking update
 
-**Puzzle Rooms**
-- [ ] PZL-01: Dedicated puzzle rooms exist (separate from combat rooms)
-- [ ] PZL-02: Environmental interactables respond to single spells (e.g., water wets an object)
-- [ ] PZL-03: Environmental interactables respond to spell combos (e.g., wet+lightning activates a device)
-- [ ] PZL-04: Cooperative puzzles require both players to act simultaneously or in sequence
-- [ ] PZL-05: At least 1 timed puzzle with a hard countdown timer
-- [ ] PZL-06: Failing a timed puzzle spawns a hard enemy wave instead of a hard reset
-- [ ] PZL-07: Sequence puzzles exist where element order matters
+**Ranking & Leaderboard**
+- [ ] RNK-01: Each player has a rank score that updates after every match
+- [ ] RNK-02: Wins increase rank score; losses decrease it
+- [ ] RNK-03: A global leaderboard shows top-ranked players
+- [ ] RNK-04: Players can view their own current rank and score
 
-**Enemy & Boss Design**
-- [ ] ENM-01: At least 2 new enemy types with elemental resistances/weaknesses
-- [ ] BOS-01: At least 1 mini-boss per level with an elemental weakness
-- [ ] BOS-02: A final boss that requires coordinated combo strategy to defeat
-- [ ] BOS-03: Boss weak points are discoverable (via NPC hint, observation, or experimentation)
-
-**Narrative & NPCs**
-- [ ] NPC-01: NPCs exist in the world with dialogue (comedy/personality from the devs)
-- [ ] NPC-02: Intro narrative sets the premise of the adventure
-- [ ] NPC-03: At least 1 NPC hints at spell combos (for discovery guidance)
-- [ ] NPC-04: An ending exists after the final boss is defeated
-
-**Combo Discovery UX**
-- [ ] DSC-01: Trial-and-error discovery works — combos fire automatically when spells collide
-- [ ] DSC-02: In-game combo journal/UI tracks discovered combos
+**Spell Progression & Leveling**
+- [ ] PRG-01: Players earn XP after each match (more for wins / kills)
+- [ ] PRG-02: Accumulating XP levels up the player's account
+- [ ] PRG-03: Level-ups grant upgrade points to spend on spell stats
+- [ ] PRG-04: Upgradeable stats include: spell cooldown, max mana, max HP
+- [ ] PRG-05: Upgraded stats are applied to the player in every subsequent match
 
 ### Out of Scope
 
-- Isometric perspective — staying top-down for speed and to reuse existing code
-- Online multiplayer (internet) — LAN only for the event; networking complexity too high
-- More than 2 players — keeping scope tight for the event build
-- Character progression / XP / leveling — not needed for 15-min sessions
-- All 6 elements fully symmetric per player — asymmetric split keeps combos meaningful
-- Branching story / dialogue choices — light linear narrative only
-- Mobile / controller support — keyboard on each LAN machine is sufficient
+- PvE content — no enemies, no bosses, no puzzle rooms, no NPCs; full PvP pivot
+- LAN-only mode — server is internet-accessible to support the college event
+- Cooperative (co-op) game modes — PvP only for v2.0
+- Branching narrative / story — no narrative content
+- Mobile / controller support — keyboard per machine is sufficient
+- More than 4v4 team size — keeps match design manageable
 
 ## Context
 
-- **Existing codebase:** Phaser 3 + TypeScript Zelda-like with working player, enemies, rooms, state machines, and partial spell system. The networking layer (`src/networking/`) does not yet exist. The radial menu and element system are single-player only.
-- **Timeline:** College event in ~3-4 months. Targeting a polished 15-minute experience with the core co-op loop working.
-- **Team:** 2 developers; NPCs will carry jokes and personality from both.
-- **Confirmed direction:** Top-down (not isometric despite some older doc references).
-- **Player split:** P1 = Fire, Earth, Water / P2 = Ice, Wind, Thunder / All 6 in scope for the event build.
-- **Failure design:** Timed puzzle failure → spawns enemy wave, not hard reset. Keeps momentum.
+- **Existing codebase:** Phaser 3 + TypeScript top-down game with working player, state machines, and single-player spell system. No networking layer yet. The PvE content (enemies, bosses, puzzle rooms) will remain in git history but is not part of v2.0.
+- **Pivot from v1.0:** v1.0 was a 2-player LAN co-op PvE design (planned but never executed). v2.0 is a full philosophy pivot to competitive PvP with accounts, lobbies, and progression.
+- **Timeline:** College event in ~3-4 months.
+- **Team:** 2 developers.
+- **Server:** Internet-accessible central server (Node.js + socket.io) with persistent DB for accounts, ranking, and progression.
+- **Auth:** Google OAuth — players use their Google email as their identity.
 
 ## Constraints
 
-- **Tech stack:** Phaser 3 + TypeScript — no engine change
-- **Timeline:** 3-4 months to college event
+- **Tech stack:** Phaser 3 + TypeScript client — no engine change
+- **Timeline:** ~3-4 months to college event
 - **Team size:** 2 developers
-- **Session length:** ~15 minutes per playthrough
-- **Networking:** LAN only (dedicated server on third machine); no WebRTC/internet
-- **Dependencies:** Spell combo system must exist before cross-player combos can be built
+- **Server:** Internet-facing Node.js server (not LAN-only); needs DB for persistent accounts
+- **Auth:** Google OAuth only (no custom password auth — reduces complexity and security risk)
 
 ## Key Decisions
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Top-down (not isometric) | Reuses existing code; isometric would require reworking camera, collision, and sprites | — Pending |
-| LAN co-op via dedicated server | Easier sync model than P2P; one machine hosts state | — Pending |
-| Asymmetric elements (not same pool) | Forces real cooperation — P1 literally cannot do what P2 does | — Pending |
-| Auto spell-collision combos | More intuitive than activation key; works with existing collision architecture | — Pending |
-| Puzzle fail → enemy wave | More fun than reset; adds tension without hard-blocking players | — Pending |
-| P1: Fire+Earth+Water / P2: Ice+Wind+Thunder | Natural elemental opposition; water+ice, fire+wind, earth+thunder have obvious combo potential | — Pending |
+| Top-down (not isometric) | Reuses existing code; isometric would require reworking camera, collision, and sprites | Confirmed |
+| PvP instead of PvE | Event day experience — watching friends fight each other is more engaging than co-op vs enemies | Confirmed |
+| Google OAuth for accounts | Reduces auth complexity; event attendees already have Google accounts | Confirmed |
+| Internet-facing server (not LAN) | Event may have mixed network; central server is more reliable for multiple sessions | Confirmed |
+| All 6 elements available to all players | PvP requires each player to have a full spell kit; asymmetric split only made sense for co-op | Confirmed |
+| Persistent ranking + XP progression | Gives the event a metagame — players care about their rank across multiple matches | Confirmed |
 
 ## Evolution
 
@@ -134,4 +132,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-26 after initialization*
+*Last updated: 2026-03-27 — v2.0 PvP pivot; v1.0 co-op design fully discarded*
