@@ -22,12 +22,14 @@
 
 **Requirements:** NET-01, NET-02, NET-03, NET-04, NET-05, NET-06, CORE-03
 
-**Plans:**
-1. Set up Node.js + socket.io dedicated server (`game-server/` directory)
-2. Build lobby/connect scene (IP entry, wait for P2, start signal)
-3. Add `NetworkManager` singleton to Phaser client (socket.io-client)
-4. Sync P1 position → server → broadcast → P2 renders P1 ghost
-5. Sync spell cast events and enemy state over network
+**Plans:** 5 plans
+
+Plans:
+- [ ] 01-01-PLAN.md — Game server bootstrap (game-server/ package, LobbyManager, GameRoom, socket.io handlers)
+- [ ] 01-02-PLAN.md — Client networking types + RemoteInputComponent
+- [ ] 01-03-PLAN.md — NetworkManager singleton (EventBus bridge, 20 Hz tick, config constants)
+- [ ] 01-04-PLAN.md — LobbyScene UI (connect → lobby list → waiting room) + main.ts wiring
+- [ ] 01-05-PLAN.md — GameScene integration (room transition sync, remote player spawn/update/remove, spell sync)
 
 **Success Criteria:**
 1. Developer opens two browser tabs; P1 moves on Tab A and Tab B shows P1 moving
