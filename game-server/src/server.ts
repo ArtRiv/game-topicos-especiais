@@ -92,6 +92,19 @@ io.on('connection', (socket) => {
     }, 2000);
   });
 
+  // WebRTC signaling relay — server just forwards these between peers
+  socket.on('webrtc:offer', ({ targetSocketId, offer }: { targetSocketId: string; offer: object }) => {
+    io.to(targetSocketId).emit('webrtc:offer', { fromSocketId: socket.id, offer });
+  });
+
+  socket.on('webrtc:answer', ({ targetSocketId, answer }: { targetSocketId: string; answer: object }) => {
+    io.to(targetSocketId).emit('webrtc:answer', { fromSocketId: socket.id, answer });
+  });
+
+  socket.on('webrtc:ice', ({ targetSocketId, candidate }: { targetSocketId: string; candidate: object }) => {
+    io.to(targetSocketId).emit('webrtc:ice', { fromSocketId: socket.id, candidate });
+  });
+
   socket.on('disconnect', () => {
     console.log(`[SERVER] Client disconnected: ${socket.id}`);
     const lobbyId = findLobbyIdBySocket(socket.id);

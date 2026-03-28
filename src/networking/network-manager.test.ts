@@ -106,75 +106,45 @@ describe('NetworkManager', () => {
       });
     });
 
-    it('sendPlayerUpdate emits game:player-update on socket', () => {
+    it('sendPlayerUpdate broadcasts via WebRTC (no socket emission)', () => {
       return new Promise<void>((resolve) => {
+        let socketReceivedGameUpdate = false;
         ioServer.once('connection', (socket) => {
-          socket.once('game:player-update', (data) => {
-            expect(data.x).toBe(100);
-            expect(data.y).toBe(200);
-            nm.disconnect();
-            resolve();
-          });
+          socket.on('game:player-update', () => { socketReceivedGameUpdate = true; });
         });
         const nm = NetworkManager.init(`http://localhost:${testPort}`);
         nm.connect();
         EVENT_BUS.once(CUSTOM_EVENTS.NETWORK_CONNECTED, () => {
           nm.sendPlayerUpdate({ x: 100, y: 200, direction: 'DOWN', state: 'MOVE', element: 'FIRE' });
+          // Give socket a tick to deliver if it were sent
+          setTimeout(() => {
+            expect(socketReceivedGameUpdate).toBe(false);
+            nm.disconnect();
+            resolve();
+          }, 60);
         });
       });
     });
-  });
 
-  describe('inbound event bridging', () => {
-    it('game:player-update from server emits NETWORK_PLAYER_UPDATE on EVENT_BUS', () => {
+    it('lobby:started in browser-less env does not crash (RTCPeerConnection guard)', () => {
       return new Promise<void>((resolve) => {
         ioServer.once('connection', (socket) => {
+          socket.once('connect', () => {});
           setTimeout(() => {
-            socket.emit('game:player-update', {
-              playerId: 'remote-1',
-              x: 50, y: 60, direction: 'RIGHT', state: 'IDLE', element: 'ICE',
+            socket.emit('lobby:started', {
+              matchConfig: {
+                lobbyId: 'test-lobby',
+                players: [{ id: 'p1', socketId: socket.id, name: 'P1' }],
+                mode: 'team-deathmatch',
+              },
             });
           }, 50);
         });
         const nm = NetworkManager.init(`http://localhost:${testPort}`);
         nm.connect();
-        EVENT_BUS.once(CUSTOM_EVENTS.NETWORK_PLAYER_UPDATE, (payload: { playerId: string; x: number }) => {
-          expect(payload.playerId).toBe('remote-1');
-          expect(payload.x).toBe(50);
-          nm.disconnect();
-          resolve();
-        });
-      });
-    });
-
-    it('game:room-transition from server emits NETWORK_ROOM_TRANSITION on EVENT_BUS', () => {
-      return new Promise<void>((resolve) => {
-        ioServer.once('connection', (socket) => {
-          setTimeout(() => {
-            socket.emit('game:room-transition', { levelName: 'dungeon-1', doorId: 2, roomId: 3 });
-          }, 50);
-        });
-        const nm = NetworkManager.init(`http://localhost:${testPort}`);
-        nm.connect();
-        EVENT_BUS.once(CUSTOM_EVENTS.NETWORK_ROOM_TRANSITION, (payload: { levelName: string }) => {
-          expect(payload.levelName).toBe('dungeon-1');
-          nm.disconnect();
-          resolve();
-        });
-      });
-    });
-
-    it('game:player-disconnected from server emits NETWORK_PLAYER_DISCONNECTED on EVENT_BUS', () => {
-      return new Promise<void>((resolve) => {
-        ioServer.once('connection', (socket) => {
-          setTimeout(() => {
-            socket.emit('game:player-disconnected', { playerId: 'dead-player' });
-          }, 50);
-        });
-        const nm = NetworkManager.init(`http://localhost:${testPort}`);
-        nm.connect();
-        EVENT_BUS.once(CUSTOM_EVENTS.NETWORK_PLAYER_DISCONNECTED, (payload: { playerId: string }) => {
-          expect(payload.playerId).toBe('dead-player');
+        EVENT_BUS.once(CUSTOM_EVENTS.NETWORK_LOBBY_STARTED, () => {
+          // localPlayerId set from matchConfig
+          expect(nm.localPlayerId).toBe('p1');
           nm.disconnect();
           resolve();
         });
