@@ -7,7 +7,9 @@
 		"build": "tsc && vite build --config config/vite.config.js",
 		"serve": "vite preview --config config/vite.config.js",
 		"lint": "eslint ./src -c ./config/eslint.config.mjs",
-		"test": "vitest"
+		"test": "vitest",
+		"server": "cd game-server && npm start",
+		"server:dev": "cd game-server && npm run dev"
 	},
 	"author": "scottwestover",
 	"license": "MIT",
