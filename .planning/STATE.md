@@ -9,14 +9,17 @@
 ## Phases
 | # | Title | Status |
 |---|-------|--------|
-| 1 | LAN Foundation | not-started |
-| 2 | Two Players Playing | not-started |
-| 3 | Spell Sync & Cross-Player Combos | not-started |
-| 4 | Puzzle Rooms | not-started |
-| 5 | Bosses, NPCs & Narrative | not-started |
+| 1 | LAN Foundation | context-ready |
+| 2 | Two Players Playing | not-started (roadmap rebuild needed — see pivot note) |
+| 3 | Spell Sync & Cross-Player Combos | not-started (roadmap rebuild needed) |
+| 4 | Puzzle Rooms | not-started (roadmap rebuild needed) |
+| 5 | Bosses, NPCs & Narrative | not-started (roadmap rebuild needed) |
 
 ## Active Phase
-None. Roadmap complete — begin with `/gsd-discuss-phase 1`.
+Phase 1 — LAN Foundation (context gathered; ready for planning)
+
+## ⚠️ Project Pivot Note
+During Phase 1 discuss (2026-03-27), the project direction changed from 2-player co-op to **N-player team PvP (team deathmatch)**. Phases 2–5 in the current ROADMAP.md are designed around co-op and must be rebuilt. Run `/gsd-new-milestone` after Phase 1 to update the roadmap.
 
 ## Key Decisions
 - **Networking:** socket.io 4.x (server) + socket.io-client (browser); Node.js 20 dedicated server
