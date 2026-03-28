@@ -150,3 +150,9 @@ export const WATER_TORNADO_COOLDOWN = 1500; // ms
 export const WATER_TORNADO_DURATION = 2000; // time it stays alive in ms
 export const WATER_TORNADO_TICK_INTERVAL = 300; // damage tick interval
 export const WATER_TORNADO_BODY_RADIUS = 24;
+
+
+// Networking (Phase 1: LAN Foundation)
+export const NETWORK_SERVER_URL = 'http://localhost';
+export const NETWORK_SERVER_PORT = 3000;
+export const NETWORK_TICK_RATE_HZ = 20;
