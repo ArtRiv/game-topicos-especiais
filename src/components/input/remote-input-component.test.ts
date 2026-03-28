@@ -17,7 +17,7 @@ describe('RemoteInputComponent', () => {
   });
 
   it('applySnapshot stores the snapshot', () => {
-    ric.applySnapshot({ x: 100, y: 200, direction: 'RIGHT', state: 'MOVE', element: 'FIRE', playerId: 'p1' });
+    ric.applySnapshot({ x: 100, y: 200, direction: 'RIGHT', state: 'MOVE', element: 'FIRE' });
     const snap = ric.getSnapshot();
     expect(snap).not.toBeNull();
     expect(snap?.x).toBe(100);
@@ -28,8 +28,8 @@ describe('RemoteInputComponent', () => {
   });
 
   it('getSnapshot returns the last applied snapshot', () => {
-    ric.applySnapshot({ x: 10, y: 20, direction: 'UP', state: 'IDLE', element: 'ICE', playerId: 'p1' });
-    ric.applySnapshot({ x: 50, y: 60, direction: 'DOWN', state: 'MOVE', element: 'FIRE', playerId: 'p1' });
+    ric.applySnapshot({ x: 10, y: 20, direction: 'UP', state: 'IDLE', element: 'ICE' });
+    ric.applySnapshot({ x: 50, y: 60, direction: 'DOWN', state: 'MOVE', element: 'FIRE' });
     const snap = ric.getSnapshot();
     expect(snap?.x).toBe(50);
     expect(snap?.direction).toBe('DOWN');
