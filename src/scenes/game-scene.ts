@@ -60,6 +60,9 @@ import {
   EARTH_WALL_PILLAR_SPACING,
   EARTH_WALL_FIREBOLT_SPLASH_RADIUS,
 } from '../common/config';
+import { NetworkManager } from '../networking/network-manager';
+import { RemoteInputComponent } from '../components/input/remote-input-component';
+import type { PlayerUpdateBroadcast, RoomTransitionPayload, PlayerDisconnectedPayload, PlayerUpdatePayload, SpellCastBroadcast } from '../networking/types';
 
 export class GameScene extends Phaser.Scene {
   #levelData!: LevelData;
@@ -102,6 +105,8 @@ export class GameScene extends Phaser.Scene {
   #earthWallLastPlacedY: number = -Infinity;
   // Tracks previous-frame left-mouse state so we can detect a fresh click
   #earthWallMouseWasDown: boolean = false;
+  // Multiplayer: remote players keyed by playerId
+  #remotePlayers = new Map<string, Player>();
 
   constructor() {
     super({
@@ -141,6 +146,7 @@ export class GameScene extends Phaser.Scene {
 
     this.#registerColliders();
     this.#registerCustomEvents();
+    this.#setupNetworking();
 
     this.scene.launch(SCENE_KEYS.UI_SCENE);
   }
@@ -783,6 +789,14 @@ export class GameScene extends Phaser.Scene {
       EVENT_BUS.off(CUSTOM_EVENTS.DEBUG_SPAWN_FLYING_OBELISK, this.#spawnDebugFlyingObelisk, this);
       this.#fireBreathDamageTimer?.destroy();
       this.#activeFireBreath?.destroy();
+      // Cleanup network listeners and remote players
+      EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_ROOM_TRANSITION, this.#onNetworkRoomTransition, this);
+      EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_PLAYER_UPDATE, this.#onRemotePlayerUpdate, this);
+      EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_SPELL_CAST, this.#onRemoteSpellCast, this);
+      EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_PLAYER_DISCONNECTED, this.#onRemotePlayerDisconnected, this);
+      try { NetworkManager.getInstance().stopGameTick(); } catch { /* offline */ }
+      this.#remotePlayers.forEach((p) => p.destroy());
+      this.#remotePlayers.clear();
       // Note: #earthWallGroup is a Phaser.GameObjects.Group that registers its own
       // SHUTDOWN listener (before ours) and calls destroy() on itself, setting
       // this.children to undefined. Calling clear() here would crash. Phaser already
@@ -1100,7 +1114,16 @@ export class GameScene extends Phaser.Scene {
         roomId: door.targetRoomId,
         doorId: door.targetDoorId,
       };
-      this.scene.start(SCENE_KEYS.GAME_SCENE, sceneData);
+
+      // Online mode: request server to broadcast transition to all clients
+      let nm: NetworkManager | null = null;
+      try { nm = NetworkManager.getInstance(); } catch { /* offline */ }
+      if (nm && nm.isConnected) {
+        nm.sendRoomTransitionRequest({ levelName: modifiedLevelName, roomId: door.targetRoomId, doorId: door.targetDoorId });
+        // Do NOT start scene locally — wait for NETWORK_ROOM_TRANSITION echo from server
+      } else {
+        this.scene.start(SCENE_KEYS.GAME_SCENE, sceneData);
+      }
       return;
     }
     const targetDoor = this.#objectsByRoomId[door.targetRoomId].doorMap[door.targetDoorId];
@@ -1320,4 +1343,101 @@ export class GameScene extends Phaser.Scene {
     DataManager.instance.defeatedCurrentAreaBoss();
     this.#handleAllEnemiesDefeated();
   }
+
+  // ---- Multiplayer networking ----
+
+  static readonly #PLAYER_TINT_PALETTE = [0xffffff, 0x00aaff, 0xff4444, 0x44ff44, 0xff44ff];
+
+  #setupNetworking(): void {
+    let nm: NetworkManager | null = null;
+    try { nm = NetworkManager.getInstance(); } catch { /* offline — skip */ }
+    if (!nm || !nm.isConnected) return;
+
+    nm.startGameTick(() => this.#buildLocalPlayerSnapshot());
+    EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_ROOM_TRANSITION, this.#onNetworkRoomTransition, this);
+    EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_PLAYER_UPDATE, this.#onRemotePlayerUpdate, this);
+    EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_SPELL_CAST, this.#onRemoteSpellCast, this);
+    EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_PLAYER_DISCONNECTED, this.#onRemotePlayerDisconnected, this);
+  }
+
+  #buildLocalPlayerSnapshot(): PlayerUpdatePayload | null {
+    if (!this.#player?.active) return null;
+    return {
+      x: this.#player.x,
+      y: this.#player.y,
+      direction: this.#player.direction,
+      state: this.#player.stateMachine.currentStateName ?? 'IDLE_STATE',
+      element: ElementManager.instance.activeElement,
+    };
+  }
+
+  #onNetworkRoomTransition = (payload: RoomTransitionPayload): void => {
+    if (!isLevelName(payload.levelName.toUpperCase())) return;
+    this.scene.start(SCENE_KEYS.GAME_SCENE, {
+      level: payload.levelName.toUpperCase() as LevelData['level'],
+      roomId: payload.roomId,
+      doorId: payload.doorId,
+    });
+  };
+
+  #onRemotePlayerUpdate = (payload: PlayerUpdateBroadcast): void => {
+    let nm: NetworkManager | null = null;
+    try { nm = NetworkManager.getInstance(); } catch { /* offline */ }
+    if (nm && payload.playerId === nm.localPlayerId) return;
+
+    let remote = this.#remotePlayers.get(payload.playerId);
+    if (!remote) {
+      const slotIndex = this.#remotePlayers.size + 1;
+      const tint = GameScene.#PLAYER_TINT_PALETTE[slotIndex % GameScene.#PLAYER_TINT_PALETTE.length];
+      const ric = new RemoteInputComponent();
+      remote = new Player({
+        scene: this,
+        position: { x: payload.x, y: payload.y },
+        controls: ric,
+        maxLife: CONFIG.PLAYER_START_MAX_HEALTH,
+        currentLife: CONFIG.PLAYER_START_MAX_HEALTH,
+        tintColor: tint,
+      });
+      this.#remotePlayers.set(payload.playerId, remote);
+    }
+
+    // Lerp toward reported position
+    remote.x = Phaser.Math.Linear(remote.x, payload.x, 0.3);
+    remote.y = Phaser.Math.Linear(remote.y, payload.y, 0.3);
+
+    // Drive remote player animations via RemoteInputComponent
+    const ric = remote.controls as RemoteInputComponent;
+    if (typeof ric.applySnapshot === 'function') {
+      ric.applySnapshot({ x: payload.x, y: payload.y, direction: payload.direction, state: payload.state, element: payload.element });
+    }
+  };
+
+  #onRemoteSpellCast = (payload: SpellCastBroadcast): void => {
+    // Re-emit locally so the existing spell system handles visual effect
+    EVENT_BUS.emit(CUSTOM_EVENTS.SPELL_CAST, {
+      x: payload.x,
+      y: payload.y,
+      element: payload.element,
+      direction: payload.direction,
+      spellId: payload.spellId,
+    });
+  };
+
+  #onRemotePlayerDisconnected = (payload: PlayerDisconnectedPayload): void => {
+    const remote = this.#remotePlayers.get(payload.playerId);
+    if (remote) {
+      remote.destroy();
+      this.#remotePlayers.delete(payload.playerId);
+    }
+    const msg = this.add
+      .text(this.cameras.main.centerX, this.cameras.main.centerY - 40, 'A player disconnected', {
+        fontFamily: '"Press Start 2P"',
+        fontSize: '8px',
+        color: '#ff4444',
+      })
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(999);
+    this.time.delayedCall(3000, () => msg.destroy());
+  };
 }
