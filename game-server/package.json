@@ -1,0 +1,21 @@
+{
+  "name": "game-server",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node --loader ts-node/esm src/server.ts",
+    "dev": "tsx watch src/server.ts",
+    "test": "vitest"
+  },
+  "dependencies": {
+    "socket.io": "^4.8.0",
+    "express": "^4.21.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8",
+    "socket.io-client": "^4.8.0",
+    "@types/express": "^4.17.21"
+  }
+}
