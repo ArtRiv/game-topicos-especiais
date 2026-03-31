@@ -6,6 +6,7 @@ export type PlayerInfo = {
   name: string;
   socketId: string;
   element?: string;
+  team?: number;          // 0 = Team A, 1 = Team B; undefined = unassigned
 };
 
 export type Lobby = {
