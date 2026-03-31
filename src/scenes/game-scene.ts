@@ -1428,6 +1428,7 @@ export class GameScene extends Phaser.Scene {
       const dirChanged = target.direction && target.direction !== remote.direction;
       if (dirChanged) {
         remote.direction = target.direction as Direction;
+        remote.setFlipX(target.direction === DIRECTION.LEFT);
       }
 
       if (target.state && remote.stateMachine) {
@@ -1476,16 +1477,18 @@ export class GameScene extends Phaser.Scene {
     return GameScene.#PLAYER_TINT_PALETTE[(this.#remotePlayers.size + 1) % len];
   }
 
-  #onLocalSpellCast = (payload: { spellId: string; slotIndex: number }): void => {
+  #onLocalSpellCast = (payload: { spellId: string; slotIndex: number; casterX: number; casterY: number; targetX: number; targetY: number }): void => {
     let nm: NetworkManager | null = null;
     try { nm = NetworkManager.getInstance(); } catch { return; }
     if (!nm?.isConnected || !this.#player?.active) return;
     nm.sendSpellCast({
       spellId: payload.spellId,
       element: ElementManager.instance.activeElement,
-      x: this.#player.x,
-      y: this.#player.y,
+      x: payload.casterX,
+      y: payload.casterY,
       direction: this.#player.direction,
+      targetX: payload.targetX,
+      targetY: payload.targetY,
     });
   };
 
@@ -1493,35 +1496,24 @@ export class GameScene extends Phaser.Scene {
     // Spawn the spell visual directly — do NOT re-emit SPELL_CAST (that would
     // trigger #onLocalSpellCast and re-broadcast, creating an infinite loop).
     let spell: { gameObject: Phaser.GameObjects.GameObject } | undefined;
-    const { x, y, direction, element, spellId } = payload;
-
-    // Compute a target offset from the caster's direction for projectile spells
-    const OFFSET = 100;
-    let tx = x;
-    let ty = y;
-    switch (direction) {
-      case DIRECTION.UP: ty -= OFFSET; break;
-      case DIRECTION.DOWN: ty += OFFSET; break;
-      case DIRECTION.LEFT: tx -= OFFSET; break;
-      case DIRECTION.RIGHT: tx += OFFSET; break;
-    }
+    const { x, y, element, spellId, targetX, targetY } = payload;
 
     if (spellId === SPELL_ID.FIRE_BOLT) {
       if (element === ELEMENT.EARTH) {
-        spell = new EarthBolt(this, x, y, tx, ty);
+        spell = new EarthBolt(this, x, y, targetX, targetY);
       } else if (element === ELEMENT.WATER) {
-        spell = new WaterSpike(this, x, y);
+        spell = new WaterSpike(this, targetX, targetY);
       } else {
-        spell = new FireBolt(this, x, y, tx, ty);
+        spell = new FireBolt(this, x, y, targetX, targetY);
       }
     } else if (spellId === SPELL_ID.FIRE_AREA) {
       if (element === ELEMENT.WATER) {
-        spell = new WaterTornado(this, x, y);
+        spell = new WaterTornado(this, targetX, targetY);
       } else if (element === ELEMENT.EARTH) {
-        const dir = direction === DIRECTION.LEFT ? DIRECTION.LEFT : DIRECTION.RIGHT;
-        spell = new EarthBump(this, x, y, dir);
+        const dir = targetX < x ? DIRECTION.LEFT : DIRECTION.RIGHT;
+        spell = new EarthBump(this, targetX, targetY, dir);
       } else {
-        spell = new FireArea(this, x, y);
+        spell = new FireArea(this, targetX, targetY);
       }
     }
 

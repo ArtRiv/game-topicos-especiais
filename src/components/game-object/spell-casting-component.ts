@@ -153,7 +153,7 @@ export class SpellCastingComponent extends BaseGameObjectComponent {
       this.#activeSpells = this.#activeSpells.filter((s) => s !== spell);
     });
 
-    EVENT_BUS.emit(CUSTOM_EVENTS.SPELL_CAST, { spellId: slot.spellId, slotIndex });
+    EVENT_BUS.emit(CUSTOM_EVENTS.SPELL_CAST, { spellId: slot.spellId, slotIndex, casterX, casterY, targetX, targetY });
 
     return spell;
   }

@@ -41,6 +41,8 @@ export type SpellCastPayload = {
   x: number;
   y: number;
   direction: string;
+  targetX: number;
+  targetY: number;
 };
 
 export type SpellCastBroadcast = SpellCastPayload & { playerId: string };
