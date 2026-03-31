@@ -54,9 +54,26 @@ Plans:
 - [x] 02-01-PLAN.md — Type system + server team protocol (`PlayerInfo.team`, `lobby:assign-team` socket event)
 - [x] 02-02-PLAN.md — LobbyScene host detection fix + team assignment UI (host toggle buttons, read-only badges)
 - [x] 02-03-PLAN.md — GameScene deterministic tinting via `matchPlayers` getter (team-based color assignment)
-- [x] 02-04-PLAN.md — Phase 2 verification checklist (all 5 success criteria, 3-client smoke test) (completed 2026-03-31)
+- [x] 02-04-PLAN.md — Phase 2 verification checklist (all 5 success criteria, 3-client smoke test)
+ (completed 2026-03-31)
 
 ---
+
+### Phase 02.1: Network Stability & Performance (INSERTED)
+
+**Goal**: Multiplayer networking is stable, responsive, and performs well with 3+ clients — latency is sub-second on all connected tabs, remote player movement is smooth, and the architecture scales toward 5v5 without degradation
+**Depends on**: Phase 2
+**Requirements**: NETPERF-01, NETPERF-02, NETPERF-03, NETPERF-04, NETPERF-05
+**Success Criteria** (what must be TRUE):
+  1. Position tick rate is 20 Hz (not 60 Hz) — reducing per-client bandwidth by ~66%
+  2. No position messages sent when player state is unchanged (dirty-checking)
+  3. Remote players move smoothly via delta-time interpolation — no teleporting or jitter
+  4. 3-tab test shows all clients responsive with sub-second latency
+  5. Movement, animation, and spell sync remain correct at the optimized tick rate
+**Plans**: 2 plans
+Plans:
+- [ ] 02.1-01-PLAN.md — Network message path optimization (tick rate, dirty-check, serialization, Map lookup)
+- [ ] 02.1-02-PLAN.md — Remote player interpolation & multi-client validation
 
 ### Phase 3: New Spells
 

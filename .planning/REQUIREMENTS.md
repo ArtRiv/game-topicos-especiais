@@ -60,6 +60,14 @@
 - [ ] **SCL-03**: No crash or freeze when any player disconnects mid-match (relies on existing disconnect detection)
 - [ ] **SCL-04**: All combat logic (hits, damage, elimination) works correctly with multiple simultaneous players, not just 1v1
 
+### Network Performance (NETPERF) — Phase 02.1 (INSERTED)
+
+- [ ] **NETPERF-01**: Position tick rate reduced to 20 Hz — per-client outbound bandwidth reduced by ~66% vs 60 Hz
+- [ ] **NETPERF-02**: No position messages sent when player state (x, y, direction, state, element) is unchanged since last send (dirty-checking)
+- [ ] **NETPERF-03**: Network debug metrics available: messages sent/sec, messages received/sec — togglable via config flag
+- [ ] **NETPERF-04**: 3+ client test shows all tabs responsive with sub-second latency (no multi-second delay on 3rd client)
+- [ ] **NETPERF-05**: Remote player interpolation uses delta-time — movement is smooth and animation/spell sync remain correct at 20 Hz
+
 ---
 
 ## Out of Scope (v1.1)
