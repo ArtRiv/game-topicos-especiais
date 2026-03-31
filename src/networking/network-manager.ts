@@ -71,6 +71,10 @@ export class NetworkManager {
     return this.#isConnected;
   }
 
+  get matchPlayers(): readonly PlayerInfo[] {
+    return this.#matchPlayers;
+  }
+
   connect(): void {
     this.#socket.connect();
   }
