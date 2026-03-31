@@ -13,7 +13,7 @@ Turn the completed WebRTC P2P networking foundation into a playable multi-player
 | # | Phase | Goal | Requirements | Success Criteria |
 |---|-------|------|-------------|-----------------|
 | 1 | LAN Foundation | WebRTC P2P networking, lobby, remote player sync, spell relay *(COMPLETE)* | NET-01–06 | 5 |
-| 2 | Multi-Player Control | 2/4 | In Progress|  |
+| 2 | Multi-Player Control | 4/4 | Complete   | 2026-03-31 |
 | 3 | New Spells | Ice, Wind, Thunder spells; config-driven extensible system; all spells open to all players | SPL-01–05, PVP-01 | 4 |
 | 4 | PvP Combat | Cross-player hit detection; host-authoritative damage; client-side prediction; elimination | PVP-02–06, MTH-02, HUD-02, SCL-04 | 5 |
 | 5 | Match Loop & Scalability | Synchronized match start; win condition; match-end screen; return to lobby; 5v5 minimum stable baseline; scale beyond for stress testing | MTH-01, MTH-03–06, SCL-01–03 | 5 |
@@ -54,7 +54,7 @@ Plans:
 - [x] 02-01-PLAN.md — Type system + server team protocol (`PlayerInfo.team`, `lobby:assign-team` socket event)
 - [x] 02-02-PLAN.md — LobbyScene host detection fix + team assignment UI (host toggle buttons, read-only badges)
 - [x] 02-03-PLAN.md — GameScene deterministic tinting via `matchPlayers` getter (team-based color assignment)
-- [ ] 02-04-PLAN.md — Phase 2 verification checklist (all 5 success criteria, 3-client smoke test)
+- [x] 02-04-PLAN.md — Phase 2 verification checklist (all 5 success criteria, 3-client smoke test) (completed 2026-03-31)
 
 ---
 
