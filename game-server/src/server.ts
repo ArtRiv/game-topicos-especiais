@@ -3,7 +3,7 @@ import express from 'express';
 import { Server } from 'socket.io';
 import { LobbyManager } from './lobby-manager.js';
 import { GameRoom } from './game-room.js';
-import type { PlayerUpdatePayload, SpellCastPayload, RoomTransitionPayload } from './types.js';
+import type { RoomTransitionPayload } from './types.js';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
@@ -74,23 +74,7 @@ io.on('connection', (socket) => {
     io.to(`lobby:${lobby.id}`).emit('lobby:started', { matchConfig });
   });
 
-  // --- Game phase ---
-  socket.on('game:player-update', (payload: PlayerUpdatePayload) => {
-    const room = findRoomBySocket(socket.id);
-    if (!room) return;
-    const playerId = room.getPlayerIdBySocketId(socket.id);
-    const others = room.getOtherSocketIds(socket.id);
-    others.forEach((sid) => io.to(sid).emit('game:player-update', { ...payload, playerId }));
-  });
-
-  socket.on('game:spell-cast', (payload: SpellCastPayload) => {
-    const room = findRoomBySocket(socket.id);
-    if (!room) return;
-    const playerId = room.getPlayerIdBySocketId(socket.id);
-    const others = room.getOtherSocketIds(socket.id);
-    others.forEach((sid) => io.to(sid).emit('game:spell-cast', { ...payload, playerId }));
-  });
-
+  // --- Game phase (WebRTC handles player-update and spell-cast P2P; only room transitions use server) ---
   socket.on('game:room-transition-request', (payload: RoomTransitionPayload) => {
     const room = findRoomBySocket(socket.id);
     if (!room || room.transitionLock) return;
