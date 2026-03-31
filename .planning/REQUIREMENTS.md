@@ -1,15 +1,118 @@
-# Requirements — Mages Co-op
+# Requirements — Mages PvP
 
-## v1 Requirements (College Event Build)
+## v1.0 Requirements (College Event Build — Phase 1 Complete)
 
-### Networking (NET)
+### Networking (NET) — ✓ ALL COMPLETE (Phase 1)
 
-- [ ] **NET-01**: Player can enter server IP and port on a connect screen to join a LAN session
-- [ ] **NET-02**: Both players must be connected before the game starts (lobby/wait screen)
-- [ ] **NET-03**: Player 1's character position and state are visible on Player 2's screen in real time (and vice versa)
-- [ ] **NET-04**: Spell projectiles cast by either player are visible on both screens
-- [ ] **NET-05**: Enemy positions and health are synchronized — both players see the same enemy state
-- [ ] **NET-06**: If one player disconnects, the game displays a reconnect/error message
+- [x] **NET-01**: Player can enter server IP on a connect screen to join a LAN session
+- [x] **NET-02**: All players must be connected before the game starts (lobby/wait screen)
+- [x] **NET-03**: Each player's position and state are visible on all other clients in real time
+- [x] **NET-04**: Spell projectiles cast by any player are visible on all clients
+- [x] **NET-05**: Room transitions are synchronized across all clients
+- [x] **NET-06**: If a player disconnects mid-match, remaining clients are notified immediately (no freeze)
+
+---
+
+## v1.1 Requirements (PvP Team Deathmatch)
+
+### Multi-Player Control (PLR)
+
+- [ ] **PLR-01**: Each player controls their own character on their own machine via keyboard — no fixed role assignments (Player[i], not P1/P2)
+- [ ] **PLR-02**: Each player has independent health and mana
+- [ ] **PLR-03**: Remote players are rendered on each client driven by network snapshots (existing `RemoteInputComponent`)
+- [ ] **PLR-04**: Lobby supports N players with no hard cap enforced in code; teams are configured per lobby session
+
+### Spells — New Elements (SPL)
+
+- [ ] **SPL-01**: At least one Ice spell implemented (~3 spells per element target; start with 1, design for extensibility)
+- [ ] **SPL-02**: At least one Wind spell implemented
+- [ ] **SPL-03**: At least one Thunder spell implemented
+- [ ] **SPL-04**: Each new spell has config values (damage, mana cost, cooldown) in `config.ts`
+- [ ] **SPL-05**: Element/spell system is designed so new elements can be added without refactoring core casting logic
+
+### Player-vs-Player Combat (PVP)
+
+- [ ] **PVP-01**: All players have access to all available spells (no per-player loadout restrictions in v1.1)
+- [ ] **PVP-02**: Spells cast by any player can collide with and damage any opponent (cross-player hit detection)
+- [ ] **PVP-03**: Client renders spell cast and movement immediately (client-side prediction) without waiting for host confirmation
+- [ ] **PVP-04**: Host validates hit events and broadcasts confirmed damage + elimination to all clients
+- [ ] **PVP-05**: Each client applies damage to the correct player only after receiving host confirmation
+- [ ] **PVP-06**: Friendly fire is controlled by a configurable toggle (default: OFF); if complex, friendly fire disabled by default
+
+### Match Loop (MTH)
+
+- [ ] **MTH-01**: All players are loaded into the same scene before combat begins (synchronized match start)
+- [ ] **MTH-02**: A player who reaches 0 HP is eliminated (death state, removed from active play)
+- [ ] **MTH-03**: Win condition: last team standing (all opponents eliminated)
+- [ ] **MTH-04**: Match-end screen is shown simultaneously on all clients with the result
+- [ ] **MTH-05**: Players can return to the lobby from the match-end screen for a rematch
+- [ ] **MTH-06**: Match flow (Lobby → Match Start → Combat → Win Condition → Match End → Lobby) is structured to support future modes (battle royale, FFA) without refactoring
+
+### HUD & Feedback (HUD)
+
+- [ ] **HUD-01**: Each player sees their own HP bar on their screen
+- [ ] **HUD-02**: Player death is visually communicated on all clients (death animation, character removed)
+
+### Scalability & Stability (SCL)
+
+- [ ] **SCL-01**: A 5v5 match (10 players total) is the minimum stable baseline — no desync, freeze, or crash; this is a floor, not a ceiling
+- [ ] **SCL-02**: The system scales beyond 10 players for stress testing with no code changes required; real performance limits are determined empirically
+- [ ] **SCL-03**: No crash or freeze when any player disconnects mid-match (relies on existing disconnect detection)
+- [ ] **SCL-04**: All combat logic (hits, damage, elimination) works correctly with multiple simultaneous players, not just 1v1
+
+---
+
+## Out of Scope (v1.1)
+
+- Cooperative puzzle rooms — deferred
+- Bosses / final boss — deferred
+- NPCs and narrative — deferred
+- Combo journal UI — not in scope
+- Per-player element/spell restrictions (loadouts, classes) — system designed for it but not enforced in v1.1
+- Free-for-all / battle royale mode — MTH-06 enables it; not building the mode in v1.1
+- Full multi-player HUD (all players' HP visible) — HUD shows own HP only in v1.1; expandable later
+- WebRTC redesign — networking layer is complete; building on top only
+
+---
+
+## Traceability
+
+| Req ID | Phase | Status |
+|--------|-------|--------|
+| NET-01 | Phase 1 | ✓ Complete |
+| NET-02 | Phase 1 | ✓ Complete |
+| NET-03 | Phase 1 | ✓ Complete |
+| NET-04 | Phase 1 | ✓ Complete |
+| NET-05 | Phase 1 | ✓ Complete |
+| NET-06 | Phase 1 | ✓ Complete |
+| PLR-01 | Phase 2 | Pending |
+| PLR-02 | Phase 2 | Pending |
+| PLR-03 | Phase 2 | Pending |
+| PLR-04 | Phase 2 | Pending |
+| HUD-01 | Phase 2 | Pending |
+| SPL-01 | Phase 3 | Pending |
+| SPL-02 | Phase 3 | Pending |
+| SPL-03 | Phase 3 | Pending |
+| SPL-04 | Phase 3 | Pending |
+| SPL-05 | Phase 3 | Pending |
+| PVP-01 | Phase 3 | Pending |
+| PVP-02 | Phase 4 | Pending |
+| PVP-03 | Phase 4 | Pending |
+| PVP-04 | Phase 4 | Pending |
+| PVP-05 | Phase 4 | Pending |
+| PVP-06 | Phase 4 | Pending |
+| MTH-02 | Phase 4 | Pending |
+| HUD-02 | Phase 4 | Pending |
+| SCL-04 | Phase 4 | Pending |
+| MTH-01 | Phase 5 | Pending |
+| MTH-03 | Phase 5 | Pending |
+| MTH-04 | Phase 5 | Pending |
+| MTH-05 | Phase 5 | Pending |
+| MTH-06 | Phase 5 | Pending |
+| SCL-01 | Phase 5 | Pending |
+| SCL-02 | Phase 5 | Pending |
+| SCL-03 | Phase 5 | Pending |
+
 
 ### Second Player (P2)
 

@@ -77,44 +77,58 @@ When two players discover a new spell combo that wrecks a tough enemy — that "
 - [ ] DSC-01: Trial-and-error discovery works — combos fire automatically when spells collide
 - [ ] DSC-02: In-game combo journal/UI tracks discovered combos
 
-### Out of Scope
+## Current Milestone: v1.1 — PvP Team Deathmatch
 
+**Goal:** Turn the completed WebRTC P2P networking foundation into a playable multi-player PvP game — fully controllable mages, asymmetric elements, direct player-vs-player combat, and a working match loop (start → fight → win/lose) — while stress-testing how many players the WebRTC mesh can handle in practice.
+
+**Target features:**
+- Full P2 (and P3+) player control on separate machines
+- Asymmetric elements: P1 = Fire/Earth/Water; P2 = Ice/Wind/Thunder; P3+ assigned from pool
+- Ice, Wind, and Thunder spells implemented
+- Player-vs-player spell combat (spells can hit opponents)
+- Host-authoritative damage validation
+- Match loop: start → fight → win/lose → rematch
+- PvP HUD: all players' HP bars; team/element indicators
+- Dynamically scalable lobbies — no hard player cap; test P2P mesh limits empirically
+ (v1.1)
+
+- Cooperative puzzle rooms — deferred
+- Bosses / final boss — deferred
+- NPCs and narrative — deferred
+- Combo journal UI — not in scope
 - Isometric perspective — staying top-down for speed and to reuse existing code
-- Online multiplayer (internet) — LAN only for the event; networking complexity too high
-- More than 2 players — keeping scope tight for the event build
-- Character progression / XP / leveling — not needed for 15-min sessions
-- All 6 elements fully symmetric per player — asymmetric split keeps combos meaningful
-- Branching story / dialogue choices — light linear narrative only
-- Mobile / controller support — keyboard on each LAN machine is sufficient
+- Full WebRTC redesign — networking layer is complete and working; build on top of it
+- Character progression / XP / leveling — not needed for event sessions
+- Mobile / controller support — keyboard per machine is sufficient
 
 ## Context
 
-- **Existing codebase:** Phaser 3 + TypeScript Zelda-like with working player, enemies, rooms, state machines, and partial spell system. The networking layer (`src/networking/`) does not yet exist. The radial menu and element system are single-player only.
-- **Timeline:** College event in ~3-4 months. Targeting a polished 15-minute experience with the core co-op loop working.
-- **Team:** 2 developers; NPCs will carry jokes and personality from both.
-- **Confirmed direction:** Top-down (not isometric despite some older doc references).
-- **Player split:** P1 = Fire, Earth, Water / P2 = Ice, Wind, Thunder / All 6 in scope for the event build.
-- **Failure design:** Timed puzzle failure → spawns enemy wave, not hard reset. Keeps momentum.
+- **Existing codebase:** Phaser 3 + TypeScript top-down game with player, enemies, rooms, state machines, and spell system. WebRTC P2P networking fully implemented in `src/networking/` — socket.io signaling, reliable/unreliable data channels, LobbyScene, remote player spawn/sync, spell relay, fast disconnect detection.
+- **Timeline:** College event in ~3 months. Targeting a playable PvP experience with multiple match sizes.
+- **Team:** 2 developers.
+- **Pivot:** Project direction changed from 2-player co-op to N-player team PvP. Phases 2–5 of v1.0 roadmap are obsolete and replaced by v1.1 roadmap.
+- **Player split:** P1 = Fire, Earth, Water / P2 = Ice, Wind, Thunder / P3+ = assigned from combined pool or duplicated elements.
+- **Match size:** No hard cap — 1v1, 2v2, 3v3, 4v4, 5v5+ all supported; empirically test WebRTC mesh limits.
 
 ## Constraints
 
 - **Tech stack:** Phaser 3 + TypeScript — no engine change
-- **Timeline:** 3-4 months to college event
+- **Timeline:** ~3 months to college event
 - **Team size:** 2 developers
-- **Session length:** ~15 minutes per playthrough
-- **Networking:** LAN only (dedicated server on third machine); no WebRTC/internet
-- **Dependencies:** Spell combo system must exist before cross-player combos can be built
+- **Session length:** ~15 minutes per match
+- **Networking:** WebRTC P2P via socket.io signaling (LAN); architecture complete
+- **Match size:** No predefined cap — scale until performance degrades
 
 ## Key Decisions
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Top-down (not isometric) | Reuses existing code; isometric would require reworking camera, collision, and sprites | — Pending |
-| LAN co-op via dedicated server | Easier sync model than P2P; one machine hosts state | — Pending |
-| Asymmetric elements (not same pool) | Forces real cooperation — P1 literally cannot do what P2 does | — Pending |
-| Auto spell-collision combos | More intuitive than activation key; works with existing collision architecture | — Pending |
-| Puzzle fail → enemy wave | More fun than reset; adds tension without hard-blocking players | — Pending |
-| P1: Fire+Earth+Water / P2: Ice+Wind+Thunder | Natural elemental opposition; water+ice, fire+wind, earth+thunder have obvious combo potential | — Pending |
+| Top-down (not isometric) | Reuses existing code | Confirmed |
+| WebRTC P2P via socket.io signaling | Lower latency than relay server; direct peer communication | Implemented (Phase 1) |
+| Asymmetric elements (not same pool) | Forces real PvP variety; each player has distinct identity | Confirmed |
+| Host-authoritative damage only | Reduces desync without full server sim; simple for event scale | Confirmed |
+| No hard player cap | Test WebRTC mesh limits empirically rather than constrain prematurely | Confirmed |
+| Auto spell-collision combos | More intuitive than activation key; works with existing collision architecture | Confirmed |
 
 ## Evolution
 

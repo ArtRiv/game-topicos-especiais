@@ -1,33 +1,37 @@
 # GSD Project State
 
 ## Project
-- **Name:** Mages Co-op
+- **Name:** Mages PvP
 - **Engine:** Phaser 3.87.0 + TypeScript 5.7.3
 - **Build:** Vite 6.0.7 (pnpm)
-- **Milestone:** v1.0 — College Event Build
+- **Milestone:** v1.1 — PvP Team Deathmatch
 
 ## Phases
 | # | Title | Status |
 |---|-------|--------|
-| 1 | LAN Foundation | context-ready |
-| 2 | Two Players Playing | not-started (roadmap rebuild needed — see pivot note) |
-| 3 | Spell Sync & Cross-Player Combos | not-started (roadmap rebuild needed) |
-| 4 | Puzzle Rooms | not-started (roadmap rebuild needed) |
-| 5 | Bosses, NPCs & Narrative | not-started (roadmap rebuild needed) |
+| 1 | LAN Foundation | complete |
+| 2 | Multi-Player Control | not-started |
+| 3 | New Spells | not-started |
+| 4 | PvP Combat | not-started |
+| 5 | Match Loop & Scalability | not-started |
 
 ## Active Phase
-Phase 1 — LAN Foundation (context gathered; ready for planning)
+Phase 2 — Multi-Player Control — **NOT STARTED**
 
-## ⚠️ Project Pivot Note
-During Phase 1 discuss (2026-03-27), the project direction changed from 2-player co-op to **N-player team PvP (team deathmatch)**. Phases 2–5 in the current ROADMAP.md are designed around co-op and must be rebuilt. Run `/gsd-new-milestone` after Phase 1 to update the roadmap.
+## Current Position
 
-## Key Decisions
-- **Networking:** socket.io 4.x (server) + socket.io-client (browser); Node.js 20 dedicated server
-- **Sync model:** Full state broadcast at 20 Hz; server-authoritative for enemies and combo events
-- **Element split:** P1 = Fire + Earth + Water | P2 = Ice + Wind + Thunder
-- **Combo trigger:** Automatic on server-confirmed spell collision
-- **Puzzle failure:** Spawns a hard enemy wave (timer reaches zero)
-- **Architecture:** `NetworkManager` singleton, `RemoteInputComponent`, avoid polluting `GameScene` further
+Phase: 2 — Multi-Player Control
+Plan: —
+Status: Ready to plan
+Last activity: 2026-03-30 — ROADMAP.md created for v1.1; Phase 2 is next
+
+## Key Decisions (v1.1)
+- **Networking:** WebRTC P2P fully implemented — NOT redesigning; building on top of it
+- **Sync model:** 20 Hz unreliable channel for position/direction; reliable channel for spell cast, damage, death
+- **Element split:** P1 = Fire + Earth + Water | P2 = Ice + Wind + Thunder | P3+ = assigned from pool
+- **Authority:** Host-authoritative for damage/death validation only
+- **Match size:** No hard cap — empirically test WebRTC mesh limits
+- **Scope:** PvP combat + match loop; NO puzzles/bosses/NPCs/combo journal
 
 ## GSD Workflow Config
 - mode: yolo
