@@ -152,7 +152,7 @@ export class GameScene extends Phaser.Scene {
     this.scene.launch(SCENE_KEYS.UI_SCENE);
   }
 
-  public update(): void {
+  public update(_time: number, delta: number): void {
     this.#handleHitboxDebugToggle();
     this.#updateFireSpellCombos();
     this.#updateFireBreathChanneling();
@@ -161,6 +161,7 @@ export class GameScene extends Phaser.Scene {
     this.#updateEarthBoltFireAreaCombo();
     this.#updateEarthWallSpell();
     this.#handleRadialMenuInput();
+    this.#interpolateRemotePlayers(delta);
   }
 
   #handleRadialMenuInput(): void {
@@ -1403,19 +1404,39 @@ export class GameScene extends Phaser.Scene {
       this.#remotePlayers.set(payload.playerId, remote);
     }
 
-    // Lerp toward reported position
-    remote.x = Phaser.Math.Linear(remote.x, payload.x, 0.3);
-    remote.y = Phaser.Math.Linear(remote.y, payload.y, 0.3);
-
-    // Drive remote player direction + animation state directly from snapshot
-    remote.direction = payload.direction as Direction;
-    remote.stateMachine.setState(payload.state);
-
+    // Store network target — per-frame interpolation in #interpolateRemotePlayers handles rendering
     const ric = remote.controls as RemoteInputComponent;
     if (typeof ric.applySnapshot === 'function') {
       ric.applySnapshot({ x: payload.x, y: payload.y, direction: payload.direction, state: payload.state, element: payload.element });
     }
   };
+
+  #interpolateRemotePlayers(delta: number): void {
+    const lerpSpeed = 10;
+    const t = Math.min(1, lerpSpeed * (delta / 1000));
+
+    for (const remote of this.#remotePlayers.values()) {
+      const ric = remote.controls as RemoteInputComponent;
+      if (typeof ric.getTarget !== 'function') continue;
+
+      const target = ric.getTarget();
+      if (!target.hasTarget) continue;
+
+      remote.x = Phaser.Math.Linear(remote.x, target.x, t);
+      remote.y = Phaser.Math.Linear(remote.y, target.y, t);
+
+      if (target.direction && target.direction !== remote.direction) {
+        remote.direction = target.direction as Direction;
+      }
+
+      if (target.state && remote.stateMachine) {
+        const currentState = remote.stateMachine.currentStateName;
+        if (target.state !== currentState) {
+          remote.stateMachine.setState(target.state);
+        }
+      }
+    }
+  }
 
   /**
    * Returns a deterministic tint for a remote player.
