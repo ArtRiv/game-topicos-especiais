@@ -22,7 +22,11 @@ export class GameOverScene extends Phaser.Scene {
       return;
     }
 
-    this.add.text(this.scale.width / 2, 100, 'Game Over', DEFAULT_UI_TEXT_STYLE).setOrigin(0.5);
+    const zoom = Math.min(this.scale.width / 480, this.scale.height / 320);
+    this.cameras.main.setZoom(zoom);
+    this.cameras.main.centerOn(240, 160);
+
+    this.add.text(240, 100, 'Game Over', DEFAULT_UI_TEXT_STYLE).setOrigin(0.5);
 
     this.#menuContainer = this.add.container(32, 142, [
       this.add.image(0, 0, ASSET_KEYS.UI_DIALOG, 0).setOrigin(0),

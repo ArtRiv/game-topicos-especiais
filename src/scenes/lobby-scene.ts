@@ -27,10 +27,19 @@ export class LobbyScene extends Phaser.Scene {
   }
 
   public create(): void {
+    this.#applyCameraSettings();
+    this.scale.on(Phaser.Scale.Events.RESIZE, this.#applyCameraSettings, this);
     this.#showConnectView();
   }
 
+  #applyCameraSettings = (): void => {
+    const zoom = Math.min(this.scale.width / 480, this.scale.height / 320);
+    this.cameras.main.setZoom(zoom);
+    this.cameras.main.centerOn(240, 160);
+  };
+
   public shutdown(): void {
+    this.scale.off(Phaser.Scale.Events.RESIZE, this.#applyCameraSettings, this);
     EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_CONNECTED, this.#onConnected, this);
     EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_LOBBY_UPDATED, this.#onLobbyUpdated, this);
     EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_LOBBY_STARTED, this.#onLobbyStarted, this);
@@ -42,8 +51,8 @@ export class LobbyScene extends Phaser.Scene {
   // --- View A: Connect Screen ---
   #showConnectView(): void {
     this.#clearView();
-    const cx = this.cameras.main.centerX;
-    const cy = this.cameras.main.centerY;
+    const cx = 240;
+    const cy = 160;
 
     const title = this.add.text(cx, cy - 120, 'MAGES ONLINE', FONT_TITLE).setOrigin(0.5);
 
@@ -102,8 +111,7 @@ export class LobbyScene extends Phaser.Scene {
 
   #showLobbyListView(): void {
     this.#clearView();
-    const cx = this.cameras.main.centerX;
-    const cy = this.cameras.main.centerY;
+    const cx = 240;
 
     const title = this.add.text(cx, 40, 'LOBBIES', FONT_TITLE).setOrigin(0.5);
     const hint = this.add.text(cx, 65, 'Click a lobby to join it', FONT_SMALL).setOrigin(0.5);
@@ -151,7 +159,7 @@ export class LobbyScene extends Phaser.Scene {
     this.#lobbyListContainer.forEach((o) => o.destroy());
     this.#lobbyListContainer = [];
 
-    const cx = this.cameras.main.centerX;
+    const cx = 240;
     const baseY = 155;
 
     if (this.#lobbies.length === 0) {
@@ -186,8 +194,8 @@ export class LobbyScene extends Phaser.Scene {
     this.#clearView();
 
     this.#currentLobby = lobby;
-    const cx = this.cameras.main.centerX;
-    const cy = this.cameras.main.centerY;
+    const cx = 240;
+    const cy = 160;
 
     const title = this.add.text(cx, 40, 'WAITING ROOM', FONT_TITLE).setOrigin(0.5);
     const hostName = lobby.players.find((p) => p.id === lobby.hostPlayerId)?.name ?? '?';
@@ -235,7 +243,7 @@ export class LobbyScene extends Phaser.Scene {
     this.#playerListObjects.forEach((o) => o.destroy());
     this.#playerListObjects = [];
 
-    const cx = this.cameras.main.centerX;
+    const cx = 240;
     const baseY = 120;
     const TINTS = [0xffffff, 0x00aaff, 0xff4444, 0x44ff44, 0xff44ff];
 

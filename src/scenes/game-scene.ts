@@ -941,6 +941,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   #setupCamera(): void {
+    const zoom = Math.min(this.scale.width / 480, this.scale.height / 320);
+    this.cameras.main.setZoom(zoom);
     // updates for camera to stay with level
     const roomSize = this.#objectsByRoomId[this.#levelData.roomId].room;
     this.cameras.main.setBounds(roomSize.x, roomSize.y - roomSize.height, roomSize.width, roomSize.height);

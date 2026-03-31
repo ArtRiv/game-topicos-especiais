@@ -60,6 +60,10 @@ export class RadialMenuScene extends Phaser.Scene {
     this.#selectedElement = ElementManager.instance.activeElement;
     this.#hoveredElement = this.#selectedElement;
 
+    const zoom = Math.min(this.scale.width / 480, this.scale.height / 320);
+    this.cameras.main.setZoom(zoom);
+    this.cameras.main.centerOn(CX, CY);
+
     // Close and commit selection the moment Ctrl is released (fires exactly once)
     this.input.keyboard.once('keyup-CTRL', () => {
       ElementManager.instance.setElement(this.#selectedElement);
@@ -114,10 +118,10 @@ export class RadialMenuScene extends Phaser.Scene {
 
   public update(): void {
     // Determine which slice the mouse is aiming at
-    const px = this.input.activePointer.x;
-    const py = this.input.activePointer.y;
-    const dx = px - CX;
-    const dy = py - CY;
+    const pointer = this.input.activePointer;
+    const worldPoint = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+    const dx = worldPoint.x - CX;
+    const dy = worldPoint.y - CY;
     const dist = Math.sqrt(dx * dx + dy * dy);
 
     let hovered: Element | null = null;

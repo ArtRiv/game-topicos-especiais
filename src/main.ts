@@ -14,10 +14,7 @@ const gameConfig: Phaser.Types.Core.GameConfig = {
   roundPixels: true,
   scale: {
     parent: 'game-container',
-    width: 480,
-    height: 320,
-    autoCenter: Phaser.Scale.CENTER_BOTH,
-    mode: Phaser.Scale.HEIGHT_CONTROLS_WIDTH,
+    mode: Phaser.Scale.RESIZE,
   },
   backgroundColor: '#000000',
   dom: {

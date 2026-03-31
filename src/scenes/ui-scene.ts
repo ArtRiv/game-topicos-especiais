@@ -33,6 +33,9 @@ export class UiScene extends Phaser.Scene {
   }
 
   public create(): void {
+    this.#applyCameraSettings();
+    this.scale.on(Phaser.Scale.Events.RESIZE, this.#applyCameraSettings, this);
+
     // create main hud
     this.#hudContainer = this.add.container(0, 0, []);
     this.#hearts = [];
@@ -111,7 +114,14 @@ export class UiScene extends Phaser.Scene {
       EVENT_BUS.off(CUSTOM_EVENTS.SHOW_DIALOG, this.showDialog, this);
       EVENT_BUS.off(CUSTOM_EVENTS.MANA_UPDATED, this.updateManaInHud, this);
       EVENT_BUS.off(CUSTOM_EVENTS.ELEMENT_CHANGED, this.#updateElementIndicator, this);
+      this.scale.off(Phaser.Scale.Events.RESIZE, this.#applyCameraSettings, this);
     });
+  }
+
+  #applyCameraSettings(): void {
+    const zoom = Math.min(this.scale.width / 480, this.scale.height / 320);
+    this.cameras.main.setZoom(zoom);
+    this.cameras.main.centerOn(240, 160);
   }
 
   public async updateHealthInHud(data: PlayerHealthUpdated): Promise<void> {
