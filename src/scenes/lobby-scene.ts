@@ -16,6 +16,7 @@ type ViewObjects = Phaser.GameObjects.GameObject[];
 
 export class LobbyScene extends Phaser.Scene {
   #playerName: string = 'Player';
+  #isHost: boolean = false;
   #viewObjects: ViewObjects = [];
   #ipInput!: Phaser.GameObjects.DOMElement;
   #nickInput!: Phaser.GameObjects.DOMElement;
@@ -34,6 +35,7 @@ export class LobbyScene extends Phaser.Scene {
     EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_LOBBY_UPDATED, this.#onLobbyUpdated, this);
     EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_LOBBY_STARTED, this.#onLobbyStarted, this);
     EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_DISCONNECTED, this.#onDisconnected, this);
+    this.#isHost = false;
     this.#clearView();
   }
 
@@ -107,6 +109,7 @@ export class LobbyScene extends Phaser.Scene {
     const hint = this.add.text(cx, 65, 'Click a lobby to join it', FONT_SMALL).setOrigin(0.5);
 
     const createBtn = this.#createButton(cx, 100, 'CREATE LOBBY', () => {
+      this.#isHost = true;
       NetworkManager.getInstance().sendLobbyCreate(this.#playerName);
     });
 
@@ -196,13 +199,10 @@ export class LobbyScene extends Phaser.Scene {
 
     this.#renderPlayerList(lobby.players);
 
-    // Show START button if local player is host
-    // We identify ourselves by checking localPlayerId on NetworkManager
-    const nm = NetworkManager.getInstance();
-    if (lobby.hostPlayerId === nm.localPlayerId || lobby.players[0]?.socketId) {
-      // Host detection: since localPlayerId is set after lobby:started,
-      // we check if we're the first player (host) by tracking socket
-      // Use a flag: if we created the lobby we're the host
+    // Show START button only for the host.
+    // #isHost is set to true when sendLobbyCreate() is called (before response arrives).
+    // Do NOT use nm.localPlayerId here — it is empty until lobby:started fires.
+    if (this.#isHost) {
       const startBtn = this.#createButton(cx, cy + 120, 'START GAME', () => {
         NetworkManager.getInstance().sendLobbyStart();
       });
@@ -224,6 +224,7 @@ export class LobbyScene extends Phaser.Scene {
   #onLobbyStarted = (): void => {
     EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_LOBBY_UPDATED, this.#onWaitingRoomUpdate, this);
     EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_LOBBY_STARTED, this.#onLobbyStarted, this);
+    this.#isHost = false;
     this.scene.stop(SCENE_KEYS.LOBBY_SCENE);
     this.scene.start(SCENE_KEYS.PRELOAD_SCENE);
   };
@@ -239,15 +240,44 @@ export class LobbyScene extends Phaser.Scene {
     const TINTS = [0xffffff, 0x00aaff, 0xff4444, 0x44ff44, 0xff44ff];
 
     players.forEach((player, i) => {
-      const rowY = baseY + i * 28;
+      const rowY = baseY + i * 36;
       const tint = TINTS[i % TINTS.length];
       const dot = this.add.rectangle(cx - 150, rowY + 8, 12, 12, tint);
       const name = this.add.text(cx - 130, rowY, player.name, FONT_SMALL_WHITE);
       const role = player.id === this.#currentLobby?.hostPlayerId
-        ? this.add.text(cx + 80, rowY, '(HOST)', FONT_SMALL)
+        ? this.add.text(cx + 30, rowY, '(HOST)', FONT_SMALL)
         : null;
+
       this.#playerListObjects.push(dot, name);
       if (role) this.#playerListObjects.push(role);
+
+      if (this.#isHost) {
+        // Host sees clickable Team A / Team B toggle buttons per row
+        const isTeamA = player.team === 0;
+        const isTeamB = player.team === 1;
+        const nm = NetworkManager.getInstance();
+
+        const btnA = this.#createButton(cx + 90, rowY + 8, 'A', () => {
+          nm.sendLobbyAssignTeam(player.id, 0);
+        });
+        const btnB = this.#createButton(cx + 130, rowY + 8, 'B', () => {
+          nm.sendLobbyAssignTeam(player.id, 1);
+        });
+
+        // Dim non-active team button so the current assignment is visually clear
+        const bgA = (btnA as Phaser.GameObjects.Container).getAt(0) as Phaser.GameObjects.Rectangle;
+        const bgB = (btnB as Phaser.GameObjects.Container).getAt(0) as Phaser.GameObjects.Rectangle;
+        if (!isTeamA) bgA.setFillStyle(BTN_DISABLED);
+        if (!isTeamB) bgB.setFillStyle(BTN_DISABLED);
+
+        this.#playerListObjects.push(btnA, btnB);
+      } else {
+        // Non-host sees a read-only team badge
+        const teamLabel = player.team === 0 ? 'Team A' : player.team === 1 ? 'Team B' : '—';
+        const teamColor = player.team === 0 ? '#4488ff' : player.team === 1 ? '#ff4444' : '#888888';
+        const badge = this.add.text(cx + 80, rowY, teamLabel, { ...FONT_SMALL, color: teamColor });
+        this.#playerListObjects.push(badge);
+      }
     });
   }
 
