@@ -8,6 +8,13 @@ import type {
   SpellCastBroadcast,
   RoomTransitionPayload,
   PlayerDisconnectedPayload,
+  BreathStartPayload,
+  BreathStartBroadcast,
+  BreathUpdatePayload,
+  BreathUpdateBroadcast,
+  BreathEndBroadcast,
+  EarthWallPillarPayload,
+  EarthWallPillarBroadcast,
   Lobby,
   MatchConfig,
   PlayerInfo,
@@ -17,7 +24,11 @@ import type {
 type DcMessage =
   | ({ type: 'pos' } & PlayerUpdatePayload)
   | ({ type: 'spell' } & SpellCastPayload)
-  | ({ type: 'transition' } & RoomTransitionPayload);
+  | ({ type: 'transition' } & RoomTransitionPayload)
+  | ({ type: 'breath-start' } & BreathStartPayload)
+  | ({ type: 'breath-update' } & BreathUpdatePayload)
+  | ({ type: 'breath-end' })
+  | ({ type: 'earth-wall-pillar' } & EarthWallPillarPayload);
 
 export class NetworkManager {
   static #instance: NetworkManager | undefined;
@@ -122,6 +133,22 @@ export class NetworkManager {
 
   sendSpellCast(payload: SpellCastPayload): void {
     this.#broadcastReliable({ type: 'spell', ...payload });
+  }
+
+  sendBreathStart(payload: BreathStartPayload): void {
+    this.#broadcastReliable({ type: 'breath-start', ...payload });
+  }
+
+  sendBreathUpdate(payload: BreathUpdatePayload): void {
+    this.#broadcastUnreliable({ type: 'breath-update', ...payload });
+  }
+
+  sendBreathEnd(): void {
+    this.#broadcastReliable({ type: 'breath-end' });
+  }
+
+  sendEarthWallPillar(payload: EarthWallPillarPayload): void {
+    this.#broadcastReliable({ type: 'earth-wall-pillar', ...payload });
   }
 
   sendRoomTransitionRequest(payload: RoomTransitionPayload): void {
@@ -338,6 +365,18 @@ export class NetworkManager {
             roomId: msg.roomId,
             doorId: msg.doorId,
           } as RoomTransitionPayload);
+          break;
+        case 'breath-start':
+          EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_BREATH_START, { ...msg, playerId } as BreathStartBroadcast);
+          break;
+        case 'breath-update':
+          EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_BREATH_UPDATE, { ...msg, playerId } as BreathUpdateBroadcast);
+          break;
+        case 'breath-end':
+          EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_BREATH_END, { playerId } as BreathEndBroadcast);
+          break;
+        case 'earth-wall-pillar':
+          EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_EARTH_WALL_PILLAR, { ...msg, playerId } as EarthWallPillarBroadcast);
           break;
       }
     };

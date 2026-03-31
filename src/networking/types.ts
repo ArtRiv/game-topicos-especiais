@@ -47,6 +47,39 @@ export type SpellCastPayload = {
 
 export type SpellCastBroadcast = SpellCastPayload & { playerId: string };
 
+/** FireBreath channeled spell — start event */
+export type BreathStartPayload = {
+  x: number;
+  y: number;
+  targetX: number;
+  targetY: number;
+};
+
+export type BreathStartBroadcast = BreathStartPayload & { playerId: string };
+
+/** FireBreath channeled spell — per-tick aim update (sent at 20 Hz via unreliable channel) */
+export type BreathUpdatePayload = {
+  x: number;
+  y: number;
+  targetX: number;
+  targetY: number;
+};
+
+export type BreathUpdateBroadcast = BreathUpdatePayload & { playerId: string };
+
+/** FireBreath channeled spell — end event */
+export type BreathEndPayload = Record<string, never>;
+
+export type BreathEndBroadcast = { playerId: string };
+
+/** EarthWall — single pillar placement */
+export type EarthWallPillarPayload = {
+  x: number;
+  y: number;
+};
+
+export type EarthWallPillarBroadcast = EarthWallPillarPayload & { playerId: string };
+
 export type RoomTransitionPayload = {
   levelName: string;
   doorId: number;

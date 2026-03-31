@@ -62,7 +62,7 @@ import {
 } from '../common/config';
 import { NetworkManager } from '../networking/network-manager';
 import { RemoteInputComponent } from '../components/input/remote-input-component';
-import type { PlayerUpdateBroadcast, RoomTransitionPayload, PlayerDisconnectedPayload, PlayerUpdatePayload, SpellCastBroadcast, PlayerInfo } from '../networking/types';
+import type { PlayerUpdateBroadcast, RoomTransitionPayload, PlayerDisconnectedPayload, PlayerUpdatePayload, SpellCastBroadcast, PlayerInfo, BreathStartBroadcast, BreathUpdateBroadcast, BreathEndBroadcast, EarthWallPillarBroadcast } from '../networking/types';
 import type { Direction } from '../common/types';
 
 export class GameScene extends Phaser.Scene {
@@ -109,6 +109,7 @@ export class GameScene extends Phaser.Scene {
   // Multiplayer: remote players keyed by playerId
   #remotePlayers = new Map<string, Player>();
   #remoteSpellGroup!: Phaser.GameObjects.Group;
+  #remoteFireBreaths = new Map<string, FireBreath>();
 
   constructor() {
     super({
@@ -215,6 +216,7 @@ export class GameScene extends Phaser.Scene {
         this.#activeFireBreath.beginEnding();
         this.#fireBreathDamageTimer?.destroy();
         this.#controls.isMovementLocked = false;
+        try { NetworkManager.getInstance().sendBreathEnd(); } catch { /* offline */ }
       }
       return;
     }
@@ -256,6 +258,15 @@ export class GameScene extends Phaser.Scene {
         this.#activeFireBreathAreaCombos.clear();
       });
 
+      try {
+        NetworkManager.getInstance().sendBreathStart({
+          x: this.#player.x,
+          y: this.#player.y,
+          targetX: controls.mouseWorldX,
+          targetY: controls.mouseWorldY,
+        });
+      } catch { /* offline */ }
+
       return;
     }
 
@@ -269,6 +280,15 @@ export class GameScene extends Phaser.Scene {
     this.#player.direction = this.#activeFireBreath.facingDirection;
     this.#player.setFlipX(this.#activeFireBreath.facingDirection === DIRECTION.LEFT);
     this.#player.animationComponent.playAnimation(`IDLE_${this.#player.direction}`);
+
+    try {
+      NetworkManager.getInstance().sendBreathUpdate({
+        x: this.#player.x,
+        y: this.#player.y,
+        targetX: controls.mouseWorldX,
+        targetY: controls.mouseWorldY,
+      });
+    } catch { /* offline */ }
   }
 
   #updateFireBreathAreaCombo(): void {
@@ -520,6 +540,10 @@ export class GameScene extends Phaser.Scene {
     this.#earthWallLastPlacedX = tx;
     this.#earthWallLastPlacedY = ty;
     this.#earthWallDrawingPillarCount++;
+
+    try {
+      NetworkManager.getInstance().sendEarthWallPillar({ x: tx, y: ty });
+    } catch { /* offline */ }
 
     if (this.#earthWallDrawingPillarCount >= EARTH_WALL_PILLAR_COUNT) {
       this.#earthWallDrawingMode = false;
@@ -813,11 +837,17 @@ export class GameScene extends Phaser.Scene {
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_ROOM_TRANSITION, this.#onNetworkRoomTransition, this);
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_PLAYER_UPDATE, this.#onRemotePlayerUpdate, this);
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_SPELL_CAST, this.#onRemoteSpellCast, this);
+      EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_BREATH_START, this.#onRemoteBreathStart, this);
+      EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_BREATH_UPDATE, this.#onRemoteBreathUpdate, this);
+      EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_BREATH_END, this.#onRemoteBreathEnd, this);
+      EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_EARTH_WALL_PILLAR, this.#onRemoteEarthWallPillar, this);
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_PLAYER_DISCONNECTED, this.#onRemotePlayerDisconnected, this);
       EVENT_BUS.off(CUSTOM_EVENTS.SPELL_CAST, this.#onLocalSpellCast, this);
       try { NetworkManager.getInstance().stopGameTick(); } catch { /* offline */ }
       this.#remotePlayers.forEach((p) => p.destroy());
       this.#remotePlayers.clear();
+      this.#remoteFireBreaths.forEach((b) => { if (b.active) b.destroy(); });
+      this.#remoteFireBreaths.clear();
       // Note: #earthWallGroup is a Phaser.GameObjects.Group that registers its own
       // SHUTDOWN listener (before ours) and calls destroy() on itself, setting
       // this.children to undefined. Calling clear() here would crash. Phaser already
@@ -1378,6 +1408,10 @@ export class GameScene extends Phaser.Scene {
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_ROOM_TRANSITION, this.#onNetworkRoomTransition, this);
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_PLAYER_UPDATE, this.#onRemotePlayerUpdate, this);
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_SPELL_CAST, this.#onRemoteSpellCast, this);
+    EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_BREATH_START, this.#onRemoteBreathStart, this);
+    EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_BREATH_UPDATE, this.#onRemoteBreathUpdate, this);
+    EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_BREATH_END, this.#onRemoteBreathEnd, this);
+    EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_EARTH_WALL_PILLAR, this.#onRemoteEarthWallPillar, this);
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_PLAYER_DISCONNECTED, this.#onRemotePlayerDisconnected, this);
     EVENT_BUS.on(CUSTOM_EVENTS.SPELL_CAST, this.#onLocalSpellCast, this);
   }
@@ -1541,6 +1575,40 @@ export class GameScene extends Phaser.Scene {
         this.#remoteSpellGroup.remove(spell!.gameObject, true);
       });
     }
+  };
+
+  #onRemoteBreathStart = (payload: BreathStartBroadcast): void => {
+    // Create a visual-only fire breath (no mana component) for the remote player
+    const breath = new FireBreath(
+      this,
+      payload.x,
+      payload.y,
+      payload.targetX,
+      payload.targetY,
+      this.#collisionLayer,
+      this.#blockingGroup,
+    );
+    this.#remoteFireBreaths.set(payload.playerId, breath);
+  };
+
+  #onRemoteBreathUpdate = (payload: BreathUpdateBroadcast): void => {
+    const breath = this.#remoteFireBreaths.get(payload.playerId);
+    if (breath?.active && !breath.isEnding) {
+      breath.update(payload.x, payload.y, payload.targetX, payload.targetY);
+    }
+  };
+
+  #onRemoteBreathEnd = (payload: BreathEndBroadcast): void => {
+    const breath = this.#remoteFireBreaths.get(payload.playerId);
+    if (breath?.active && !breath.isEnding) {
+      breath.beginEnding();
+    }
+    this.#remoteFireBreaths.delete(payload.playerId);
+  };
+
+  #onRemoteEarthWallPillar = (payload: EarthWallPillarBroadcast): void => {
+    const pillar = new EarthWallPillar(this, payload.x, payload.y);
+    this.#earthWallGroup.add(pillar);
   };
 
   #onRemotePlayerDisconnected = (payload: PlayerDisconnectedPayload): void => {

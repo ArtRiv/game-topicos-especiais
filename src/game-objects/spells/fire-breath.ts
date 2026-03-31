@@ -64,7 +64,7 @@ export class FireBreath extends Phaser.GameObjects.Container implements ActiveSp
     targetY: number,
     collisionLayer: Phaser.Tilemaps.TilemapLayer,
     blockingGroup: Phaser.GameObjects.Group,
-    manaComponent: ManaComponent,
+    manaComponent?: ManaComponent,
   ) {
     super(scene, playerX, playerY);
     scene.add.existing(this);
@@ -98,11 +98,11 @@ export class FireBreath extends Phaser.GameObjects.Container implements ActiveSp
       }
     });
 
-    // Drain mana on interval; end breath if mana runs out
+    // Drain mana on interval; end breath if mana runs out (skipped for remote/visual-only breaths)
     this.#manaTimer = scene.time.addEvent({
       delay: FIRE_BREATH_MANA_DRAIN_INTERVAL,
       callback: () => {
-        if (this.#isEnding) return;
+        if (this.#isEnding || !manaComponent) return;
         const drained = manaComponent.consume(FIRE_BREATH_MANA_PER_TICK);
         if (!drained) {
           this.beginEnding();
