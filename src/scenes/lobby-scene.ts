@@ -264,17 +264,23 @@ export class LobbyScene extends Phaser.Scene {
           nm.sendLobbyAssignTeam(player.id, 1);
         });
 
-        // Dim non-active team button so the current assignment is visually clear
+        // Active team = bright; inactive = dimmed; unassigned = both buttons visible at default
         const bgA = (btnA as Phaser.GameObjects.Container).getAt(0) as Phaser.GameObjects.Rectangle;
         const bgB = (btnB as Phaser.GameObjects.Container).getAt(0) as Phaser.GameObjects.Rectangle;
-        if (!isTeamA) bgA.setFillStyle(BTN_DISABLED);
-        if (!isTeamB) bgB.setFillStyle(BTN_DISABLED);
+        if (isTeamA) {
+          bgA.setFillStyle(0x0066dd);  // active Team A — bright blue
+          bgB.setFillStyle(BTN_DISABLED);
+        } else if (isTeamB) {
+          bgA.setFillStyle(BTN_DISABLED);
+          bgB.setFillStyle(0xcc2200);  // active Team B — bright red
+        }
+        // unassigned: both keep their default BTN_COLOR so they're clearly visible
 
         this.#playerListObjects.push(btnA, btnB);
       } else {
         // Non-host sees a read-only team badge
-        const teamLabel = player.team === 0 ? 'Team A' : player.team === 1 ? 'Team B' : '—';
-        const teamColor = player.team === 0 ? '#4488ff' : player.team === 1 ? '#ff4444' : '#888888';
+        const teamLabel = player.team === 0 ? 'TEAM A' : player.team === 1 ? 'TEAM B' : 'NO TEAM';
+        const teamColor = player.team === 0 ? '#44aaff' : player.team === 1 ? '#ff5533' : '#aaaaaa';
         const badge = this.add.text(cx + 80, rowY, teamLabel, { ...FONT_SMALL, color: teamColor });
         this.#playerListObjects.push(badge);
       }
