@@ -83,4 +83,15 @@ export class LobbyManager {
     lobby.status = 'in-progress';
     return lobby;
   }
+
+  setPlayerTeam(requesterSocketId: string, targetPlayerId: string, team: number): Lobby | null {
+    const lobby = this.getLobbyBySocketId(requesterSocketId);
+    if (!lobby) return null;
+    const requester = lobby.players.find(p => p.socketId === requesterSocketId);
+    if (!requester || requester.id !== lobby.hostPlayerId) return null;  // host-only
+    const target = lobby.players.find(p => p.id === targetPlayerId);
+    if (!target) return null;
+    target.team = team;
+    return lobby;
+  }
 }
