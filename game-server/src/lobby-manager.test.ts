@@ -111,4 +111,24 @@ describe('LobbyManager', () => {
       expect(result).toBeNull();
     });
   });
+
+  describe('setPlayerTeam', () => {
+    it('allows host to assign team to a player', () => {
+      const lobby = manager.createLobby('s1', 'Alice');
+      manager.joinLobby(lobby.id, 's2', 'Bob');
+      const bob = lobby.players.find(p => p.socketId === 's2')!;
+      const result = manager.setPlayerTeam('s1', bob.id, 1);
+      expect(result).not.toBeNull();
+      expect(bob.team).toBe(1);
+    });
+
+    it('rejects team assignment from non-host', () => {
+      const lobby = manager.createLobby('s1', 'Alice');
+      manager.joinLobby(lobby.id, 's2', 'Bob');
+      const alice = lobby.players.find(p => p.socketId === 's1')!;
+      const result = manager.setPlayerTeam('s2', alice.id, 0);
+      expect(result).toBeNull();
+      expect(alice.team).toBeUndefined();
+    });
+  });
 });
