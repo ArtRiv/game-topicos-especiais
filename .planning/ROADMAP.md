@@ -72,7 +72,7 @@ Plans:
   5. Movement, animation, and spell sync remain correct at the optimized tick rate
 **Plans**: 2 plans
 Plans:
-- [ ] 02.1-01-PLAN.md — Network message path optimization (tick rate, dirty-check, serialization, Map lookup)
+- [x] 02.1-01-PLAN.md — Network message path optimization (tick rate, dirty-check, serialization, Map lookup)
 - [ ] 02.1-02-PLAN.md — Remote player interpolation & multi-client validation
 
 ### Phase 3: New Spells
