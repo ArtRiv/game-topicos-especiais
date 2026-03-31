@@ -88,6 +88,7 @@ export class NetworkManager {
   sendLobbyLeave(): void { this.#socket.emit('lobby:leave'); }
   sendLobbySetMode(gameMode: string): void { this.#socket.emit('lobby:set-mode', { gameMode }); }
   sendLobbyStart(): void { this.#socket.emit('lobby:start'); }
+  sendLobbyAssignTeam(targetPlayerId: string, team: number): void { this.#socket.emit('lobby:assign-team', { targetPlayerId, team }); }
 
   // --- Game methods (WebRTC data channels — low latency, P2P) ---
 
@@ -172,6 +173,21 @@ export class NetworkManager {
 
     this.#socket.on('webrtc:ice', ({ fromSocketId, candidate }: { fromSocketId: string; candidate: RTCIceCandidateInit }) => {
       void this.#handleIceCandidate(fromSocketId, candidate);
+    });
+
+    // Fast disconnect detection — server knows before WebRTC ICE timeout (which can take 30+ s)
+    this.#socket.on('game:player-disconnected', ({ playerId }: { playerId: string }) => {
+      const player = this.#matchPlayers.find((p) => p.id === playerId);
+      if (player) {
+        const pc = this.#peerConnections.get(player.socketId);
+        if (pc) {
+          pc.close();
+          this.#peerConnections.delete(player.socketId);
+        }
+        this.#unreliableChannels.delete(player.socketId);
+        this.#reliableChannels.delete(player.socketId);
+      }
+      EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_PLAYER_DISCONNECTED, { playerId } as PlayerDisconnectedPayload);
     });
   }
 
