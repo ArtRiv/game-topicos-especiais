@@ -61,19 +61,25 @@ Plans:
 
 ### Phase 02.1: Network Stability & Performance (INSERTED)
 
-**Goal**: Multiplayer networking is stable, responsive, and performs well with 3+ clients — latency is sub-second on all connected tabs, remote player movement is smooth, and the architecture scales toward 5v5 without degradation
+**Goal**: Evolve the networking architecture from a full WebRTC P2P mesh to a hybrid SFU relay — each client opens one WebRTC connection to the server, which batches, spatially filters, and fans out messages — enabling ~20 concurrent players in fast-paced PvP combat without performance degradation
 **Depends on**: Phase 2
-**Requirements**: NETPERF-01, NETPERF-02, NETPERF-03, NETPERF-04, NETPERF-05
+**Requirements**: NETPERF-01, NETPERF-02, NETPERF-03, NETPERF-04, NETPERF-05, NETPERF-06, NETPERF-07, NETPERF-08, NETPERF-09, NETPERF-10, NETPERF-11
 **Success Criteria** (what must be TRUE):
-  1. Position tick rate is 20 Hz (not 60 Hz) — reducing per-client bandwidth by ~66%
-  2. No position messages sent when player state is unchanged (dirty-checking)
-  3. Remote players move smoothly via delta-time interpolation — no teleporting or jitter
-  4. 3-tab test shows all clients responsive with sub-second latency
-  5. Movement, animation, and spell sync remain correct at the optimized tick rate
-**Plans**: 2 plans
+  1. Each client connects to the server via a single WebRTC data channel (no peer-to-peer mesh)
+  2. Server forwards messages using node-datachannel with tick batching at 20 Hz
+  3. All data channel messages use MessagePack binary serialization (not JSON)
+  4. Grid-based spatial interest management reduces distant-player update rate
+  5. Server validates damage/death events before broadcasting (host-authoritative)
+  6. Remote players move smoothly via delta-time interpolation — no teleporting or jitter
+  7. 10+ client test shows all clients responsive with sub-second latency
+**Plans**: 6 plans
 Plans:
-- [x] 02.1-01-PLAN.md — Network message path optimization (tick rate, dirty-check, serialization, Map lookup)
-- [ ] 02.1-02-PLAN.md — Remote player interpolation & multi-client validation
+- [x] 02.1-01-PLAN.md — Network message path optimization (tick rate, dirty-check, metrics, Map lookup)
+- [ ] 02.1-02-PLAN.md — SFU relay core: server-side WebRTC with node-datachannel
+- [ ] 02.1-03-PLAN.md — MessagePack binary serialization on all data channels
+- [ ] 02.1-04-PLAN.md — Client-side delta-time interpolation for remote players
+- [ ] 02.1-05-PLAN.md — Server tick batching + spatial interest management
+- [ ] 02.1-06-PLAN.md — Server damage validation + multi-client verification
 
 ### Phase 3: New Spells
 

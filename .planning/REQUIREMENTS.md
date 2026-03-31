@@ -62,11 +62,17 @@
 
 ### Network Performance (NETPERF) — Phase 02.1 (INSERTED)
 
-- [ ] **NETPERF-01**: Position tick rate reduced to 20 Hz — per-client outbound bandwidth reduced by ~66% vs 60 Hz
-- [ ] **NETPERF-02**: No position messages sent when player state (x, y, direction, state, element) is unchanged since last send (dirty-checking)
-- [ ] **NETPERF-03**: Network debug metrics available: messages sent/sec, messages received/sec — togglable via config flag
-- [ ] **NETPERF-04**: 3+ client test shows all tabs responsive with sub-second latency (no multi-second delay on 3rd client)
+- [x] **NETPERF-01**: Position tick rate reduced to 20 Hz — per-client outbound bandwidth reduced by ~66% vs 60 Hz
+- [x] **NETPERF-02**: No position messages sent when player state (x, y, direction, state, element) is unchanged since last send (dirty-checking)
+- [x] **NETPERF-03**: Network debug metrics available: messages sent/sec, messages received/sec — togglable via config flag
+- [ ] **NETPERF-04**: 10+ client test shows all clients responsive with sub-second latency (no multi-second delay on any client)
 - [ ] **NETPERF-05**: Remote player interpolation uses delta-time — movement is smooth and animation/spell sync remain correct at 20 Hz
+- [ ] **NETPERF-06**: Each client connects to the server via a single WebRTC data channel — no peer-to-peer mesh connections
+- [ ] **NETPERF-07**: Server accepts and forwards WebRTC data channel messages using node-datachannel (SFU relay)
+- [ ] **NETPERF-08**: All data channel messages (position, spell, transition) use MessagePack binary serialization instead of JSON
+- [ ] **NETPERF-09**: Server batches outbound updates per tick (20 Hz) — one aggregated message per client per tick instead of forwarding each message individually
+- [ ] **NETPERF-10**: Grid-based spatial interest management on server — nearby players receive full-rate updates, distant players receive throttled updates (~5 Hz)
+- [ ] **NETPERF-11**: Server validates damage and player-eliminated events before broadcasting — no client can unilaterally declare damage on another player
 
 ---
 
