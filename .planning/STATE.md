@@ -26,20 +26,20 @@ progress:
 | # | Title | Status |
 |---|-------|--------|
 | 1 | LAN Foundation | complete |
-| 2 | Multi-Player Control | not-started |
+| 2 | Multi-Player Control | complete |
 | 3 | New Spells | not-started |
 | 4 | PvP Combat | not-started |
 | 5 | Match Loop & Scalability | not-started |
 
 ## Active Phase
 
-Phase 2 — Multi-Player Control — **NOT STARTED**
+Phase 3 — New Spells — **NOT STARTED**
 
 ## Current Position
 
-Phase: 2 (Multi-Player Control) — EXECUTING
-Plan: 4 of 4
-Status: Phase complete — ready for verification
+Phase: 3 (New Spells) — NOT STARTED
+Plan: 0 of 0
+Status: Phase 2 complete (all 4 plans + 3 smoke test fixes) — ready to plan Phase 3
 Last activity: 2026-03-31
 
 ## Key Decisions (v1.1)

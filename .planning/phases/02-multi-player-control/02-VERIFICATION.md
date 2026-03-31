@@ -211,23 +211,26 @@ socket.on('lobby:assign-team', ({ targetPlayerId, team }) => {
 
 ---
 
-## Manual Testing Required (Cannot be statically verified)
+## Smoke Test Results
 
-The following items require a live 2–3 client smoke test to fully verify:
+**Performed:** post-Phase-2-execution  
+**Setup:** 3 browser tabs on localhost:5174, game-server on port 3000
 
-| Item | What to verify |
-|------|---------------|
-| SC-1 (host button) | Tab A (creator) sees START button; Tab B (joiner) does not |
-| SC-1 (remote movement) | Moving Alpha on Tab A shows Alpha walking on Tab B; moving Beta on Tab B shows Beta walking on Tab A; neither controls the other |
-| SC-5 (team propagation) | Assigning a team from the host tab updates all N client waiting rooms in real time |
+| Test | Expectation | Result | Notes |
+|------|-------------|--------|-------|
+| START button host-only | Tab A (creator) sees START; Tab B/C do not | **PASS** | SC-1 confirmed |
+| Lobby list live update | Tab B sees new lobby appear without refresh | **FAIL → FIXED** | Server only emitted `lobby:created` to creator; fixed with `io.emit('lobby:list-updated')` broadcast after create/join/leave; client-side `lobby:list-updated` handler added to `NetworkManager` (commits `372f673`) |
+| Team badges/buttons visible | A/B buttons shown; clicking assigns team; badge updates for non-host | **FAIL → FIXED** | Unassigned state set both buttons to `BTN_DISABLED` (near-black); non-host badge used dim '#888888' "—"; fixed with visible colors for active/inactive states and "NO TEAM"/"TEAM A"/"TEAM B" bright labels (commit `069ef8a`) |
+| Remote mage walk animation | Mage on Tab B shows walking animation when Tab A moves | **FAIL → FIXED** | `MoveState.onUpdate()` called `setState(IDLE)` every frame because `isNoInputMovement` returns `true` when `isMovementLocked=true`; added `if (controls.isMovementLocked) return;` guard (commit `aaaca28`) |
+| Team color determinism | Both observer tabs show same tint for same remote player | **PASS** | `#resolveRemotePlayerTint` is deterministic by `matchPlayers` array order |
 
-These should be performed before marking Phase 2 as complete for the college event build.
+All 3 failing smoke test items were root-cause diagnosed and fixed. TypeScript remains clean (`src/` 0 errors).
 
 ---
 
 ## Phase 2 Gate
 
-**PARTIAL — all static checks pass; manual smoke test recommended before shipping**
+**PASS — all static checks pass + all smoke test failures resolved**
 
 TypeScript-verified: SC-1 (host detection) ✓, SC-2 (remote movement wiring) ✓, SC-3 (independent HP/mana) ✓, SC-4 (own HP bar only) ✓, SC-5 (N-player lobby) ✓
 
