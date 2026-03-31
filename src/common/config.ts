@@ -156,4 +156,4 @@ export const WATER_TORNADO_BODY_RADIUS = 24;
 export const NETWORK_SERVER_URL = 'http://localhost';
 export const NETWORK_SERVER_PORT = 3000;
 export const NETWORK_TICK_RATE_HZ = 20;
-export const NETWORK_DEBUG = false;
+export const NETWORK_DEBUG = true;

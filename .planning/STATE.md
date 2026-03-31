@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
-status: verifying
-last_updated: "2026-03-31T00:54:12.162Z"
-last_activity: 2026-03-31
+status: executing
+last_updated: "2026-03-31T03:32:32.344Z"
+last_activity: 2026-03-31 -- Phase 02.1 execution started
 progress:
-  total_phases: 5
+  total_phases: 6
   completed_phases: 2
-  total_plans: 9
+  total_plans: 16
   completed_plans: 9
 ---
 
@@ -27,20 +27,21 @@ progress:
 |---|-------|--------|
 | 1 | LAN Foundation | complete |
 | 2 | Multi-Player Control | complete |
+| 2.1 | Network Stability & Performance | not-started |
 | 3 | New Spells | not-started |
 | 4 | PvP Combat | not-started |
 | 5 | Match Loop & Scalability | not-started |
 
 ## Active Phase
 
-Phase 3 — New Spells — **NOT STARTED**
+Phase 2.1 — Network Stability & Performance — **NOT STARTED** (INSERTED — urgent)
 
 ## Current Position
 
-Phase: 3 (New Spells) — NOT STARTED
-Plan: 0 of 0
-Status: Phase 2 complete (all 4 plans + 3 smoke test fixes) — ready to plan Phase 3
-Last activity: 2026-03-31
+Phase: 02.1 (network-stability-performance) — EXECUTING
+Plan: 1 of 2
+Status: Executing Phase 02.1
+Last activity: 2026-03-31 -- Phase 02.1 execution started
 
 ## Key Decisions (v1.1)
 
@@ -50,6 +51,15 @@ Last activity: 2026-03-31
 - **Authority:** Host-authoritative for damage/death validation only
 - **Match size:** No hard cap — empirically test WebRTC mesh limits
 - **Scope:** PvP combat + match loop; NO puzzles/bosses/NPCs/combo journal
+
+## Accumulated Context
+
+### Roadmap Evolution
+
+- Phase 2.1 inserted after Phase 2: Network Stability & Performance (URGENT)
+  - Reason: 3-tab testing revealed severe latency — Tab 2 noticeably delayed, Tab 3 multiple seconds behind
+  - Priority shift: multiplayer stability/responsiveness before new gameplay content (Phase 3 New Spells paused)
+  - Focus: diagnose latency bottlenecks, fix 3rd-client degradation, improve sync & responsiveness, validate under load
 
 ## GSD Workflow Config
 
