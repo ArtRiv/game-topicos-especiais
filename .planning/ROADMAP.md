@@ -52,7 +52,7 @@ Turn the completed WebRTC P2P networking foundation into a playable multi-player
 **Plans**: 4 plans
 Plans:
 - [x] 02-01-PLAN.md — Type system + server team protocol (`PlayerInfo.team`, `lobby:assign-team` socket event)
-- [ ] 02-02-PLAN.md — LobbyScene host detection fix + team assignment UI (host toggle buttons, read-only badges)
+- [x] 02-02-PLAN.md — LobbyScene host detection fix + team assignment UI (host toggle buttons, read-only badges)
 - [x] 02-03-PLAN.md — GameScene deterministic tinting via `matchPlayers` getter (team-based color assignment)
 - [ ] 02-04-PLAN.md — Phase 2 verification checklist (all 5 success criteria, 3-client smoke test)
 
