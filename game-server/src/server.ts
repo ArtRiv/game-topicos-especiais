@@ -53,6 +53,11 @@ io.on('connection', (socket) => {
     if (lobby) io.to(`lobby:${lobby.id}`).emit('lobby:updated', { lobby });
   });
 
+  socket.on('lobby:assign-team', ({ targetPlayerId, team }: { targetPlayerId: string; team: number }) => {
+    const lobby = lobbyManager.setPlayerTeam(socket.id, targetPlayerId, team);
+    if (lobby) io.to(`lobby:${lobby.id}`).emit('lobby:updated', { lobby });
+  });
+
   socket.on('lobby:start', () => {
     const lobby = lobbyManager.startLobby(socket.id);
     if (!lobby) return;
