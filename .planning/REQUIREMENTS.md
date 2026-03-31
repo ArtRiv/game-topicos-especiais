@@ -17,9 +17,9 @@
 
 ### Multi-Player Control (PLR)
 
-- [ ] **PLR-01**: Each player controls their own character on their own machine via keyboard — no fixed role assignments (Player[i], not P1/P2)
+- [x] **PLR-01**: Each player controls their own character on their own machine via keyboard — no fixed role assignments (Player[i], not P1/P2)
 - [ ] **PLR-02**: Each player has independent health and mana
-- [ ] **PLR-03**: Remote players are rendered on each client driven by network snapshots (existing `RemoteInputComponent`)
+- [x] **PLR-03**: Remote players are rendered on each client driven by network snapshots (existing `RemoteInputComponent`)
 - [ ] **PLR-04**: Lobby supports N players with no hard cap enforced in code; teams are configured per lobby session
 
 ### Spells — New Elements (SPL)
@@ -85,9 +85,9 @@
 | NET-04 | Phase 1 | ✓ Complete |
 | NET-05 | Phase 1 | ✓ Complete |
 | NET-06 | Phase 1 | ✓ Complete |
-| PLR-01 | Phase 2 | Pending |
+| PLR-01 | Phase 2 | Complete |
 | PLR-02 | Phase 2 | Pending |
-| PLR-03 | Phase 2 | Pending |
+| PLR-03 | Phase 2 | Complete |
 | PLR-04 | Phase 2 | Pending |
 | HUD-01 | Phase 2 | Pending |
 | SPL-01 | Phase 3 | Pending |
