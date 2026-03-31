@@ -80,6 +80,14 @@ export type EarthWallPillarPayload = {
 
 export type EarthWallPillarBroadcast = EarthWallPillarPayload & { playerId: string };
 
+/** EarthWall — single pillar destruction (crumbled) */
+export type EarthWallPillarDestroyPayload = {
+  x: number;
+  y: number;
+};
+
+export type EarthWallPillarDestroyBroadcast = EarthWallPillarDestroyPayload & { playerId: string };
+
 export type RoomTransitionPayload = {
   levelName: string;
   doorId: number;

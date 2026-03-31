@@ -62,7 +62,7 @@ import {
 } from '../common/config';
 import { NetworkManager } from '../networking/network-manager';
 import { RemoteInputComponent } from '../components/input/remote-input-component';
-import type { PlayerUpdateBroadcast, RoomTransitionPayload, PlayerDisconnectedPayload, PlayerUpdatePayload, SpellCastBroadcast, PlayerInfo, BreathStartBroadcast, BreathUpdateBroadcast, BreathEndBroadcast, EarthWallPillarBroadcast } from '../networking/types';
+import type { PlayerUpdateBroadcast, RoomTransitionPayload, PlayerDisconnectedPayload, PlayerUpdatePayload, SpellCastBroadcast, PlayerInfo, BreathStartBroadcast, BreathUpdateBroadcast, BreathEndBroadcast, EarthWallPillarBroadcast, EarthWallPillarDestroyBroadcast } from '../networking/types';
 import type { Direction } from '../common/types';
 
 export class GameScene extends Phaser.Scene {
@@ -358,8 +358,12 @@ export class GameScene extends Phaser.Scene {
     const spellChildren = this.#player.spellCastingComponent.spellGroup.getChildren();
     const remoteChildren = this.#remoteSpellGroup?.getChildren() ?? [];
     const allSpells = [...spellChildren, ...remoteChildren];
-    const fireBolts = allSpells.filter((spell): spell is FireBolt => spell instanceof FireBolt && spell.active);
-    const fireAreas = allSpells.filter((spell): spell is FireArea => spell instanceof FireArea && spell.active);
+    const fireBolts = allSpells.filter(
+      (spell): spell is FireBolt => spell instanceof FireBolt && spell.active && !!(spell.body as Phaser.Physics.Arcade.Body)?.enable,
+    );
+    const fireAreas = allSpells.filter(
+      (spell): spell is FireArea => spell instanceof FireArea && spell.active && !!(spell.body as Phaser.Physics.Arcade.Body)?.enable,
+    );
 
     const activeBolts = new Set(fireBolts);
 
@@ -416,8 +420,12 @@ export class GameScene extends Phaser.Scene {
     const spellChildren = this.#player.spellCastingComponent.spellGroup.getChildren();
     const remoteChildren = this.#remoteSpellGroup?.getChildren() ?? [];
     const allSpells = [...spellChildren, ...remoteChildren];
-    const earthBolts = allSpells.filter((s): s is EarthBolt => s instanceof EarthBolt && s.active);
-    const fireBolts = allSpells.filter((s): s is FireBolt => s instanceof FireBolt && s.active);
+    const earthBolts = allSpells.filter(
+      (s): s is EarthBolt => s instanceof EarthBolt && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+    );
+    const fireBolts = allSpells.filter(
+      (s): s is FireBolt => s instanceof FireBolt && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+    );
 
     if (earthBolts.length === 0 || fireBolts.length === 0) {
       return;
@@ -425,7 +433,6 @@ export class GameScene extends Phaser.Scene {
 
     for (const earthBolt of earthBolts) {
       for (const fireBolt of fireBolts) {
-        // physics.overlap returns false once either body is disabled, preventing double-triggers
         if (this.physics.overlap(earthBolt, fireBolt)) {
           const midX = (earthBolt.x + fireBolt.x) / 2;
           const midY = (earthBolt.y + fireBolt.y) / 2;
@@ -456,8 +463,12 @@ export class GameScene extends Phaser.Scene {
     const spellChildren = this.#player.spellCastingComponent.spellGroup.getChildren();
     const remoteChildren = this.#remoteSpellGroup?.getChildren() ?? [];
     const allSpells = [...spellChildren, ...remoteChildren];
-    const earthBolts = allSpells.filter((s): s is EarthBolt => s instanceof EarthBolt && s.active);
-    const fireAreas = allSpells.filter((s): s is FireArea => s instanceof FireArea && s.active);
+    const earthBolts = allSpells.filter(
+      (s): s is EarthBolt => s instanceof EarthBolt && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+    );
+    const fireAreas = allSpells.filter(
+      (s): s is FireArea => s instanceof FireArea && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+    );
 
     if (earthBolts.length === 0 || fireAreas.length === 0) {
       return;
@@ -540,6 +551,11 @@ export class GameScene extends Phaser.Scene {
     this.#earthWallLastPlacedX = tx;
     this.#earthWallLastPlacedY = ty;
     this.#earthWallDrawingPillarCount++;
+
+    // When this local pillar is destroyed, notify other clients
+    pillar.once(Phaser.GameObjects.Events.DESTROY, () => {
+      try { NetworkManager.getInstance().sendEarthWallPillarDestroy({ x: tx, y: ty }); } catch { /* offline */ }
+    });
 
     try {
       NetworkManager.getInstance().sendEarthWallPillar({ x: tx, y: ty });
@@ -841,6 +857,7 @@ export class GameScene extends Phaser.Scene {
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_BREATH_UPDATE, this.#onRemoteBreathUpdate, this);
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_BREATH_END, this.#onRemoteBreathEnd, this);
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_EARTH_WALL_PILLAR, this.#onRemoteEarthWallPillar, this);
+      EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_EARTH_WALL_PILLAR_DESTROY, this.#onRemoteEarthWallPillarDestroy, this);
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_PLAYER_DISCONNECTED, this.#onRemotePlayerDisconnected, this);
       EVENT_BUS.off(CUSTOM_EVENTS.SPELL_CAST, this.#onLocalSpellCast, this);
       try { NetworkManager.getInstance().stopGameTick(); } catch { /* offline */ }
@@ -1412,6 +1429,7 @@ export class GameScene extends Phaser.Scene {
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_BREATH_UPDATE, this.#onRemoteBreathUpdate, this);
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_BREATH_END, this.#onRemoteBreathEnd, this);
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_EARTH_WALL_PILLAR, this.#onRemoteEarthWallPillar, this);
+    EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_EARTH_WALL_PILLAR_DESTROY, this.#onRemoteEarthWallPillarDestroy, this);
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_PLAYER_DISCONNECTED, this.#onRemotePlayerDisconnected, this);
     EVENT_BUS.on(CUSTOM_EVENTS.SPELL_CAST, this.#onLocalSpellCast, this);
   }
@@ -1609,6 +1627,16 @@ export class GameScene extends Phaser.Scene {
   #onRemoteEarthWallPillar = (payload: EarthWallPillarBroadcast): void => {
     const pillar = new EarthWallPillar(this, payload.x, payload.y);
     this.#earthWallGroup.add(pillar);
+  };
+
+  #onRemoteEarthWallPillarDestroy = (payload: EarthWallPillarDestroyBroadcast): void => {
+    const children = this.#earthWallGroup.getChildren() as EarthWallPillar[];
+    const match = children.find(
+      (p) => p.active && !p.isBeingDestroyed && Math.abs(p.x - payload.x) < 2 && Math.abs(p.y - payload.y) < 2,
+    );
+    if (match) {
+      match.takeDamage(99999);
+    }
   };
 
   #onRemotePlayerDisconnected = (payload: PlayerDisconnectedPayload): void => {

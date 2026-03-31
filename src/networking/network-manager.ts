@@ -15,6 +15,8 @@ import type {
   BreathEndBroadcast,
   EarthWallPillarPayload,
   EarthWallPillarBroadcast,
+  EarthWallPillarDestroyPayload,
+  EarthWallPillarDestroyBroadcast,
   Lobby,
   MatchConfig,
   PlayerInfo,
@@ -28,7 +30,8 @@ type DcMessage =
   | ({ type: 'breath-start' } & BreathStartPayload)
   | ({ type: 'breath-update' } & BreathUpdatePayload)
   | ({ type: 'breath-end' })
-  | ({ type: 'earth-wall-pillar' } & EarthWallPillarPayload);
+  | ({ type: 'earth-wall-pillar' } & EarthWallPillarPayload)
+  | ({ type: 'earth-wall-pillar-destroy' } & EarthWallPillarDestroyPayload);
 
 export class NetworkManager {
   static #instance: NetworkManager | undefined;
@@ -149,6 +152,10 @@ export class NetworkManager {
 
   sendEarthWallPillar(payload: EarthWallPillarPayload): void {
     this.#broadcastReliable({ type: 'earth-wall-pillar', ...payload });
+  }
+
+  sendEarthWallPillarDestroy(payload: EarthWallPillarDestroyPayload): void {
+    this.#broadcastReliable({ type: 'earth-wall-pillar-destroy', ...payload });
   }
 
   sendRoomTransitionRequest(payload: RoomTransitionPayload): void {
@@ -377,6 +384,9 @@ export class NetworkManager {
           break;
         case 'earth-wall-pillar':
           EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_EARTH_WALL_PILLAR, { ...msg, playerId } as EarthWallPillarBroadcast);
+          break;
+        case 'earth-wall-pillar-destroy':
+          EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_EARTH_WALL_PILLAR_DESTROY, { ...msg, playerId } as EarthWallPillarDestroyBroadcast);
           break;
       }
     };
