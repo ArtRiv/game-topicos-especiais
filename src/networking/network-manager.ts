@@ -357,8 +357,12 @@ export class NetworkManager {
     const msg = JSON.stringify(data);
     for (const ch of this.#reliableChannels.values()) {
       if (ch.readyState === 'open') {
-        ch.send(msg);
-        this.#msgSentCount++;
+        try {
+          ch.send(msg);
+          this.#msgSentCount++;
+        } catch {
+          // Send queue full — drop the message rather than crashing
+        }
       }
     }
   }

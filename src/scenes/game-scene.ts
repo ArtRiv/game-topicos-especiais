@@ -6,7 +6,7 @@ import { KeyboardComponent } from '../components/input/keyboard-component';
 import { Spider } from '../game-objects/enemies/spider';
 import { Wisp } from '../game-objects/enemies/wisp';
 import { CharacterGameObject } from '../game-objects/common/character-game-object';
-import { CHEST_REWARD_TO_DIALOG_MAP, DIRECTION, ELEMENT } from '../common/common';
+import { CHEST_REWARD_TO_DIALOG_MAP, DIRECTION, ELEMENT, SPELL_ID } from '../common/common';
 import * as CONFIG from '../common/config';
 import { Pot } from '../game-objects/objects/pot';
 import { Chest } from '../game-objects/objects/chest';
@@ -1425,14 +1425,26 @@ export class GameScene extends Phaser.Scene {
       remote.x = Phaser.Math.Linear(remote.x, target.x, t);
       remote.y = Phaser.Math.Linear(remote.y, target.y, t);
 
-      if (target.direction && target.direction !== remote.direction) {
+      const dirChanged = target.direction && target.direction !== remote.direction;
+      if (dirChanged) {
         remote.direction = target.direction as Direction;
       }
 
       if (target.state && remote.stateMachine) {
         const currentState = remote.stateMachine.currentStateName;
-        if (target.state !== currentState) {
+        const stateChanged = target.state !== currentState;
+        if (stateChanged) {
           remote.stateMachine.setState(target.state);
+        }
+
+        // MoveState has no onEnter and its onUpdate is blocked by isMovementLocked,
+        // so we must drive the walk/idle animation explicitly for remote players.
+        if (stateChanged || dirChanged) {
+          if (target.state === CHARACTER_STATES.MOVE_STATE) {
+            remote.animationComponent.playAnimation(`WALK_${remote.direction}`);
+          } else if (target.state === CHARACTER_STATES.IDLE_STATE) {
+            remote.animationComponent.playAnimation(`IDLE_${remote.direction}`);
+          }
         }
       }
     }
@@ -1478,14 +1490,44 @@ export class GameScene extends Phaser.Scene {
   };
 
   #onRemoteSpellCast = (payload: SpellCastBroadcast): void => {
-    // Re-emit locally so the existing spell system handles visual effect
-    EVENT_BUS.emit(CUSTOM_EVENTS.SPELL_CAST, {
-      x: payload.x,
-      y: payload.y,
-      element: payload.element,
-      direction: payload.direction,
-      spellId: payload.spellId,
-    });
+    // Spawn the spell visual directly — do NOT re-emit SPELL_CAST (that would
+    // trigger #onLocalSpellCast and re-broadcast, creating an infinite loop).
+    let spell: { gameObject: Phaser.GameObjects.GameObject } | undefined;
+    const { x, y, direction, element, spellId } = payload;
+
+    // Compute a target offset from the caster's direction for projectile spells
+    const OFFSET = 100;
+    let tx = x;
+    let ty = y;
+    switch (direction) {
+      case DIRECTION.UP: ty -= OFFSET; break;
+      case DIRECTION.DOWN: ty += OFFSET; break;
+      case DIRECTION.LEFT: tx -= OFFSET; break;
+      case DIRECTION.RIGHT: tx += OFFSET; break;
+    }
+
+    if (spellId === SPELL_ID.FIRE_BOLT) {
+      if (element === ELEMENT.EARTH) {
+        spell = new EarthBolt(this, x, y, tx, ty);
+      } else if (element === ELEMENT.WATER) {
+        spell = new WaterSpike(this, x, y);
+      } else {
+        spell = new FireBolt(this, x, y, tx, ty);
+      }
+    } else if (spellId === SPELL_ID.FIRE_AREA) {
+      if (element === ELEMENT.WATER) {
+        spell = new WaterTornado(this, x, y);
+      } else if (element === ELEMENT.EARTH) {
+        const dir = direction === DIRECTION.LEFT ? DIRECTION.LEFT : DIRECTION.RIGHT;
+        spell = new EarthBump(this, x, y, dir);
+      } else {
+        spell = new FireArea(this, x, y);
+      }
+    }
+
+    if (spell) {
+      spell.gameObject.once(Phaser.GameObjects.Events.DESTROY, () => { /* no-op, GC handles it */ });
+    }
   };
 
   #onRemotePlayerDisconnected = (payload: PlayerDisconnectedPayload): void => {
