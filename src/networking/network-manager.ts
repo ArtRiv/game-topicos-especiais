@@ -1,6 +1,6 @@
 import { io, Socket } from 'socket.io-client';
 import { EVENT_BUS, CUSTOM_EVENTS } from '../common/event-bus.js';
-import { NETWORK_SERVER_URL, NETWORK_SERVER_PORT, NETWORK_TICK_RATE_HZ } from '../common/config.js';
+import { NETWORK_SERVER_URL, NETWORK_SERVER_PORT, NETWORK_TICK_RATE_HZ, NETWORK_DEBUG } from '../common/config.js';
 import type {
   PlayerUpdatePayload,
   PlayerUpdateBroadcast,
@@ -31,8 +31,15 @@ export class NetworkManager {
   #unreliableChannels = new Map<string, RTCDataChannel>(); // pos: ordered=false, maxRetransmits=0 (UDP-like)
   #reliableChannels = new Map<string, RTCDataChannel>();   // events: ordered=true (TCP-like)
   #matchPlayers: PlayerInfo[] = [];
+  #socketToPlayerId = new Map<string, string>();
 
   #tickInterval: ReturnType<typeof setInterval> | null = null;
+  #lastSentSnapshot: PlayerUpdatePayload | null = null;
+
+  // Network performance metrics
+  #msgSentCount = 0;
+  #msgRecvCount = 0;
+  #metricsInterval: ReturnType<typeof setInterval> | null = null;
 
   private constructor(serverUrl: string) {
     this.#socket = io(serverUrl, {
@@ -82,6 +89,7 @@ export class NetworkManager {
   disconnect(): void {
     this.stopGameTick();
     this.#closeAllPeerConnections();
+    this.#lastSentSnapshot = null;
     this.#socket.disconnect();
   }
 
@@ -96,8 +104,19 @@ export class NetworkManager {
 
   // --- Game methods (WebRTC data channels — low latency, P2P) ---
 
-  /** Sends position snapshot to all peers via unreliable (UDP-like) data channel at 60 Hz */
+  /** Sends position snapshot to all peers via unreliable (UDP-like) data channel — skips if unchanged */
   sendPlayerUpdate(payload: PlayerUpdatePayload): void {
+    if (
+      this.#lastSentSnapshot &&
+      this.#lastSentSnapshot.x === payload.x &&
+      this.#lastSentSnapshot.y === payload.y &&
+      this.#lastSentSnapshot.direction === payload.direction &&
+      this.#lastSentSnapshot.state === payload.state &&
+      this.#lastSentSnapshot.element === payload.element
+    ) {
+      return; // nothing changed — skip send
+    }
+    this.#lastSentSnapshot = { ...payload };
     this.#broadcastUnreliable({ type: 'pos', ...payload });
   }
 
@@ -112,7 +131,7 @@ export class NetworkManager {
   }
 
   /**
-   * Starts the outbound position tick at NETWORK_TICK_RATE_HZ (60 Hz).
+   * Starts the outbound position tick at NETWORK_TICK_RATE_HZ (20 Hz).
    * snapshotGetter is called each tick to get the local player's current state.
    */
   startGameTick(snapshotGetter: () => PlayerUpdatePayload | null): void {
@@ -128,6 +147,11 @@ export class NetworkManager {
     if (this.#tickInterval) {
       clearInterval(this.#tickInterval);
       this.#tickInterval = null;
+    }
+    this.#lastSentSnapshot = null;
+    if (this.#metricsInterval) {
+      clearInterval(this.#metricsInterval);
+      this.#metricsInterval = null;
     }
   }
 
@@ -167,6 +191,10 @@ export class NetworkManager {
       const me = matchConfig.players.find((p) => p.socketId === this.#socket.id);
       if (me) this.#localPlayerId = me.id;
       this.#matchPlayers = matchConfig.players;
+      this.#socketToPlayerId.clear();
+      for (const p of matchConfig.players) {
+        this.#socketToPlayerId.set(p.socketId, p.id);
+      }
       EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_LOBBY_STARTED, { matchConfig });
       this.#initWebRTCMesh(matchConfig.players);
     });
@@ -216,6 +244,8 @@ export class NetworkManager {
         void this.#createOffer(peer.socketId);
       }
     });
+
+    this.#startMetricsLog();
   }
 
   #createPeerConnection(peerSocketId: string): RTCPeerConnection {
@@ -291,9 +321,9 @@ export class NetworkManager {
     }
 
     ch.onmessage = (e: MessageEvent<string>) => {
+      this.#msgRecvCount++;
       const msg = JSON.parse(e.data) as DcMessage;
-      const player = this.#matchPlayers.find((p) => p.socketId === fromSocketId);
-      const playerId = player?.id ?? fromSocketId;
+      const playerId = this.#socketToPlayerId.get(fromSocketId) ?? fromSocketId;
 
       switch (msg.type) {
         case 'pos':
@@ -316,15 +346,30 @@ export class NetworkManager {
   #broadcastUnreliable(data: object): void {
     const msg = JSON.stringify(data);
     for (const ch of this.#unreliableChannels.values()) {
-      if (ch.readyState === 'open') ch.send(msg);
+      if (ch.readyState === 'open') {
+        ch.send(msg);
+        this.#msgSentCount++;
+      }
     }
   }
 
   #broadcastReliable(data: object): void {
     const msg = JSON.stringify(data);
     for (const ch of this.#reliableChannels.values()) {
-      if (ch.readyState === 'open') ch.send(msg);
+      if (ch.readyState === 'open') {
+        ch.send(msg);
+        this.#msgSentCount++;
+      }
     }
+  }
+
+  #startMetricsLog(): void {
+    if (!NETWORK_DEBUG || this.#metricsInterval) return;
+    this.#metricsInterval = setInterval(() => {
+      console.log(`[NET] sent: ${this.#msgSentCount} msg/s | recv: ${this.#msgRecvCount} msg/s`);
+      this.#msgSentCount = 0;
+      this.#msgRecvCount = 0;
+    }, 1000);
   }
 
   #closeAllPeerConnections(): void {
@@ -332,5 +377,10 @@ export class NetworkManager {
     this.#peerConnections.clear();
     this.#unreliableChannels.clear();
     this.#reliableChannels.clear();
+    this.#socketToPlayerId.clear();
+    if (this.#metricsInterval) {
+      clearInterval(this.#metricsInterval);
+      this.#metricsInterval = null;
+    }
   }
 }
