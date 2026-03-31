@@ -108,6 +108,7 @@ export class GameScene extends Phaser.Scene {
   #earthWallMouseWasDown: boolean = false;
   // Multiplayer: remote players keyed by playerId
   #remotePlayers = new Map<string, Player>();
+  #remoteSpellGroup!: Phaser.GameObjects.Group;
 
   constructor() {
     super({
@@ -144,6 +145,7 @@ export class GameScene extends Phaser.Scene {
     this.#rewardItem = this.add.image(0, 0, ASSET_KEYS.UI_ICONS, 0).setVisible(false).setOrigin(0, 1);
     this.#earthWallGroup = this.add.group();
     this.#debugFlyingObeliskGroup = this.add.group();
+    this.#remoteSpellGroup = this.add.group({ runChildUpdate: false });
 
     this.#registerColliders();
     this.#registerCustomEvents();
@@ -334,8 +336,10 @@ export class GameScene extends Phaser.Scene {
     }
 
     const spellChildren = this.#player.spellCastingComponent.spellGroup.getChildren();
-    const fireBolts = spellChildren.filter((spell): spell is FireBolt => spell instanceof FireBolt && spell.active);
-    const fireAreas = spellChildren.filter((spell): spell is FireArea => spell instanceof FireArea && spell.active);
+    const remoteChildren = this.#remoteSpellGroup?.getChildren() ?? [];
+    const allSpells = [...spellChildren, ...remoteChildren];
+    const fireBolts = allSpells.filter((spell): spell is FireBolt => spell instanceof FireBolt && spell.active);
+    const fireAreas = allSpells.filter((spell): spell is FireArea => spell instanceof FireArea && spell.active);
 
     const activeBolts = new Set(fireBolts);
 
@@ -390,8 +394,10 @@ export class GameScene extends Phaser.Scene {
     }
 
     const spellChildren = this.#player.spellCastingComponent.spellGroup.getChildren();
-    const earthBolts = spellChildren.filter((s): s is EarthBolt => s instanceof EarthBolt && s.active);
-    const fireBolts = spellChildren.filter((s): s is FireBolt => s instanceof FireBolt && s.active);
+    const remoteChildren = this.#remoteSpellGroup?.getChildren() ?? [];
+    const allSpells = [...spellChildren, ...remoteChildren];
+    const earthBolts = allSpells.filter((s): s is EarthBolt => s instanceof EarthBolt && s.active);
+    const fireBolts = allSpells.filter((s): s is FireBolt => s instanceof FireBolt && s.active);
 
     if (earthBolts.length === 0 || fireBolts.length === 0) {
       return;
@@ -428,8 +434,10 @@ export class GameScene extends Phaser.Scene {
     }
 
     const spellChildren = this.#player.spellCastingComponent.spellGroup.getChildren();
-    const earthBolts = spellChildren.filter((s): s is EarthBolt => s instanceof EarthBolt && s.active);
-    const fireAreas = spellChildren.filter((s): s is FireArea => s instanceof FireArea && s.active);
+    const remoteChildren = this.#remoteSpellGroup?.getChildren() ?? [];
+    const allSpells = [...spellChildren, ...remoteChildren];
+    const earthBolts = allSpells.filter((s): s is EarthBolt => s instanceof EarthBolt && s.active);
+    const fireAreas = allSpells.filter((s): s is FireArea => s instanceof FireArea && s.active);
 
     if (earthBolts.length === 0 || fireAreas.length === 0) {
       return;
@@ -736,6 +744,16 @@ export class GameScene extends Phaser.Scene {
 
     // Register spell projectile vs walls collider (FireBolt and EarthBolt explode on walls)
     this.physics.add.collider(this.#player.spellCastingComponent.spellGroup, this.#collisionLayer, (spellObj) => {
+      if (spellObj instanceof FireBolt) {
+        spellObj.explode();
+      }
+      if (spellObj instanceof EarthBolt) {
+        spellObj.explode();
+      }
+    });
+
+    // Remote spells also explode on walls
+    this.physics.add.collider(this.#remoteSpellGroup, this.#collisionLayer, (spellObj) => {
       if (spellObj instanceof FireBolt) {
         spellObj.explode();
       }
@@ -1518,7 +1536,10 @@ export class GameScene extends Phaser.Scene {
     }
 
     if (spell) {
-      spell.gameObject.once(Phaser.GameObjects.Events.DESTROY, () => { /* no-op, GC handles it */ });
+      this.#remoteSpellGroup.add(spell.gameObject);
+      spell.gameObject.once(Phaser.GameObjects.Events.DESTROY, () => {
+        this.#remoteSpellGroup.remove(spell!.gameObject, true);
+      });
     }
   };
 
