@@ -154,6 +154,11 @@ export class NetworkManager {
       EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_LOBBY_UPDATED, data);
     });
 
+    // Server pushes an updated list to all connected clients when any lobby changes
+    this.#socket.on('lobby:list-updated', (data: { lobbies: Lobby[] }) => {
+      EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_LOBBY_UPDATED, data);
+    });
+
     this.#socket.on('lobby:updated', ({ lobby }: { lobby: Lobby }) => {
       EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_LOBBY_UPDATED, { lobby });
     });

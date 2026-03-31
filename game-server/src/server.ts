@@ -24,6 +24,8 @@ io.on('connection', (socket) => {
     const lobby = lobbyManager.createLobby(socket.id, playerName);
     socket.join(`lobby:${lobby.id}`);
     socket.emit('lobby:created', { lobby });
+    // Notify all clients browsing the lobby list that a new lobby is available
+    io.emit('lobby:list-updated', { lobbies: lobbyManager.listLobbies() });
   });
 
   socket.on('lobby:list', () => {
@@ -35,6 +37,8 @@ io.on('connection', (socket) => {
       const lobby = lobbyManager.joinLobby(lobbyId, socket.id, playerName);
       socket.join(`lobby:${lobbyId}`);
       io.to(`lobby:${lobbyId}`).emit('lobby:updated', { lobby });
+      // Update player count visible in lobby list for other browsing clients
+      io.emit('lobby:list-updated', { lobbies: lobbyManager.listLobbies() });
     } catch (err) {
       socket.emit('lobby:error', { message: (err as Error).message });
     }
@@ -46,6 +50,8 @@ io.on('connection', (socket) => {
       socket.leave(`lobby:${lobby.id}`);
       io.to(`lobby:${lobby.id}`).emit('lobby:updated', { lobby });
     }
+    // Lobby may have been removed (empty) or player count changed — update all browsing clients
+    io.emit('lobby:list-updated', { lobbies: lobbyManager.listLobbies() });
   });
 
   socket.on('lobby:set-mode', ({ gameMode }: { gameMode: string }) => {
