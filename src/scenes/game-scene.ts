@@ -62,7 +62,8 @@ import {
 } from '../common/config';
 import { NetworkManager } from '../networking/network-manager';
 import { RemoteInputComponent } from '../components/input/remote-input-component';
-import type { PlayerUpdateBroadcast, RoomTransitionPayload, PlayerDisconnectedPayload, PlayerUpdatePayload, SpellCastBroadcast } from '../networking/types';
+import type { PlayerUpdateBroadcast, RoomTransitionPayload, PlayerDisconnectedPayload, PlayerUpdatePayload, SpellCastBroadcast, PlayerInfo } from '../networking/types';
+import type { Direction } from '../common/types';
 
 export class GameScene extends Phaser.Scene {
   #levelData!: LevelData;
@@ -794,6 +795,7 @@ export class GameScene extends Phaser.Scene {
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_PLAYER_UPDATE, this.#onRemotePlayerUpdate, this);
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_SPELL_CAST, this.#onRemoteSpellCast, this);
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_PLAYER_DISCONNECTED, this.#onRemotePlayerDisconnected, this);
+      EVENT_BUS.off(CUSTOM_EVENTS.SPELL_CAST, this.#onLocalSpellCast, this);
       try { NetworkManager.getInstance().stopGameTick(); } catch { /* offline */ }
       this.#remotePlayers.forEach((p) => p.destroy());
       this.#remotePlayers.clear();
@@ -1358,6 +1360,7 @@ export class GameScene extends Phaser.Scene {
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_PLAYER_UPDATE, this.#onRemotePlayerUpdate, this);
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_SPELL_CAST, this.#onRemoteSpellCast, this);
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_PLAYER_DISCONNECTED, this.#onRemotePlayerDisconnected, this);
+    EVENT_BUS.on(CUSTOM_EVENTS.SPELL_CAST, this.#onLocalSpellCast, this);
   }
 
   #buildLocalPlayerSnapshot(): PlayerUpdatePayload | null {
@@ -1387,8 +1390,7 @@ export class GameScene extends Phaser.Scene {
 
     let remote = this.#remotePlayers.get(payload.playerId);
     if (!remote) {
-      const slotIndex = this.#remotePlayers.size + 1;
-      const tint = GameScene.#PLAYER_TINT_PALETTE[slotIndex % GameScene.#PLAYER_TINT_PALETTE.length];
+      const tint = this.#resolveRemotePlayerTint(payload.playerId);
       const ric = new RemoteInputComponent();
       remote = new Player({
         scene: this,
@@ -1405,11 +1407,53 @@ export class GameScene extends Phaser.Scene {
     remote.x = Phaser.Math.Linear(remote.x, payload.x, 0.3);
     remote.y = Phaser.Math.Linear(remote.y, payload.y, 0.3);
 
-    // Drive remote player animations via RemoteInputComponent
+    // Drive remote player direction + animation state directly from snapshot
+    remote.direction = payload.direction as Direction;
+    remote.stateMachine.setState(payload.state);
+
     const ric = remote.controls as RemoteInputComponent;
     if (typeof ric.applySnapshot === 'function') {
       ric.applySnapshot({ x: payload.x, y: payload.y, direction: payload.direction, state: payload.state, element: payload.element });
     }
+  };
+
+  /**
+   * Returns a deterministic tint for a remote player.
+   * Uses team-based colors when team data is available from matchConfig.
+   * Falls back to stable-index palette when team is unassigned or matchConfig is unavailable.
+   */
+  #resolveRemotePlayerTint(playerId: string): number {
+    const len = GameScene.#PLAYER_TINT_PALETTE.length;
+    let nm: NetworkManager | null = null;
+    try { nm = NetworkManager.getInstance(); } catch { /* offline */ }
+
+    if (nm) {
+      const matchPlayers = nm.matchPlayers;
+      const playerIndex = matchPlayers.findIndex((p: PlayerInfo) => p.id === playerId);
+      if (playerIndex !== -1) {
+        const info = matchPlayers[playerIndex];
+        if (info.team === 0) return 0x0055ff;
+        if (info.team === 1) return 0xdd2200;
+        // Unassigned team — use stable index (+1 to skip white at index 0)
+        return GameScene.#PLAYER_TINT_PALETTE[(playerIndex + 1) % len];
+      }
+    }
+
+    // Not found (offline / no matchConfig) — fall back to slot-count-based
+    return GameScene.#PLAYER_TINT_PALETTE[(this.#remotePlayers.size + 1) % len];
+  }
+
+  #onLocalSpellCast = (payload: { spellId: string; slotIndex: number }): void => {
+    let nm: NetworkManager | null = null;
+    try { nm = NetworkManager.getInstance(); } catch { return; }
+    if (!nm?.isConnected || !this.#player?.active) return;
+    nm.sendSpellCast({
+      spellId: payload.spellId,
+      element: ElementManager.instance.activeElement,
+      x: this.#player.x,
+      y: this.#player.y,
+      direction: this.#player.direction,
+    });
   };
 
   #onRemoteSpellCast = (payload: SpellCastBroadcast): void => {
