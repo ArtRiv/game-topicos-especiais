@@ -1430,7 +1430,7 @@ export class GameScene extends Phaser.Scene {
   };
 
   #interpolateRemotePlayers(delta: number): void {
-    const lerpSpeed = 10;
+    const lerpSpeed = 20;
     const t = Math.min(1, lerpSpeed * (delta / 1000));
 
     for (const remote of this.#remotePlayers.values()) {

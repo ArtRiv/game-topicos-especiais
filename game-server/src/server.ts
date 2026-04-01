@@ -4,6 +4,7 @@ import { Server } from 'socket.io';
 import { LobbyManager } from './lobby-manager.js';
 import { GameRoom } from './game-room.js';
 import type { RoomTransitionPayload } from './types.js';
+import { decode as msgpackDecode } from '@msgpack/msgpack';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
@@ -100,6 +101,20 @@ io.on('connection', (socket) => {
     io.to(targetSocketId).emit('webrtc:ice', { fromSocketId: socket.id, candidate });
   });
 
+  // --- MessagePack position relay (stress-test & future server-relay path) ---
+  // Accepts a binary MessagePack-encoded PlayerUpdatePayload, relays raw bytes to all
+  // other players in the same lobby room, and acks with server timestamp for RTT measurement.
+  socket.on('game:player-update-mp', (data: Buffer, ack?: (serverTs: number) => void) => {
+    const lobbyId = findLobbyIdBySocket(socket.id);
+    if (!lobbyId) { if (typeof ack === 'function') ack(Date.now()); return; }
+
+    // Validate the payload is parseable MessagePack (drops malformed frames silently)
+    try { msgpackDecode(data); } catch { return; }
+
+    socket.to(`lobby:${lobbyId}`).emit('game:player-update-mp', data, socket.id);
+    if (typeof ack === 'function') ack(Date.now());
+  });
+
   socket.on('disconnect', () => {
     console.log(`[SERVER] Client disconnected: ${socket.id}`);
     const lobbyId = findLobbyIdBySocket(socket.id);
@@ -126,6 +141,6 @@ function findLobbyIdBySocket(socketId: string): string | undefined {
   return lobby?.id;
 }
 
-httpServer.listen(PORT, () => {
+httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`[SERVER] Listening on port ${PORT}`);
 });
