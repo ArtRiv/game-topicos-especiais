@@ -147,3 +147,6 @@ export class FireBolt extends Phaser.Physics.Arcade.Sprite implements ActiveSpel
     });
   }
 }
+
+import { registerSpell } from './spell-registry';
+registerSpell(SPELL_ID.FIRE_BOLT, (scene, x, y, tx, ty) => new FireBolt(scene, x, y, tx, ty));

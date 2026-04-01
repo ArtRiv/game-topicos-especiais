@@ -125,3 +125,6 @@ export class WaterSpike extends Phaser.Physics.Arcade.Sprite implements ActiveSp
     });
   }
 }
+
+import { registerSpell } from './spell-registry';
+registerSpell(SPELL_ID.WATER_SPIKE, (scene, _x, _y, tx, ty) => new WaterSpike(scene, tx, ty));

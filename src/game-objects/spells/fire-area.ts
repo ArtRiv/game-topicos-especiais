@@ -177,3 +177,6 @@ export class FireArea extends Phaser.Physics.Arcade.Sprite implements ActiveSpel
     super.destroy(fromScene);
   }
 }
+
+import { registerSpell } from './spell-registry';
+registerSpell(SPELL_ID.FIRE_AREA, (scene, _x, _y, tx, ty) => new FireArea(scene, tx, ty));

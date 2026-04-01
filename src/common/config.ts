@@ -152,6 +152,29 @@ export const WATER_TORNADO_TICK_INTERVAL = 300; // damage tick interval
 export const WATER_TORNADO_BODY_RADIUS = 24;
 
 
+// ICE_SHARD (projectile)
+export const ICE_SHARD_DAMAGE = 1;
+export const ICE_SHARD_MANA_COST = 1;
+export const ICE_SHARD_COOLDOWN = 550; // ms
+export const ICE_SHARD_SPEED = 700;
+export const ICE_SHARD_LIFETIME = 2200; // ms
+export const ICE_SHARD_IMPACT_FORWARD_OFFSET = 8;
+
+// WIND_BOLT (projectile)
+export const WIND_BOLT_DAMAGE = 2;
+export const WIND_BOLT_MANA_COST = 2;
+export const WIND_BOLT_COOLDOWN = 700; // ms
+export const WIND_BOLT_SPEED = 900;
+export const WIND_BOLT_LIFETIME = 1800; // ms
+export const WIND_BOLT_IMPACT_FORWARD_OFFSET = 8;
+
+// THUNDER_STRIKE (area)
+export const THUNDER_STRIKE_DAMAGE = 3;
+export const THUNDER_STRIKE_MANA_COST = 3;
+export const THUNDER_STRIKE_COOLDOWN = 1200; // ms
+export const THUNDER_STRIKE_LOOP_DURATION = 400; // ms body stays active
+export const THUNDER_STRIKE_BODY_RADIUS = 20; // px
+
 // Networking (Phase 1: LAN Foundation)
 export const NETWORK_SERVER_URL = 'http://localhost';
 export const NETWORK_SERVER_PORT = 3000;

@@ -128,3 +128,6 @@ export class EarthBump extends Phaser.Physics.Arcade.Sprite implements ActiveSpe
     super.destroy(fromScene);
   }
 }
+
+import { registerSpell } from './spell-registry';
+registerSpell(SPELL_ID.EARTH_BUMP, (scene, _x, _y, tx, ty, dir) => new EarthBump(scene, tx, ty, dir));
