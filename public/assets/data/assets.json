@@ -239,6 +239,62 @@
     ]
   },
   {
+    "path": "assets/spells/Ice Effect 01/Ice VFX 1",
+    "files": [
+      {
+        "type": "spritesheet",
+        "key": "ICE_SHARD",
+        "url": "IceVFX 1 Repeatable.png",
+        "frameConfig": { "frameWidth": 32, "frameHeight": 32 }
+      },
+      {
+        "type": "spritesheet",
+        "key": "ICE_SHARD_HIT",
+        "url": "Ice VFX 1 Hit.png",
+        "frameConfig": { "frameWidth": 32, "frameHeight": 32 }
+      }
+    ]
+  },
+  {
+    "path": "assets/spells/Wind Effect 01",
+    "files": [
+      {
+        "type": "spritesheet",
+        "key": "WIND_BOLT",
+        "url": "Wind Projectile.png",
+        "frameConfig": { "frameWidth": 32, "frameHeight": 32 }
+      },
+      {
+        "type": "spritesheet",
+        "key": "WIND_BOLT_HIT",
+        "url": "Wind Hit Effect.png",
+        "frameConfig": { "frameWidth": 32, "frameHeight": 32 }
+      }
+    ]
+  },
+  {
+    "path": "assets/spells/Thunder Effect 02/Thunder Strike",
+    "files": [
+      {
+        "type": "spritesheet",
+        "key": "THUNDER_STRIKE",
+        "url": "Thunderstrike wo blur.png",
+        "frameConfig": { "frameWidth": 64, "frameHeight": 64 }
+      }
+    ]
+  },
+  {
+    "path": "assets/spells/Thunder Effect 02/Thunder Splash",
+    "files": [
+      {
+        "type": "spritesheet",
+        "key": "THUNDER_SPLASH",
+        "url": "Thunder splash wo blur.png",
+        "frameConfig": { "frameWidth": 48, "frameHeight": 48 }
+      }
+    ]
+  },
+  {
     "path": "assets/images/levels/dungeon_1",
     "files": [
       {
