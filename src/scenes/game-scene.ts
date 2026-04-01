@@ -53,6 +53,10 @@ import { EarthWallPillar } from '../game-objects/spells/earth-wall-pillar';
 import { WaterSpike } from '../game-objects/spells/water-spike';
 import { WaterTornado } from '../game-objects/spells/water-tornado';
 import { EarthBump } from '../game-objects/spells/earth-bump';
+import { IceShard } from '../game-objects/spells/ice-shard';
+import { WindBolt } from '../game-objects/spells/wind-bolt';
+import { ThunderStrike } from '../game-objects/spells/thunder-strike';
+import { SPELL_FACTORY_REGISTRY } from '../game-objects/spells/spell-registry';
 import { ElementManager } from '../common/element-manager';
 import {
   EARTH_WALL_MANA_COST,
@@ -687,6 +691,26 @@ export class GameScene extends Phaser.Scene {
             if (spellObj instanceof EarthBump) {
               spellObj.hitEnemy(enemyGameObject);
             }
+
+            // IceShard projectile — damages and explodes on hit
+            if (spellObj instanceof IceShard) {
+              enemyGameObject.hit(DIRECTION.DOWN, spellObj.baseDamage);
+              spellObj.explode();
+              return;
+            }
+
+            // WindBolt projectile — damages and explodes on hit
+            if (spellObj instanceof WindBolt) {
+              enemyGameObject.hit(DIRECTION.DOWN, spellObj.baseDamage);
+              spellObj.explode();
+              return;
+            }
+
+            // ThunderStrike area — hitEnemy handles once-per-enemy deduplication
+            if (spellObj instanceof ThunderStrike) {
+              spellObj.hitEnemy(enemyGameObject);
+              return;
+            }
           },
         );
 
@@ -750,6 +774,12 @@ export class GameScene extends Phaser.Scene {
       if (spellObj instanceof EarthBolt) {
         spellObj.explode();
       }
+      if (spellObj instanceof IceShard) {
+        spellObj.explode();
+      }
+      if (spellObj instanceof WindBolt) {
+        spellObj.explode();
+      }
     });
 
     // Remote spells also explode on walls
@@ -760,6 +790,32 @@ export class GameScene extends Phaser.Scene {
       if (spellObj instanceof EarthBolt) {
         spellObj.explode();
       }
+      if (spellObj instanceof IceShard) {
+        spellObj.explode();
+      }
+      if (spellObj instanceof WindBolt) {
+        spellObj.explode();
+      }
+    });
+
+    // Remote spells vs enemies (per room, same behavior as local spells)
+    Object.keys(this.#objectsByRoomId).forEach((key) => {
+      const roomId = parseInt(key, 10);
+      if (!this.#objectsByRoomId[roomId]?.enemyGroup) return;
+      this.physics.add.overlap(
+        this.#remoteSpellGroup,
+        this.#objectsByRoomId[roomId].enemyGroup,
+        (spellObj, enemy) => {
+          const enemyGameObject = enemy as CharacterGameObject;
+          if (enemyGameObject.isDefeated) return;
+          if (spellObj instanceof IceShard) { enemyGameObject.hit(DIRECTION.DOWN, spellObj.baseDamage); spellObj.explode(); return; }
+          if (spellObj instanceof WindBolt) { enemyGameObject.hit(DIRECTION.DOWN, spellObj.baseDamage); spellObj.explode(); return; }
+          if (spellObj instanceof FireBolt) { enemyGameObject.hit(DIRECTION.DOWN, spellObj.baseDamage); spellObj.explode(); return; }
+          if (spellObj instanceof EarthBolt) { enemyGameObject.hit(DIRECTION.DOWN, spellObj.baseDamage); spellObj.explode(); return; }
+          if (spellObj instanceof ThunderStrike) { spellObj.hitEnemy(enemyGameObject); return; }
+          if (spellObj instanceof WaterSpike) { spellObj.hitEnemy(enemyGameObject); return; }
+        },
+      );
     });
 
     // Player spell projectiles can crack Earth Wall pillars
@@ -1511,36 +1567,28 @@ export class GameScene extends Phaser.Scene {
   };
 
   #onRemoteSpellCast = (payload: SpellCastBroadcast): void => {
-    // Spawn the spell visual directly — do NOT re-emit SPELL_CAST (that would
+    // Instantiate the spell directly via the registry — do NOT re-emit SPELL_CAST (that would
     // trigger #onLocalSpellCast and re-broadcast, creating an infinite loop).
-    let spell: { gameObject: Phaser.GameObjects.GameObject } | undefined;
-    const { x, y, element, spellId, targetX, targetY } = payload;
-
-    if (spellId === SPELL_ID.FIRE_BOLT) {
-      if (element === ELEMENT.EARTH) {
-        spell = new EarthBolt(this, x, y, targetX, targetY);
-      } else if (element === ELEMENT.WATER) {
-        spell = new WaterSpike(this, targetX, targetY);
-      } else {
-        spell = new FireBolt(this, x, y, targetX, targetY);
-      }
-    } else if (spellId === SPELL_ID.FIRE_AREA) {
-      if (element === ELEMENT.WATER) {
-        spell = new WaterTornado(this, targetX, targetY);
-      } else if (element === ELEMENT.EARTH) {
-        const dir = targetX < x ? DIRECTION.LEFT : DIRECTION.RIGHT;
-        spell = new EarthBump(this, targetX, targetY, dir);
-      } else {
-        spell = new FireArea(this, targetX, targetY);
-      }
+    const factory = SPELL_FACTORY_REGISTRY[payload.spellId as keyof typeof SPELL_FACTORY_REGISTRY];
+    if (!factory) {
+      console.warn(`[GameScene] No factory for remote spellId: ${payload.spellId}`);
+      return;
     }
 
-    if (spell) {
-      this.#remoteSpellGroup.add(spell.gameObject);
-      spell.gameObject.once(Phaser.GameObjects.Events.DESTROY, () => {
-        this.#remoteSpellGroup.remove(spell!.gameObject, true);
-      });
-    }
+    const spell = factory(
+      this,
+      payload.x,
+      payload.y,
+      payload.targetX ?? payload.x + 1,
+      payload.targetY ?? payload.y,
+      payload.direction as import('../common/types').Direction,
+    );
+
+    this.#remoteSpellGroup.add(spell.gameObject);
+
+    spell.gameObject.once(Phaser.GameObjects.Events.DESTROY, () => {
+      this.#remoteSpellGroup.remove(spell.gameObject, false, false);
+    });
   };
 
   #onRemotePlayerDisconnected = (payload: PlayerDisconnectedPayload): void => {
