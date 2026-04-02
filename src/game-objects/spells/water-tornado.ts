@@ -137,3 +137,6 @@ export class WaterTornado extends Phaser.Physics.Arcade.Sprite implements Active
     super.destroy(fromScene);
   }
 }
+
+import { registerSpell } from './spell-registry';
+registerSpell(SPELL_ID.WATER_TORNADO, (scene, _x, _y, tx, ty) => new WaterTornado(scene, tx, ty));

@@ -1,32 +1,18 @@
 import * as Phaser from 'phaser';
-import { GameObject, SpellId } from '../../common/types';
-import { ELEMENT, SPELL_ID } from '../../common/common';
+import { GameObject } from '../../common/types';
+import { DIRECTION } from '../../common/common';
 import { CUSTOM_EVENTS, EVENT_BUS } from '../../common/event-bus';
 import { BaseGameObjectComponent } from './base-game-object-component';
 import { ManaComponent } from './mana-component';
 import { ActiveSpell } from '../../game-objects/spells/base-spell';
-import { FireBolt } from '../../game-objects/spells/fire-bolt';
-import { FireArea } from '../../game-objects/spells/fire-area';
-import { EarthBolt } from '../../game-objects/spells/earth-bolt';
-import { WaterSpike } from '../../game-objects/spells/water-spike';
-import { WaterTornado } from '../../game-objects/spells/water-tornado';
-import { EarthBump } from '../../game-objects/spells/earth-bump';
 import { ElementManager } from '../../common/element-manager';
-import { RUNTIME_CONFIG } from '../../common/runtime-config';
-import { DIRECTION } from '../../common/common';
-import { FIRE_BOLT_COOLDOWN, FIRE_BOLT_MANA_COST, FIRE_AREA_COOLDOWN, FIRE_AREA_MANA_COST } from '../../common/config';
-
-export type SpellSlot = {
-  spellId: SpellId;
-  manaCost: number;
-  cooldown: number;
-  lastCastTime: number;
-};
+import { SPELL_SLOT_REGISTRY, SPELL_CONFIG, SPELL_FACTORY_REGISTRY } from '../../game-objects/spells/spell-registry';
 
 export class SpellCastingComponent extends BaseGameObjectComponent {
   #manaComponent: ManaComponent;
   #activeSpells: ActiveSpell[];
-  #spellSlots: SpellSlot[];
+  // [slot0LastCast, slot1LastCast] timestamps in scene.time.now ms
+  #lastCastTime: [number, number] = [0, 0];
   #scene: Phaser.Scene;
   #spellGroup: Phaser.GameObjects.Group;
 
@@ -36,22 +22,6 @@ export class SpellCastingComponent extends BaseGameObjectComponent {
     this.#activeSpells = [];
     this.#scene = gameObject.scene;
     this.#spellGroup = this.#scene.add.group();
-
-    // spell slot 1 = Fire Bolt, spell slot 2 = Fire Area
-    this.#spellSlots = [
-      {
-        spellId: SPELL_ID.FIRE_BOLT,
-        manaCost: FIRE_BOLT_MANA_COST,
-        cooldown: FIRE_BOLT_COOLDOWN,
-        lastCastTime: 0,
-      },
-      {
-        spellId: SPELL_ID.FIRE_AREA,
-        manaCost: FIRE_AREA_MANA_COST,
-        cooldown: FIRE_AREA_COOLDOWN,
-        lastCastTime: 0,
-      },
-    ];
   }
 
   get spellGroup(): Phaser.GameObjects.Group {
@@ -63,41 +33,15 @@ export class SpellCastingComponent extends BaseGameObjectComponent {
   }
 
   public canCast(slotIndex: number): boolean {
-    if (slotIndex < 0 || slotIndex >= this.#spellSlots.length) {
-      return false;
-    }
-    const slot = this.#spellSlots[slotIndex];
+    if (slotIndex !== 0 && slotIndex !== 1) return false;
+    const element = ElementManager.instance.activeElement;
+    const spellId = SPELL_SLOT_REGISTRY[element]?.[slotIndex];
+    if (!spellId) return false;
+    const { manaCost, cooldown } = SPELL_CONFIG[spellId];
     const now = this.#scene.time.now;
-    const cooldown = this.#getEffectiveCooldown(slot.spellId);
-    if (now - slot.lastCastTime < cooldown) {
-      return false;
-    }
-    if (this.#manaComponent.mana < slot.manaCost) {
-      return false;
-    }
+    if (now - this.#lastCastTime[slotIndex] < cooldown) return false;
+    if (this.#manaComponent.mana < manaCost) return false;
     return true;
-  }
-
-  #getEffectiveCooldown(spellId: SpellId): number {
-    if (spellId === SPELL_ID.FIRE_BOLT) {
-      if (ElementManager.instance.activeElement === ELEMENT.EARTH) {
-        return RUNTIME_CONFIG.EARTH_BOLT_COOLDOWN;
-      }
-      if (ElementManager.instance.activeElement === ELEMENT.WATER) {
-        return RUNTIME_CONFIG.WATER_SPIKE_COOLDOWN;
-      }
-      return RUNTIME_CONFIG.FIRE_BOLT_COOLDOWN;
-    }
-    if (spellId === SPELL_ID.FIRE_AREA) {
-      if (ElementManager.instance.activeElement === ELEMENT.EARTH) {
-        return RUNTIME_CONFIG.EARTH_BUMP_COOLDOWN;
-      }
-      if (ElementManager.instance.activeElement === ELEMENT.WATER) {
-        return RUNTIME_CONFIG.WATER_TORNADO_COOLDOWN;
-      }
-      return RUNTIME_CONFIG.FIRE_AREA_COOLDOWN;
-    }
-    return this.#spellSlots.find((s) => s.spellId === spellId)?.cooldown ?? 0;
   }
 
   public castSpell(
@@ -107,66 +51,54 @@ export class SpellCastingComponent extends BaseGameObjectComponent {
     targetX: number,
     targetY: number,
   ): ActiveSpell | undefined {
-    if (!this.canCast(slotIndex)) {
+    if (!this.canCast(slotIndex)) return undefined;
+
+    const element = ElementManager.instance.activeElement;
+    const spellId = SPELL_SLOT_REGISTRY[element]![slotIndex]!;
+    const { manaCost } = SPELL_CONFIG[spellId];
+
+    this.#manaComponent.consume(manaCost);
+    this.#lastCastTime[slotIndex] = this.#scene.time.now;
+
+    // Derive 4-way direction from caster → target for spells that need it
+    const dx = targetX - casterX;
+    const dy = targetY - casterY;
+    const direction =
+      Math.abs(dx) >= Math.abs(dy)
+        ? dx >= 0
+          ? DIRECTION.RIGHT
+          : DIRECTION.LEFT
+        : dy >= 0
+          ? DIRECTION.DOWN
+          : DIRECTION.UP;
+
+    const factory = SPELL_FACTORY_REGISTRY[spellId];
+    if (!factory) {
+      console.warn(`[SpellCastingComponent] No factory registered for spellId: ${spellId}`);
       return undefined;
     }
 
-    const slot = this.#spellSlots[slotIndex];
-    this.#manaComponent.consume(slot.manaCost);
-    slot.lastCastTime = this.#scene.time.now;
-
-    let spell: ActiveSpell | undefined;
-
-    switch (slot.spellId) {
-      case SPELL_ID.FIRE_BOLT: {
-        const activeElement = ElementManager.instance.activeElement;
-        if (activeElement === ELEMENT.EARTH) {
-          spell = new EarthBolt(this.#scene, casterX, casterY, targetX, targetY);
-        } else if (activeElement === ELEMENT.WATER) {
-          spell = new WaterSpike(this.#scene, targetX, targetY);
-        } else {
-          spell = new FireBolt(this.#scene, casterX, casterY, targetX, targetY);
-        }
-        break;
-      }
-      case SPELL_ID.FIRE_AREA: {
-        const activeElement = ElementManager.instance.activeElement;
-        if (activeElement === ELEMENT.WATER) {
-          spell = new WaterTornado(this.#scene, targetX, targetY);
-        } else if (activeElement === ELEMENT.EARTH) {
-          const direction = targetX < casterX ? DIRECTION.LEFT : DIRECTION.RIGHT;
-          spell = new EarthBump(this.#scene, targetX, targetY, direction);
-        } else {
-          spell = new FireArea(this.#scene, targetX, targetY);
-        }
-        break;
-      }
-      default:
-        return undefined;
-    }
+    const spell = factory(this.#scene, casterX, casterY, targetX, targetY, direction);
 
     this.#activeSpells.push(spell);
     this.#spellGroup.add(spell.gameObject);
 
-    // clean up when spell is destroyed
     spell.gameObject.once(Phaser.GameObjects.Events.DESTROY, () => {
       this.#activeSpells = this.#activeSpells.filter((s) => s !== spell);
     });
 
-    EVENT_BUS.emit(CUSTOM_EVENTS.SPELL_CAST, { spellId: slot.spellId, slotIndex, casterX, casterY, targetX, targetY });
+    EVENT_BUS.emit(CUSTOM_EVENTS.SPELL_CAST, { spellId, slotIndex, casterX, casterY, targetX, targetY });
 
     return spell;
   }
 
   public getCooldownPercent(slotIndex: number): number {
-    if (slotIndex < 0 || slotIndex >= this.#spellSlots.length) {
-      return 0;
-    }
-    const slot = this.#spellSlots[slotIndex];
-    const elapsed = this.#scene.time.now - slot.lastCastTime;
-    if (elapsed >= slot.cooldown) {
-      return 1;
-    }
-    return elapsed / slot.cooldown;
+    if (slotIndex !== 0 && slotIndex !== 1) return 0;
+    const element = ElementManager.instance.activeElement;
+    const spellId = SPELL_SLOT_REGISTRY[element]?.[slotIndex];
+    if (!spellId) return 1;
+    const { cooldown } = SPELL_CONFIG[spellId];
+    const elapsed = this.#scene.time.now - this.#lastCastTime[slotIndex];
+    return elapsed >= cooldown ? 1 : elapsed / cooldown;
   }
 }

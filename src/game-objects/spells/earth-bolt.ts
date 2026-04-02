@@ -129,3 +129,6 @@ export class EarthBolt extends Phaser.Physics.Arcade.Sprite implements ActiveSpe
     this.destroy();
   }
 }
+
+import { registerSpell } from './spell-registry';
+registerSpell(SPELL_ID.EARTH_BOLT, (scene, x, y, tx, ty) => new EarthBolt(scene, x, y, tx, ty));

@@ -73,7 +73,7 @@ Plans:
 **Plans**: 2 plans
 Plans:
 - [x] 02.1-01-PLAN.md — Network message path optimization (tick rate, dirty-check, serialization, Map lookup)
-- [ ] 02.1-02-PLAN.md — Remote player interpolation & multi-client validation
+- [x] 02.1-02-PLAN.md — Remote player interpolation & multi-client validation
 
 ### Phase 3: New Spells
 
