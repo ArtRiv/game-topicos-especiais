@@ -45,19 +45,19 @@ export class LobbyScene extends Phaser.Scene {
     const cx = this.cameras.main.centerX;
     const cy = this.cameras.main.centerY;
 
-    const title = this.add.text(cx, cy - 120, 'MAGES ONLINE', FONT_TITLE).setOrigin(0.5);
+    const title = this.add.text(cx, cy - 120, 'MAGES ONLINE', FONT_TITLE).setOrigin(0.5).setResolution(2);
 
-    const ipLabel = this.add.text(cx - 150, cy - 50, 'SERVER IP:', FONT_SMALL).setOrigin(0, 0.5);
+    const ipLabel = this.add.text(cx - 150, cy - 50, 'SERVER IP:', FONT_SMALL).setOrigin(0, 0.5).setResolution(2);
     this.#ipInput = this.add.dom(cx + 30, cy - 50).createFromHTML(
       '<input type="text" value="localhost" style="width:160px;background:#111;color:#fff;border:1px solid #555;padding:4px;font-size:10px;font-family:monospace">'
     );
 
-    const nickLabel = this.add.text(cx - 150, cy - 10, 'NICKNAME:', FONT_SMALL).setOrigin(0, 0.5);
+    const nickLabel = this.add.text(cx - 150, cy - 10, 'NICKNAME:', FONT_SMALL).setOrigin(0, 0.5).setResolution(2);
     this.#nickInput = this.add.dom(cx + 30, cy - 10).createFromHTML(
       '<input type="text" value="Player" maxlength="12" style="width:160px;background:#111;color:#fff;border:1px solid #555;padding:4px;font-size:10px;font-family:monospace">'
     );
 
-    this.#statusText = this.add.text(cx, cy + 40, '', FONT_SMALL).setOrigin(0.5);
+    this.#statusText = this.add.text(cx, cy + 40, '', FONT_SMALL).setOrigin(0.5).setResolution(2);
 
     const btn = this.#createButton(cx, cy + 70, 'CONNECT', () => this.#onConnect());
 
@@ -105,15 +105,15 @@ export class LobbyScene extends Phaser.Scene {
     const cx = this.cameras.main.centerX;
     const cy = this.cameras.main.centerY;
 
-    const title = this.add.text(cx, 40, 'LOBBIES', FONT_TITLE).setOrigin(0.5);
-    const hint = this.add.text(cx, 65, 'Click a lobby to join it', FONT_SMALL).setOrigin(0.5);
+    const title = this.add.text(cx, 40, 'LOBBIES', FONT_TITLE).setOrigin(0.5).setResolution(2);
+    const hint = this.add.text(cx, 65, 'Click a lobby to join it', FONT_SMALL).setOrigin(0.5).setResolution(2);
 
     const createBtn = this.#createButton(cx, 100, 'CREATE LOBBY', () => {
       this.#isHost = true;
       NetworkManager.getInstance().sendLobbyCreate(this.#playerName);
     });
 
-    const listLabel = this.add.text(cx - 200, 130, 'Available lobbies:', FONT_SMALL).setOrigin(0, 0);
+    const listLabel = this.add.text(cx - 200, 130, 'Available lobbies:', FONT_SMALL).setOrigin(0, 0).setResolution(2);
     this.#lobbyListContainer = [];
 
     this.#viewObjects = [title, hint, createBtn, listLabel];
@@ -155,7 +155,7 @@ export class LobbyScene extends Phaser.Scene {
     const baseY = 155;
 
     if (this.#lobbies.length === 0) {
-      const empty = this.add.text(cx, baseY + 16, 'No open lobbies', FONT_SMALL).setOrigin(0.5);
+      const empty = this.add.text(cx, baseY + 16, 'No open lobbies', FONT_SMALL).setOrigin(0.5).setResolution(2);
       this.#lobbyListContainer.push(empty);
       return;
     }
@@ -163,8 +163,8 @@ export class LobbyScene extends Phaser.Scene {
     this.#lobbies.slice(0, 6).forEach((lobby, i) => {
       const rowY = baseY + i * 36;
       const bg = this.add.rectangle(cx, rowY + 12, 380, 30, 0x223366).setInteractive();
-      const label = this.add.text(cx - 185, rowY, `${lobby.players[0]?.name ?? '?'}\'s lobby`, FONT_SMALL_WHITE);
-      const count = this.add.text(cx + 140, rowY, `${lobby.players.length} player(s)`, FONT_SMALL);
+      const label = this.add.text(cx - 185, rowY, `${lobby.players[0]?.name ?? '?'}\'s lobby`, FONT_SMALL_WHITE).setResolution(2);
+      const count = this.add.text(cx + 140, rowY, `${lobby.players.length} player(s)`, FONT_SMALL).setResolution(2);
 
       bg.on('pointerover', () => bg.setFillStyle(BTN_HOVER));
       bg.on('pointerout', () => bg.setFillStyle(0x223366));
@@ -189,10 +189,10 @@ export class LobbyScene extends Phaser.Scene {
     const cx = this.cameras.main.centerX;
     const cy = this.cameras.main.centerY;
 
-    const title = this.add.text(cx, 40, 'WAITING ROOM', FONT_TITLE).setOrigin(0.5);
+    const title = this.add.text(cx, 40, 'WAITING ROOM', FONT_TITLE).setOrigin(0.5).setResolution(2);
     const hostName = lobby.players.find((p) => p.id === lobby.hostPlayerId)?.name ?? '?';
-    const subtitle = this.add.text(cx, 70, `Host: ${hostName}`, FONT_SMALL).setOrigin(0.5);
-    const hint = this.add.text(cx, 88, 'Waiting for host to start...', FONT_SMALL).setOrigin(0.5);
+    const subtitle = this.add.text(cx, 70, `Host: ${hostName}`, FONT_SMALL).setOrigin(0.5).setResolution(2);
+    const hint = this.add.text(cx, 88, 'Waiting for host to start...', FONT_SMALL).setOrigin(0.5).setResolution(2);
 
     this.#waitingRoomObjects = [title, subtitle, hint];
     this.#viewObjects = [...this.#waitingRoomObjects];
@@ -243,9 +243,9 @@ export class LobbyScene extends Phaser.Scene {
       const rowY = baseY + i * 36;
       const tint = TINTS[i % TINTS.length];
       const dot = this.add.rectangle(cx - 150, rowY + 8, 12, 12, tint);
-      const name = this.add.text(cx - 130, rowY, player.name, FONT_SMALL_WHITE);
+      const name = this.add.text(cx - 130, rowY, player.name, FONT_SMALL_WHITE).setResolution(2);
       const role = player.id === this.#currentLobby?.hostPlayerId
-        ? this.add.text(cx + 30, rowY, '(HOST)', FONT_SMALL)
+        ? this.add.text(cx + 30, rowY, '(HOST)', FONT_SMALL).setResolution(2)
         : null;
 
       this.#playerListObjects.push(dot, name);
@@ -281,7 +281,7 @@ export class LobbyScene extends Phaser.Scene {
         // Non-host sees a read-only team badge
         const teamLabel = player.team === 0 ? 'TEAM A' : player.team === 1 ? 'TEAM B' : 'NO TEAM';
         const teamColor = player.team === 0 ? '#44aaff' : player.team === 1 ? '#ff5533' : '#aaaaaa';
-        const badge = this.add.text(cx + 80, rowY, teamLabel, { ...FONT_SMALL, color: teamColor });
+        const badge = this.add.text(cx + 80, rowY, teamLabel, { ...FONT_SMALL, color: teamColor }).setResolution(2);
         this.#playerListObjects.push(badge);
       }
     });
@@ -290,7 +290,7 @@ export class LobbyScene extends Phaser.Scene {
   // --- Helpers ---
   #createButton(x: number, y: number, label: string, onClick: () => void): Phaser.GameObjects.Container {
     const bg = this.add.rectangle(0, 0, label.length * 10 + 24, 28, BTN_COLOR).setInteractive();
-    const text = this.add.text(0, 0, label, FONT_SMALL_WHITE).setOrigin(0.5);
+    const text = this.add.text(0, 0, label, FONT_SMALL_WHITE).setOrigin(0.5).setResolution(2);
     const container = this.add.container(x, y, [bg, text]);
 
     bg.on('pointerover', () => bg.setFillStyle(BTN_HOVER));

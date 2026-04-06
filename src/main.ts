@@ -1,6 +1,7 @@
 import * as Phaser from 'phaser';
 import { SCENE_KEYS } from './scenes/scene-keys';
 // --- Menu scenes ---
+import { SplashScene } from './scenes/splash-scene';
 import { MainMenuScene } from './scenes/main-menu-scene';
 import { CreateLobbyScene } from './scenes/create-lobby-scene';
 import { JoinLobbyScene } from './scenes/join-lobby-scene';
@@ -69,6 +70,7 @@ const game = new Phaser.Game(gameConfig);
 
 // --- Register all scenes ---
 // Menu layer
+game.scene.add(SCENE_KEYS.SPLASH_SCENE, SplashScene);
 game.scene.add(SCENE_KEYS.MAIN_MENU_SCENE, MainMenuScene);
 game.scene.add(SCENE_KEYS.CREATE_LOBBY_SCENE, CreateLobbyScene);
 game.scene.add(SCENE_KEYS.JOIN_LOBBY_SCENE, JoinLobbyScene);
@@ -83,9 +85,8 @@ game.scene.add(SCENE_KEYS.UI_SCENE, UiScene);
 game.scene.add(SCENE_KEYS.GAME_OVER_SCENE, GameOverScene);
 game.scene.add(SCENE_KEYS.RADIAL_MENU_SCENE, RadialMenuScene);
 
-// Entry point — always start at the main menu.
-// Previously this was LOBBY_SCENE; change reverted by starting MAIN_MENU_SCENE.
-// The LobbyScene is still reachable via Create/JoinLobby stubs.
-game.scene.start(SCENE_KEYS.MAIN_MENU_SCENE);
+// Entry point — always start at the splash screen.
+// SplashScene loads music then fades to MainMenuScene on any keypress.
+game.scene.start(SCENE_KEYS.SPLASH_SCENE);
 
 new DebugPanel();
