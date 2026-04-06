@@ -207,6 +207,43 @@ All 5 phases complete = event-ready.
 - An intro and ending exist
 - Comedy NPCs are present
 
+### Phase 6: UI Flow & Screen Design — Splash to Lobby
+
+**Goal:** Every screen from splash to lobby is fully designed and pixel-perfect: correct centering on any viewport/browser config, custom pixel-art fonts, screen-responsive layout, and cinematic intro animations timed to the menu song's drop.
+**Depends on**: Phase 5
+**Requirements**: UI-01, UI-02, UI-03, UI-04, UI-05, UI-06, UI-07
+**Success Criteria** (what must be TRUE):
+  1. Splash screen shows a black background with "Press anything to get high in the fantasy" — pressing any key/button transitions to main menu
+  2. Main menu appears with a cinematic animation timed to the menu song's drop (fade-in, impact text moment — osu!-style)
+  3. All screens are perfectly centered regardless of viewport size, browser devtools being open, or window configuration — no off-center black padding
+  4. Custom pixel-art font family is applied consistently across all UI text
+  5. Every screen is fully documented: which scene handles it, what music plays, all text content, background art, and any animation
+  6. Navigation flow is fully mapped: Splash → Main Menu → (Create Lobby | Join Lobby | Options | Credits) → Lobby → Game
+  7. Screen transitions have defined animation (fade, slide, etc.) and are tied to music cues where applicable
+**Plans**: TBD
+**UI hint**: yes
+
+**Screens to design:**
+- Splash / press-to-start (black bg, single line text, any-key trigger)
+- Main Menu (song drop animation, logo, navigation buttons)
+- Create Lobby (room code display, settings, start button)
+- Join Lobby (code input, player list, ready status)
+- Options (audio, controls, display)
+- Credits
+- Loading / transition screens
+
+**Design constraints:**
+- Pixel-perfect centering via CSS/canvas — no black bars shifting on resize or devtools open
+- Font research needed: search terms → "pixel art fonts free commercial use", "retro RPG bitmap fonts", "Press Start 2P alternatives Google Fonts", "fantasy pixel fonts itch.io"
+- Animations should be driven by music timing (BPM-sync or manual delay matched to song drop)
+
+**Plans:** 3 plans
+
+Plans:
+- [ ] 06-01-PLAN.md — SplashScene + boot wiring (SPLASH_SCENE, any-key → MainMenu)
+- [ ] 06-02-PLAN.md — Cinematic main menu intro + fade transitions (all scene switches)
+- [ ] 06-03-PLAN.md — Font-resolution audit (LobbyScene) + SCREENS.md documentation
+
 ---
 
 ## Phase Schedule (Rough, 3-Month Window)
