@@ -31,6 +31,7 @@ progress:
 | 3 | New Spells | complete |
 | 4 | PvP Combat | not-started |
 | 5 | Match Loop & Scalability | not-started |
+| 6 | UI Flow & Screen Design — Splash to Lobby | not-started |
 
 ## Active Phase
 
@@ -58,6 +59,8 @@ Last activity: 2026-04-01 -- Phase 03 complete (all 5 plans done, 36 tests pass,
 
 - Phase 2.1 inserted after Phase 2: Network Stability & Performance (URGENT)
   - Reason: 3-tab testing revealed severe latency — Tab 2 noticeably delayed, Tab 3 multiple seconds behind
+- Phase 6 added: UI Flow & Screen Design — Splash to Lobby
+  - Covers all screens from splash to lobby, pixel-perfect centering, cinematic menu animations timed to song drop, custom pixel fonts
   - Priority shift: multiplayer stability/responsiveness before new gameplay content (Phase 3 New Spells paused)
   - Focus: diagnose latency bottlenecks, fix 3rd-client degradation, improve sync & responsiveness, validate under load
 

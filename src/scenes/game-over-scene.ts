@@ -4,6 +4,7 @@ import { ASSET_KEYS } from '../common/assets';
 import { KeyboardComponent } from '../components/input/keyboard-component';
 import { DataManager } from '../common/data-manager';
 import { DEFAULT_UI_TEXT_STYLE } from '../common/common';
+import { MusicManager } from '../common/music-manager';
 
 export class GameOverScene extends Phaser.Scene {
   #menuContainer!: Phaser.GameObjects.Container;
@@ -21,6 +22,10 @@ export class GameOverScene extends Phaser.Scene {
     if (!this.input.keyboard) {
       return;
     }
+
+    // Ensure menu music is playing. This is normally triggered by GameScene's
+    // SHUTDOWN callback, but calling it here is a cheap safety net.
+    MusicManager.instance.playMenu(this);
 
     this.add.text(this.scale.width / 2, 100, 'Game Over', DEFAULT_UI_TEXT_STYLE).setOrigin(0.5);
 

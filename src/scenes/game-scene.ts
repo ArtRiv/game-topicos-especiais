@@ -66,6 +66,7 @@ import {
 } from '../common/config';
 import { NetworkManager } from '../networking/network-manager';
 import { RemoteInputComponent } from '../components/input/remote-input-component';
+import { MusicManager } from '../common/music-manager';
 import type { PlayerUpdateBroadcast, RoomTransitionPayload, PlayerDisconnectedPayload, PlayerUpdatePayload, SpellCastBroadcast, PlayerInfo, BreathStartBroadcast, BreathUpdateBroadcast, BreathEndBroadcast, EarthWallPillarBroadcast, EarthWallPillarDestroyBroadcast } from '../networking/types';
 import type { Direction } from '../common/types';
 
@@ -157,6 +158,10 @@ export class GameScene extends Phaser.Scene {
     this.#setupNetworking();
 
     this.scene.launch(SCENE_KEYS.UI_SCENE);
+
+    // Switch to gameplay music. MusicManager handles the cross-fade and is a
+    // no-op if gameplay music is already playing (e.g. room restarts).
+    MusicManager.instance.playGameplay(this);
   }
 
   public update(_time: number, delta: number): void {
@@ -925,6 +930,9 @@ export class GameScene extends Phaser.Scene {
       // SHUTDOWN listener (before ours) and calls destroy() on itself, setting
       // this.children to undefined. Calling clear() here would crash. Phaser already
       // cleans up the group and its EarthWallPillar children via scene lifecycle.
+
+      // Return to menu music when leaving gameplay.
+      MusicManager.instance.playMenu(this);
     });
   }
 
