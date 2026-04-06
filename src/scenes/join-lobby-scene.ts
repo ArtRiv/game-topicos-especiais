@@ -1,6 +1,7 @@
 ﻿import * as Phaser from 'phaser';
 import { SCENE_KEYS } from './scene-keys';
 import { buildMenuPlaceholder } from './menu-placeholder';
+import { startScene } from './scene-transition';
 
 // ---------------------------------------------------------------------------
 // JoinLobbyScene â€” placeholder
@@ -20,7 +21,7 @@ export class JoinLobbyScene extends Phaser.Scene {
       title: 'ENTRAR EM LOBBY',
       hint: 'Encontre uma partida em andamento.',
       primaryLabel: 'CONECTAR AO SERVIDOR',
-      primaryAction: () => this.scene.start(SCENE_KEYS.LOBBY_SCENE),
+      primaryAction: () => startScene(this, SCENE_KEYS.LOBBY_SCENE),
       backScene: SCENE_KEYS.MAIN_MENU_SCENE,
     });
   }

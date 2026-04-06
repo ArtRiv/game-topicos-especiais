@@ -2,6 +2,7 @@
 import { SCENE_KEYS } from './scene-keys';
 import { ASSET_KEYS } from '../common/assets';
 import { MusicManager } from '../common/music-manager';
+import { startScene } from './scene-transition';
 
 // ---------------------------------------------------------------------------
 // TEXT CLARITY STRATEGY
@@ -86,6 +87,14 @@ type MenuEntry = {
   action: () => void;
 };
 
+// ms from the start of menu_music.ogg to the beat drop.
+// Adjust by listening in browser and counting seconds to the drop.
+const MUSIC_DROP_MS = 14_200;
+
+// Skip the cinematic intro when revisiting the menu (e.g. back-nav from sub-scenes).
+// Module-level so it persists across scene restarts within the same session.
+let cinematicPlayed = false;
+
 export class MainMenuScene extends Phaser.Scene {
   constructor() {
     super({ key: SCENE_KEYS.MAIN_MENU_SCENE });
@@ -115,14 +124,65 @@ export class MainMenuScene extends Phaser.Scene {
     const cx = Math.round(width / 2);
     const cy = Math.round(height / 2);
 
+    // Fade in from black on every entry (smooth transition from splash / sub-scenes).
+    this.cameras.main.fadeIn(400, 0, 0, 0);
+
     this.#drawBackground(cx, cy, width, height);
-    this.#drawTitle(cx, cy);
-    this.#drawMenu(cx, cy);
+    const { title, subtitle } = this.#drawTitle(cx, cy);
+    const menuItems = this.#drawMenu(cx, cy);
     this.#drawFooter(width, height);
 
     // Start menu music. MusicManager is a no-op if the track is already
     // playing, so navigating back from any stub scene costs nothing.
     MusicManager.instance.playMenu(this);
+
+    if (cinematicPlayed) {
+      // Second+ visit — show everything immediately, no cinematic replay.
+      title.setAlpha(1);
+      subtitle.setAlpha(1);
+      menuItems.forEach((item) => item.setAlpha(1));
+    } else {
+      // First visit — hide everything, then reveal at the song drop.
+      title.setAlpha(0);
+      subtitle.setAlpha(0);
+      menuItems.forEach((item) => item.setAlpha(0));
+
+      this.time.delayedCall(MUSIC_DROP_MS, () => {
+        cinematicPlayed = true;
+
+        // Title: instant scale-up then snap back with ease (impact flash).
+        title.setScale(1.3);
+        this.tweens.add({
+          targets: title,
+          scaleX: 1,
+          scaleY: 1,
+          duration: 250,
+          ease: 'Back.Out',
+        });
+        this.tweens.add({
+          targets: title,
+          alpha: 1,
+          duration: 150,
+        });
+
+        // Subtitle: fade in shortly after title.
+        this.tweens.add({
+          targets: subtitle,
+          alpha: { from: 0, to: 1 },
+          duration: 400,
+          delay: 150,
+        });
+
+        // Menu items: staggered fade-in.
+        this.tweens.add({
+          targets: menuItems,
+          alpha: { from: 0, to: 1 },
+          duration: 300,
+          ease: 'Linear',
+          delay: this.tweens.stagger(60, { start: 200 }),
+        });
+      });
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -165,42 +225,44 @@ export class MainMenuScene extends Phaser.Scene {
   // ---------------------------------------------------------------------------
   // Title block
   // ---------------------------------------------------------------------------
-  #drawTitle(cx: number, cy: number): void {
+  #drawTitle(cx: number, cy: number): { title: Phaser.GameObjects.Text; subtitle: Phaser.GameObjects.Text } {
     const titleY = Math.round(cy - 110);
 
     // FUTURE: replace with BitmapText once FONT_PRESS_START_2P bitmap font is exported.
-    this.add.text(cx, titleY, 'HIGH FANTASY', STYLE_TITLE).setOrigin(0.5).setResolution(FONT_RESOLUTION);
+    const title = this.add.text(cx, titleY, 'HIGH FANTASY', STYLE_TITLE).setOrigin(0.5).setResolution(FONT_RESOLUTION);
 
-    this.add
+    const subtitle = this.add
       .text(cx, titleY + 26, '- ONLINE EDITION -', STYLE_SUBTITLE)
       .setOrigin(0.5)
       .setResolution(FONT_RESOLUTION);
+
+    return { title, subtitle };
   }
 
   // ---------------------------------------------------------------------------
   // Interactive menu options
   // ---------------------------------------------------------------------------
-  #drawMenu(cx: number, cy: number): void {
+  #drawMenu(cx: number, cy: number): Phaser.GameObjects.Text[] {
     const entries: MenuEntry[] = [
       {
         label: 'CRIAR LOBBY',
-        action: () => this.scene.start(SCENE_KEYS.CREATE_LOBBY_SCENE),
+        action: () => startScene(this, SCENE_KEYS.CREATE_LOBBY_SCENE),
       },
       {
         label: 'ENTRAR EM LOBBY',
-        action: () => this.scene.start(SCENE_KEYS.JOIN_LOBBY_SCENE),
+        action: () => startScene(this, SCENE_KEYS.JOIN_LOBBY_SCENE),
       },
       {
         label: 'CONTA',
-        action: () => this.scene.start(SCENE_KEYS.ACCOUNT_SCENE),
+        action: () => startScene(this, SCENE_KEYS.ACCOUNT_SCENE),
       },
       {
         label: 'OPCOES',
-        action: () => this.scene.start(SCENE_KEYS.OPTIONS_SCENE),
+        action: () => startScene(this, SCENE_KEYS.OPTIONS_SCENE),
       },
       {
         label: 'CREDITOS',
-        action: () => this.scene.start(SCENE_KEYS.CREDITS_SCENE),
+        action: () => startScene(this, SCENE_KEYS.CREDITS_SCENE),
       },
       {
         // Placeholder -- future hook to auth logout / quit-to-desktop flow.
@@ -214,6 +276,8 @@ export class MainMenuScene extends Phaser.Scene {
     // Subtle selector highlight box that follows the hovered option.
     const selectorBox = this.add.rectangle(cx, menuStartY, 220, 18, 0x2233aa, 0).setOrigin(0.5);
 
+    const textObjects: Phaser.GameObjects.Text[] = [];
+
     entries.forEach((entry, i) => {
       const y = Math.round(menuStartY + i * MENU_SPACING);
 
@@ -222,6 +286,8 @@ export class MainMenuScene extends Phaser.Scene {
         .setOrigin(0.5)
         .setResolution(FONT_RESOLUTION)
         .setInteractive({ useHandCursor: true });
+
+      textObjects.push(text);
 
       text.on('pointerover', () => {
         text.setColor(COLOR_HOVER);
@@ -242,6 +308,8 @@ export class MainMenuScene extends Phaser.Scene {
         entry.action();
       });
     });
+
+    return textObjects;
   }
 
   // ---------------------------------------------------------------------------

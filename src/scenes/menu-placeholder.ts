@@ -1,4 +1,5 @@
 ﻿import * as Phaser from 'phaser';
+import { startScene } from './scene-transition';
 
 // ---------------------------------------------------------------------------
 // buildMenuPlaceholder
@@ -37,6 +38,9 @@ export function buildMenuPlaceholder(scene: Phaser.Scene, opts: MenuPlaceholderO
   const { width, height } = scene.scale;
   const cx = Math.round(width / 2);
   const cy = Math.round(height / 2);
+
+  // Smooth fade-in on every entry.
+  scene.cameras.main.fadeIn(300, 0, 0, 0);
 
   // --- Background ---
   scene.add.rectangle(0, 0, width, height, 0x080818, 1).setOrigin(0);
@@ -148,5 +152,5 @@ export function buildMenuPlaceholder(scene: Phaser.Scene, opts: MenuPlaceholderO
     backBg.setFillStyle(0x111133);
     backText.setColor('#8888bb');
   });
-  backBg.on('pointerup', () => scene.scene.start(opts.backScene));
+  backBg.on('pointerup', () => startScene(scene, opts.backScene));
 }

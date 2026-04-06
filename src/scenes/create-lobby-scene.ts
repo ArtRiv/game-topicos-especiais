@@ -1,6 +1,7 @@
 ﻿import * as Phaser from 'phaser';
 import { SCENE_KEYS } from './scene-keys';
 import { buildMenuPlaceholder } from './menu-placeholder';
+import { startScene } from './scene-transition';
 
 // ---------------------------------------------------------------------------
 // CreateLobbyScene â€” placeholder
@@ -22,7 +23,7 @@ export class CreateLobbyScene extends Phaser.Scene {
       hint: 'Configure sua partida e convide jogadores.',
       // Primary action â€” hands off to LobbyScene which owns the network flow.
       primaryLabel: 'CONECTAR AO SERVIDOR',
-      primaryAction: () => this.scene.start(SCENE_KEYS.LOBBY_SCENE),
+      primaryAction: () => startScene(this, SCENE_KEYS.LOBBY_SCENE),
       backScene: SCENE_KEYS.MAIN_MENU_SCENE,
     });
   }
