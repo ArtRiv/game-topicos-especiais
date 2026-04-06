@@ -34,6 +34,8 @@ export type PlayerConfig = {
   controls: InputComponent;
   maxLife: number;
   currentLife: number;
+  /** Optional hex color tint. 0xffffff = untinted (default). */
+  tintColor?: number;
 };
 
 export class Player extends CharacterGameObject {
@@ -90,9 +92,13 @@ export class Player extends CharacterGameObject {
       currentLife: config.currentLife,
     });
 
+    // Apply team color tint for multiplayer remote players
+    if (config.tintColor !== undefined && config.tintColor !== 0xffffff) {
+      this.setTint(config.tintColor);
+    }
+
     // add state machine
-    this._stateMachine.addState(new IdleState(this));
-    this._stateMachine.addState(new MoveState(this));
+    this._stateMachine.addState(new IdleState(this));    this._stateMachine.addState(new MoveState(this));
     this._stateMachine.addState(
       new HurtState(this, PLAYER_HURT_PUSH_BACK_SPEED, () => {
         flash(this);

@@ -1,18 +1,22 @@
-# Roadmap — Mages v2.0 PvP Event Multiplayer
+# Roadmap — Mages PvP v1.1 (PvP Team Deathmatch)
+
+## Milestone
+
+**v1.1 — PvP Team Deathmatch**
+
+Turn the completed WebRTC P2P networking foundation into a playable multi-player PvP game with fully controllable mages, new spells, direct player-vs-player combat, and a working match loop (start → fight → win/lose → lobby).
 
 ## Overview
 
-**7 phases** | **33 requirements** | All v2.0 requirements covered ✓
+**5 phases** | **33 requirements** | All v1.0 + v1.1 requirements covered ✓
 
-## Phases
-
-- [ ] **Phase 1: Auth + Server Scaffold** — Google OAuth login, persistent accounts, JWT-gated Phaser boot
-- [ ] **Phase 2: Lobby & Networking Foundation** — lobby rooms with invite codes, socket.io sync, reconnection grace
-- [ ] **Phase 3: PvP Arena Core** — 8-player arena, server-authoritative damage, match result reporting
-- [ ] **Phase 4: Game Modes** — Battle Royale (shrinking zone, spectator) + Team vs Team (2v2/3v3/4v4)
-- [ ] **Phase 5: Ranking & Leaderboard** — ELO ranking (K=32), global leaderboard, rank on main menu
-- [ ] **Phase 6: Spell Progression & Leveling** — XP system, level-ups, upgrade points, ≤15% stat cap
-- [ ] **Phase 7: Infrastructure + Pre-Event QA** — HTTPS deployment, prod OAuth, 8-player load test, PM2
+| # | Phase | Goal | Requirements | Success Criteria |
+|---|-------|------|-------------|-----------------|
+| 1 | LAN Foundation | WebRTC P2P networking, lobby, remote player sync, spell relay *(COMPLETE)* | NET-01–06 | 5 |
+| 2 | Multi-Player Control | 4/4 | Complete   | 2026-03-31 |
+| 3 | New Spells | Ice, Wind, Thunder spells; config-driven extensible system; all spells open to all players | SPL-01–05, PVP-01 | 4 |
+| 4 | PvP Combat | Cross-player hit detection; host-authoritative damage; client-side prediction; elimination | PVP-02–06, MTH-02, HUD-02, SCL-04 | 5 |
+| 5 | Match Loop & Scalability | Synchronized match start; win condition; match-end screen; return to lobby; 5v5 minimum stable baseline; scale beyond for stress testing | MTH-01, MTH-03–06, SCL-01–03 | 5 |
 
 ---
 
@@ -43,78 +47,111 @@
 **Plans**: TBD
 **UI hint**: yes
 
-### Phase 3: PvP Arena Core
-**Goal**: Up to 8 players fight in a shared arena with server-authoritative damage resolution
+**Goal**: WebRTC P2P networking is working — players can connect, form a lobby, and see each other move and cast spells in real time
+**Depends on**: Nothing
+**Status**: ✓ COMPLETE
+**Requirements**: NET-01, NET-02, NET-03, NET-04, NET-05, NET-06
+**Success Criteria** (what must be TRUE):
+  1. Player opens browser, enters server URL, and joins a lobby waiting room
+  2. Remote player's position and direction update in real time on all clients at 20 Hz
+  3. Spells cast by any player appear on all other clients at the correct position
+  4. Room transitions are synchronized — all clients enter the new room at the same time
+  5. Disconnecting one client notifies all remaining clients immediately without freezing
+**Plans**: 5 plans — all complete
+
+---
+
+### Phase 2: Multi-Player Control
+
+**Goal**: Every player controls their own mage on their own machine simultaneously; all remote players render correctly for every connected client; the lobby supports team assignment for N players
+**Depends on**: Phase 1
+**Requirements**: PLR-01, PLR-02, PLR-03, PLR-04, HUD-01
+**Success Criteria** (what must be TRUE):
+  1. Each player connects, joins a lobby, and controls their own mage via keyboard — no fixed role assignments hardcoded in the client
+  2. Every other player's mage moves in real time on all connected clients, driven by `RemoteInputComponent` position snapshots
+  3. Each player has independent HP and mana; taking damage on one client does not affect another player's stats
+  4. Each player sees their own HP bar on their screen at all times during play
+  5. The lobby displays all connected players and supports N players with no hard cap enforced in code; teams are configurable before match start
+**Plans**: 4 plans
+Plans:
+- [x] 02-01-PLAN.md — Type system + server team protocol (`PlayerInfo.team`, `lobby:assign-team` socket event)
+- [x] 02-02-PLAN.md — LobbyScene host detection fix + team assignment UI (host toggle buttons, read-only badges)
+- [x] 02-03-PLAN.md — GameScene deterministic tinting via `matchPlayers` getter (team-based color assignment)
+- [x] 02-04-PLAN.md — Phase 2 verification checklist (all 5 success criteria, 3-client smoke test)
+ (completed 2026-03-31)
+
+---
+
+### Phase 02.1: Network Stability & Performance (INSERTED)
+
+**Goal**: Multiplayer networking is stable, responsive, and performs well with 3+ clients — latency is sub-second on all connected tabs, remote player movement is smooth, and the architecture scales toward 5v5 without degradation
 **Depends on**: Phase 2
-**Requirements**: PVP-01, PVP-02, PVP-03, PVP-04, PVP-05, PVP-06
+**Requirements**: NETPERF-01, NETPERF-02, NETPERF-03, NETPERF-04, NETPERF-05
 **Success Criteria** (what must be TRUE):
-  1. Up to 8 player characters appear and move simultaneously in the dedicated PvP arena map
-  2. A player's spell hits another player and their HP decreases as broadcast by the server (not self-reported)
-  3. When a player's HP reaches 0 they are eliminated and removed from the active match
-  4. All 6 elements (Fire, Earth, Water, Ice, Wind, Thunder) are available to every player from match start
-  5. Match result (winner, elimination order) is sent to the server at match end
-**Plans**: TBD
-**UI hint**: yes
+  1. Position tick rate is 20 Hz (not 60 Hz) — reducing per-client bandwidth by ~66%
+  2. No position messages sent when player state is unchanged (dirty-checking)
+  3. Remote players move smoothly via delta-time interpolation — no teleporting or jitter
+  4. 3-tab test shows all clients responsive with sub-second latency
+  5. Movement, animation, and spell sync remain correct at the optimized tick rate
+**Plans**: 2 plans
+Plans:
+- [x] 02.1-01-PLAN.md — Network message path optimization (tick rate, dirty-check, serialization, Map lookup)
+- [x] 02.1-02-PLAN.md — Remote player interpolation & multi-client validation
 
-### Phase 4: Game Modes
-**Goal**: Battle Royale and Team vs Team modes are fully operational with correct win conditions
-**Depends on**: Phase 3
-**Requirements**: GM-01, GM-02, GM-03, GM-04, GM-05
-**Success Criteria** (what must be TRUE):
-  1. A Battle Royale match runs with a visible shrinking safe zone; the last mage standing wins
-  2. Eliminated BR players can spectate surviving players from their perspective
-  3. 2v2, 3v3, and 4v4 team matches complete with the last-team-standing win condition
-  4. Team colors are clearly visible on player sprites and HUD
-  5. Teammates cannot damage each other in team modes (friendly fire is off)
-**Plans**: TBD
-**UI hint**: yes
+### Phase 3: New Spells
 
-### Phase 5: Ranking & Leaderboard
-**Goal**: ELO rankings update after every match and a global leaderboard is accessible in-game
-**Depends on**: Phase 4
-**Requirements**: RNK-01, RNK-02, RNK-03, RNK-04
+**Goal**: Ice, Wind, and Thunder spells are fully playable; the spell system is extended without touching core casting logic; all spells are accessible to all players
+**Depends on**: Phase 2
+**Requirements**: SPL-01, SPL-02, SPL-03, SPL-04, SPL-05, PVP-01
 **Success Criteria** (what must be TRUE):
-  1. A player's ELO score (K=32, base 1000) updates correctly after every match — wins up, losses down
-  2. A global leaderboard screen displays top-ranked players sorted by score
-  3. Player can view their own current rank score and level from the main menu
-**Plans**: TBD
-**UI hint**: yes
-
-### Phase 6: Spell Progression & Leveling
-**Goal**: Players earn XP, level up, and can spend upgrade points on stat improvements that persist across matches
-**Depends on**: Phase 5
-**Requirements**: PRG-01, PRG-02, PRG-03, PRG-04, PRG-05
-**Success Criteria** (what must be TRUE):
-  1. XP is awarded after each match with bonus XP for wins, kills, and high placement
-  2. Accumulating XP levels up the player's account (visible on profile/menu screen)
-  3. Level-ups grant 1 upgrade point each, spendable on cooldown reduction, max mana, and max HP
-  4. Stat upgrades (capped at ≤15% total delta across all stats) are applied at match start in subsequent matches
-**Plans**: TBD
-
-### Phase 7: Infrastructure + Pre-Event QA
-**Goal**: Game is deployed on HTTPS, Google OAuth works in production, and the server passes load testing
-**Depends on**: Phase 6
-**Requirements**: INF-01, INF-02, INF-03, INF-04
-**Success Criteria** (what must be TRUE):
-  1. Game is accessible via HTTPS at a public URL and Google OAuth login completes end-to-end on the production URL
-  2. An 8-player simultaneous session load test passes with acceptable latency
-  3. Server can be restarted via PM2 without any player account data being lost
-  4. All infrastructure is verified on campus WiFi at least one week before the event
+  1. Player can cast at least one Ice spell, one Wind spell, and one Thunder spell — each with a distinct visual projectile or area effect
+  2. Every new spell has its damage, mana cost, and cooldown defined exclusively in `config.ts` — no magic numbers in spell class bodies
+  3. Adding a fourth new element requires only a new spell class and a config entry; no modifications to `SpellCastingComponent`, `ElementManager`, or core casting pipeline
+  4. All spells (new and existing) are available to every player — no per-player loadout restrictions enforced in v1.1
 **Plans**: TBD
 
 ---
 
-## Progress
+### Phase 4: PvP Combat
+
+**Goal**: Players can deal damage to each other; hit detection and damage are validated by the host and applied on all clients; players are eliminated at 0 HP
+**Depends on**: Phase 3
+**Requirements**: PVP-02, PVP-03, PVP-04, PVP-05, PVP-06, MTH-02, HUD-02, SCL-04
+**Success Criteria** (what must be TRUE):
+  1. A spell cast by one player immediately appears on that player's screen (client-side prediction) without waiting for host acknowledgment
+  2. The host validates the hit event, broadcasts `game:damage-confirmed`, and all clients apply damage to the correct target only after receiving it
+  3. Friendly fire is OFF by default; toggling the `friendlyFire` flag on `GameRoom` enables it without any code changes beyond the flag
+  4. A player reaching 0 HP enters the death animation on all clients simultaneously, triggered by `game:player-eliminated` broadcast from the host
+  5. Dead players are removed from active play on every client; combat logic produces consistent results under 5+ simultaneous players
+**Plans**: TBD
+**UI hint**: yes
+
+---
+
+### Phase 5: Match Loop & Scalability
+
+**Goal**: A full match runs from lobby through combat to match-end and back to lobby; 5v5 is the minimum stable baseline (not a cap); the system scales beyond that for stress testing; the match state machine supports future modes without refactoring
+**Depends on**: Phase 4
+**Requirements**: MTH-01, MTH-03, MTH-04, MTH-05, MTH-06, SCL-01, SCL-02, SCL-03
+**Success Criteria** (what must be TRUE):
+  1. All players finish loading into the same game scene before combat is enabled; no player can cast or move until the synchronized `match:start` signal is received
+  2. When the last opponent is eliminated, every client simultaneously receives `game:match-end` and displays the correct win or lose result screen
+  3. Players can press a rematch button from the match-end screen and return to the lobby for a new session
+  4. A 10-player (5v5) match is the minimum stable baseline — runs for at least 5 minutes with no desyncs, crashes, or freezes; the system allows scaling beyond 10 players with no code changes; any degradation above that is observable and documented
+  5. The match flow is structured as a state machine (Lobby → Match Start → Combat → Win Condition → Match End → Lobby) so future modes (FFA, battle royale) can extend it without refactoring the base loop; mid-match disconnects do not freeze remaining clients
+**Plans**: TBD
+
+---
+
+## Progress Table
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Auth + Server Scaffold | 0/? | Not started | - |
-| 2. Lobby & Networking Foundation | 0/? | Not started | - |
-| 3. PvP Arena Core | 0/? | Not started | - |
-| 4. Game Modes | 0/? | Not started | - |
-| 5. Ranking & Leaderboard | 0/? | Not started | - |
-| 6. Spell Progression & Leveling | 0/? | Not started | - |
-| 7. Infrastructure + Pre-Event QA | 0/? | Not started | - |
+| 1. LAN Foundation | 5/5 | ✓ Complete | 2026-03-30 |
+| 2. Multi-Player Control | 0/4 | Planned | — |
+| 3. New Spells | 0/? | Not started | — |
+| 4. PvP Combat | 0/? | Not started | — |
+| 5. Match Loop & Scalability | 0/? | Not started | — |
 
 ---
 
@@ -122,163 +159,41 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AUTH-01 | Phase 1 | Pending |
-| AUTH-02 | Phase 1 | Pending |
-| AUTH-03 | Phase 1 | Pending |
-| LBY-01 | Phase 2 | Pending |
-| LBY-02 | Phase 2 | Pending |
-| LBY-03 | Phase 2 | Pending |
-| LBY-04 | Phase 2 | Pending |
-| LBY-05 | Phase 2 | Pending |
-| LBY-06 | Phase 2 | Pending |
-| NET-01 | Phase 2 | Pending |
-| NET-02 | Phase 2 | Pending |
-| NET-03 | Phase 2 | Pending |
-| NET-04 | Phase 2 | Pending |
-| PVP-01 | Phase 3 | Pending |
-| PVP-02 | Phase 3 | Pending |
-| PVP-03 | Phase 3 | Pending |
-| PVP-04 | Phase 3 | Pending |
-| PVP-05 | Phase 3 | Pending |
-| PVP-06 | Phase 3 | Pending |
-| GM-01 | Phase 4 | Pending |
-| GM-02 | Phase 4 | Pending |
-| GM-03 | Phase 4 | Pending |
-| GM-04 | Phase 4 | Pending |
-| GM-05 | Phase 4 | Pending |
-| RNK-01 | Phase 5 | Pending |
-| RNK-02 | Phase 5 | Pending |
-| RNK-03 | Phase 5 | Pending |
-| RNK-04 | Phase 5 | Pending |
-| PRG-01 | Phase 6 | Pending |
-| PRG-02 | Phase 6 | Pending |
-| PRG-03 | Phase 6 | Pending |
-| PRG-04 | Phase 6 | Pending |
-| PRG-05 | Phase 6 | Pending |
-| INF-01 | Phase 7 | Pending |
-| INF-02 | Phase 7 | Pending |
-| INF-03 | Phase 7 | Pending |
-| INF-04 | Phase 7 | Pending |
+| NET-01 | 1 | ✓ Complete |
+| NET-02 | 1 | ✓ Complete |
+| NET-03 | 1 | ✓ Complete |
+| NET-04 | 1 | ✓ Complete |
+| NET-05 | 1 | ✓ Complete |
+| NET-06 | 1 | ✓ Complete |
+| PLR-01 | 2 | Pending |
+| PLR-02 | 2 | Pending |
+| PLR-03 | 2 | Pending |
+| PLR-04 | 2 | Pending |
+| HUD-01 | 2 | Pending |
+| SPL-01 | 3 | Pending |
+| SPL-02 | 3 | Pending |
+| SPL-03 | 3 | Pending |
+| SPL-04 | 3 | Pending |
+| SPL-05 | 3 | Pending |
+| PVP-01 | 3 | Pending |
+| PVP-02 | 4 | Pending |
+| PVP-03 | 4 | Pending |
+| PVP-04 | 4 | Pending |
+| PVP-05 | 4 | Pending |
+| PVP-06 | 4 | Pending |
+| MTH-02 | 4 | Pending |
+| HUD-02 | 4 | Pending |
+| SCL-04 | 4 | Pending |
+| MTH-01 | 5 | Pending |
+| MTH-03 | 5 | Pending |
+| MTH-04 | 5 | Pending |
+| MTH-05 | 5 | Pending |
+| MTH-06 | 5 | Pending |
+| SCL-01 | 5 | Pending |
+| SCL-02 | 5 | Pending |
+| SCL-03 | 5 | Pending |
 
-**Total: 37 mapped / 33 v2.0 requirements ✓** *(33 active + 4 Infrastructure = 37 rows; all 33 v2.0 requirements covered)*
-
-**Success Criteria:**
-1. Developer opens two browser tabs; P1 moves on Tab A and Tab B shows P1 moving
-2. Both tabs transition to the same room at the same time when a door is triggered
-3. A spell cast by P1 appears on Tab B's screen at the correct position
-4. Disconnecting one tab shows an error/reconnect message on the other
-**UI hint**: no
-
----
-
-### Phase 2: Two Players Playing
-
-**Goal:** Both players are fully playable on separate machines with asymmetric elements — P1 has Fire/Earth/Water, P2 has Ice/Wind/Thunder. Each has independent health and mana.
-
-**Requirements:** P2-01, P2-02, P2-03, P2-04, P2-05, CORE-01, CORE-04
-
-**Plans:**
-1. Spawn second `Player` instance in `GameScene` for P2
-2. Implement `RemoteInputComponent` (drives P2 from network snapshots on P1's client; drives P1 from network on P2's client)
-3. Assign element sets: P1 `[FIRE, EARTH, WATER]`, P2 `[ICE, WIND, THUNDER]` from server assignment
-4. Add P2 health + mana to HUD overlay (both players' stats visible)
-5. Sync radial menu element selection over network (each player's active element shown on both HUDs)
-
-**Success Criteria:**
-1. Two real keyboards on two machines control two distinct characters simultaneously
-2. P1's radial menu only shows Fire/Earth/Water; P2's only shows Ice/Wind/Thunder
-3. P2's health bar on the HUD goes down when P2 takes damage (visible to both players)
-4. Both players see the same active element indicator for both characters
-5. If either player dies, both screens respond (shared death state)
-**UI hint**: yes
-
----
-
-### Phase 3: Spell Sync & Cross-Player Combos
-
-**Goal:** Ice, Wind, and Thunder spells are implemented. All spells sync over the network. At least 6 cross-player combo effects trigger automatically when opposing spells collide — confirmed by the server.
-
-**Requirements:** SPL-01, SPL-02, SPL-03, SPL-04, SPL-05, CMB-01, CMB-02, CMB-03, CMB-04, CMB-05, DSC-01, DSC-02
-
-**Plans:**
-1. Implement IceSpell (projectile: IceShard or area: FrostZone) for P2
-2. Implement WindSpell (projectile: WindBolt or area: WindVortex) for P2
-3. Implement ThunderSpell (projectile: ThunderBolt or area: ThunderStrike) for P2
-4. Sync spell positions and active spells over network (server tracks all live spells)
-5. Implement cross-player combo detection: server checks spell overlaps, emits COMBO_TRIGGERED
-6. Implement 6 combo effects (see table below) with distinct visuals
-7. Build combo journal UI scene/overlay — fills as combos are discovered
-
-**Cross-Player Combo Table:**
-| P1 Spell | P2 Spell | Combo Effect |
-|----------|----------|-------------|
-| FireBolt | IceShard | Steam Burst (area blind + knockback) |
-| FireArea | WindVortex | Inferno Vortex (spinning AoE fire) |
-| FireBreath | ThunderBolt | Storm Flare (chain lightning + fire DoT) |
-| EarthBolt | FrostZone | Permafrost (frozen pillar, blocks enemies) |
-| WaterSpike | WindVortex | Typhoon (expanded water tornado) |
-| WaterSpike | ThunderBolt | Electric Surge (expanded AoE shock) |
-
-**Success Criteria:**
-1. P2 can cast Ice, Wind, and Thunder spells from their respective element
-2. Spell projectiles from either player appear on both screens simultaneously
-3. When P1 fires FireBolt into P2's IceWall, a Steam Burst triggers on both screens
-4. The combo journal unlocks the Steam Burst entry after its first trigger
-5. Combo damage exceeds individual spell damage on its own
-**UI hint**: yes
-
----
-
-### Phase 4: Puzzle Rooms
-
-**Goal:** At least 3 dedicated puzzle rooms exist with environmental interactables that respond to individual spells and combos. One room has a countdown timer; failing it spawns an enemy wave. One NPC hints at a combo solution.
-
-**Requirements:** PZL-01, PZL-02, PZL-03, PZL-04, PZL-05, PZL-06, PZL-07, PZL-08, NPC-03
-
-**Plans:**
-1. Define Tiled property schema for puzzle rooms (`roomType`, `timerSeconds`, `failureSpawn`, interactable object types)
-2. Implement `ElementalInteractable` game object (responds to elements, tracks state transitions)
-3. Implement `PuzzleRoomManager` (tracks interactable states, success condition, timer)
-4. Build Puzzle Room 1: cooperative simultaneous cast (both players aim spell at same target)
-5. Build Puzzle Room 2: timed sequence puzzle (apply elements in order within countdown) + failure wave
-6. Build Puzzle Room 3: water+thunder environmental combo (wet object → electrify → activate device)
-7. Add NPC in or near a puzzle room that hints at the solution
-
-**Success Criteria:**
-1. 3 puzzle rooms exist and are reachable during a playthrough
-2. Casting Water on the device in Room 3 changes its visual state (wet) and calling Thunder activates it
-3. The countdown timer is visible to both players; reaching zero spawns a hard enemy wave
-4. Both players must act for the cooperative puzzle to solve — one player alone cannot complete it
-5. NPC dialogue references at least one cross-element combination as a hint
-**UI hint**: yes
-
----
-
-### Phase 5: Bosses, NPCs & Narrative
-
-**Goal:** Two new enemy types with elemental weaknesses, a mini-boss per level, a final boss requiring cross-player combos, an intro/ending sequence, and 2+ NPCs with personality dialogue.
-
-**Requirements:** ENM-01, ENM-02, BOS-01, BOS-02, BOS-03, BOS-04, NPC-01, NPC-02, NPC-04, NPC-05, CORE-02
-
-**Plans:**
-1. Implement 2 new enemy types with elemental resistance/weakness system (extend `CharacterGameObject`)
-2. Build Level 1 mini-boss with an exploitable elemental weakness (state machine: vulnerable window after specific combo)
-3. Build final boss with 2 phases + cross-player combo requirement (Phase 2 only triggered by specific combo)
-4. Write and implement intro NPC dialogue (premise + light comedy)
-5. Write and implement 2 in-world NPCs with personality dialogue
-6. Build ending sequence triggered by final boss defeat event
-7. Wire 2 game levels with escalating difficulty (Level 1 → Level 2 → Boss arena)
-
-**Success Criteria:**
-1. New Enemy Type A takes extra damage from one of P2's elements; spam-casting P1's elements deals reduced damage
-2. Mini-boss enters a vulnerable phase only after a specific combo is used (discoverable by experimentation)
-3. Final boss Phase 2 only triggers when players use the correct cross-player combo
-4. Intro dialogue plays before Level 1 starts; ending sequence plays after final boss dies
-5. At least 2 NPCs have character — players laugh or recognize the devs' voices
-6. A full ~15-minute playthrough can be completed start to finish
-**UI hint**: no
-
----
+**33/33 v1.0 + v1.1 requirements mapped ✓ (6 Phase 1 complete + 27 Phases 2–5 pending)**
 
 ## Milestone: College Event Build (v1.0)
 

@@ -15,6 +15,10 @@ export class MoveState extends BaseMoveState {
   public onUpdate(): void {
     const controls = this._gameObject.controls;
 
+    // Remote players (isMovementLocked=true) have their state driven externally via network updates.
+    // Do not process input-driven transitions — they would revert MOVE→IDLE every frame.
+    if (controls.isMovementLocked) return;
+
     // if spell 1 key was pressed, cast spell from slot 0
     if (controls.isSpell1KeyJustDown) {
       this._stateMachine.setState(CHARACTER_STATES.CASTING_STATE, 0, controls.mouseWorldX, controls.mouseWorldY);

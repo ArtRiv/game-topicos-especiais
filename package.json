@@ -6,7 +6,10 @@
 		"start": "vite --config config/vite.config.js",
 		"build": "tsc && vite build --config config/vite.config.js",
 		"serve": "vite preview --config config/vite.config.js",
-		"lint": "eslint ./src -c ./config/eslint.config.mjs"
+		"lint": "eslint ./src -c ./config/eslint.config.mjs",
+		"test": "vitest",
+		"server": "cd game-server && npm start",
+		"server:dev": "cd game-server && npm run dev"
 	},
 	"author": "scottwestover",
 	"license": "MIT",
@@ -24,12 +27,17 @@
 		"eslint": "9.18.0",
 		"eslint-config-prettier": "10.0.1",
 		"eslint-plugin-prettier": "5.2.3",
+		"happy-dom": "^20.8.9",
+		"jsdom": "^29.0.1",
 		"prettier": "3.4.2",
+		"socket.io": "^4.8.3",
 		"typescript": "5.7.3",
-		"vite": "6.0.7"
+		"vite": "6.0.7",
+		"vitest": "^2.1.8"
 	},
 	"dependencies": {
-		"phaser": "3.87.0"
+		"phaser": "3.87.0",
+		"socket.io-client": "^4.8.3"
 	},
 	"resolutions": {},
 	"prettier": "@devshareacademy/prettier-config",

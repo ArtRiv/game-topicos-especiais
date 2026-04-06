@@ -77,42 +77,58 @@ When a player lands a perfectly timed spell combo that eliminates an opponent in
 - [ ] PRG-04: Upgradeable stats include: spell cooldown, max mana, max HP
 - [ ] PRG-05: Upgraded stats are applied to the player in every subsequent match
 
-### Out of Scope
+## Current Milestone: v1.1 — PvP Team Deathmatch
 
-- PvE content — no enemies, no bosses, no puzzle rooms, no NPCs; full PvP pivot
-- LAN-only mode — server is internet-accessible to support the college event
-- Cooperative (co-op) game modes — PvP only for v2.0
-- Branching narrative / story — no narrative content
+**Goal:** Turn the completed WebRTC P2P networking foundation into a playable multi-player PvP game — fully controllable mages, asymmetric elements, direct player-vs-player combat, and a working match loop (start → fight → win/lose) — while stress-testing how many players the WebRTC mesh can handle in practice.
+
+**Target features:**
+- Full P2 (and P3+) player control on separate machines
+- Asymmetric elements: P1 = Fire/Earth/Water; P2 = Ice/Wind/Thunder; P3+ assigned from pool
+- Ice, Wind, and Thunder spells implemented
+- Player-vs-player spell combat (spells can hit opponents)
+- Host-authoritative damage validation
+- Match loop: start → fight → win/lose → rematch
+- PvP HUD: all players' HP bars; team/element indicators
+- Dynamically scalable lobbies — no hard player cap; test P2P mesh limits empirically
+ (v1.1)
+
+- Cooperative puzzle rooms — deferred
+- Bosses / final boss — deferred
+- NPCs and narrative — deferred
+- Combo journal UI — not in scope
+- Isometric perspective — staying top-down for speed and to reuse existing code
+- Full WebRTC redesign — networking layer is complete and working; build on top of it
+- Character progression / XP / leveling — not needed for event sessions
 - Mobile / controller support — keyboard per machine is sufficient
-- More than 4v4 team size — keeps match design manageable
 
 ## Context
 
-- **Existing codebase:** Phaser 3 + TypeScript top-down game with working player, state machines, and single-player spell system. No networking layer yet. The PvE content (enemies, bosses, puzzle rooms) will remain in git history but is not part of v2.0.
-- **Pivot from v1.0:** v1.0 was a 2-player LAN co-op PvE design (planned but never executed). v2.0 is a full philosophy pivot to competitive PvP with accounts, lobbies, and progression.
-- **Timeline:** College event in ~3-4 months.
+- **Existing codebase:** Phaser 3 + TypeScript top-down game with player, enemies, rooms, state machines, and spell system. WebRTC P2P networking fully implemented in `src/networking/` — socket.io signaling, reliable/unreliable data channels, LobbyScene, remote player spawn/sync, spell relay, fast disconnect detection.
+- **Timeline:** College event in ~3 months. Targeting a playable PvP experience with multiple match sizes.
 - **Team:** 2 developers.
-- **Server:** Internet-accessible central server (Node.js + socket.io) with persistent DB for accounts, ranking, and progression.
-- **Auth:** Google OAuth — players use their Google email as their identity.
+- **Pivot:** Project direction changed from 2-player co-op to N-player team PvP. Phases 2–5 of v1.0 roadmap are obsolete and replaced by v1.1 roadmap.
+- **Player split:** P1 = Fire, Earth, Water / P2 = Ice, Wind, Thunder / P3+ = assigned from combined pool or duplicated elements.
+- **Match size:** No hard cap — 1v1, 2v2, 3v3, 4v4, 5v5+ all supported; empirically test WebRTC mesh limits.
 
 ## Constraints
 
-- **Tech stack:** Phaser 3 + TypeScript client — no engine change
-- **Timeline:** ~3-4 months to college event
+- **Tech stack:** Phaser 3 + TypeScript — no engine change
+- **Timeline:** ~3 months to college event
 - **Team size:** 2 developers
-- **Server:** Internet-facing Node.js server (not LAN-only); needs DB for persistent accounts
-- **Auth:** Google OAuth only (no custom password auth — reduces complexity and security risk)
+- **Session length:** ~15 minutes per match
+- **Networking:** WebRTC P2P via socket.io signaling (LAN); architecture complete
+- **Match size:** No predefined cap — scale until performance degrades
 
 ## Key Decisions
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Top-down (not isometric) | Reuses existing code; isometric would require reworking camera, collision, and sprites | Confirmed |
-| PvP instead of PvE | Event day experience — watching friends fight each other is more engaging than co-op vs enemies | Confirmed |
-| Google OAuth for accounts | Reduces auth complexity; event attendees already have Google accounts | Confirmed |
-| Internet-facing server (not LAN) | Event may have mixed network; central server is more reliable for multiple sessions | Confirmed |
-| All 6 elements available to all players | PvP requires each player to have a full spell kit; asymmetric split only made sense for co-op | Confirmed |
-| Persistent ranking + XP progression | Gives the event a metagame — players care about their rank across multiple matches | Confirmed |
+| Top-down (not isometric) | Reuses existing code | Confirmed |
+| WebRTC P2P via socket.io signaling | Lower latency than relay server; direct peer communication | Implemented (Phase 1) |
+| Asymmetric elements (not same pool) | Forces real PvP variety; each player has distinct identity | Confirmed |
+| Host-authoritative damage only | Reduces desync without full server sim; simple for event scale | Confirmed |
+| No hard player cap | Test WebRTC mesh limits empirically rather than constrain prematurely | Confirmed |
+| Auto spell-collision combos | More intuitive than activation key; works with existing collision architecture | Confirmed |
 
 ## Evolution
 

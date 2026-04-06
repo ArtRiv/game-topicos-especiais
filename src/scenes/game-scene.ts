@@ -6,7 +6,7 @@ import { KeyboardComponent } from '../components/input/keyboard-component';
 import { Spider } from '../game-objects/enemies/spider';
 import { Wisp } from '../game-objects/enemies/wisp';
 import { CharacterGameObject } from '../game-objects/common/character-game-object';
-import { CHEST_REWARD_TO_DIALOG_MAP, DIRECTION, ELEMENT } from '../common/common';
+import { CHEST_REWARD_TO_DIALOG_MAP, DIRECTION, ELEMENT, SPELL_ID } from '../common/common';
 import * as CONFIG from '../common/config';
 import { Pot } from '../game-objects/objects/pot';
 import { Chest } from '../game-objects/objects/chest';
@@ -53,6 +53,10 @@ import { EarthWallPillar } from '../game-objects/spells/earth-wall-pillar';
 import { WaterSpike } from '../game-objects/spells/water-spike';
 import { WaterTornado } from '../game-objects/spells/water-tornado';
 import { EarthBump } from '../game-objects/spells/earth-bump';
+import { IceShard } from '../game-objects/spells/ice-shard';
+import { WindBolt } from '../game-objects/spells/wind-bolt';
+import { ThunderStrike } from '../game-objects/spells/thunder-strike';
+import { SPELL_FACTORY_REGISTRY } from '../game-objects/spells/spell-registry';
 import { ElementManager } from '../common/element-manager';
 import {
   EARTH_WALL_MANA_COST,
@@ -60,6 +64,10 @@ import {
   EARTH_WALL_PILLAR_SPACING,
   EARTH_WALL_FIREBOLT_SPLASH_RADIUS,
 } from '../common/config';
+import { NetworkManager } from '../networking/network-manager';
+import { RemoteInputComponent } from '../components/input/remote-input-component';
+import type { PlayerUpdateBroadcast, RoomTransitionPayload, PlayerDisconnectedPayload, PlayerUpdatePayload, SpellCastBroadcast, PlayerInfo, BreathStartBroadcast, BreathUpdateBroadcast, BreathEndBroadcast, EarthWallPillarBroadcast, EarthWallPillarDestroyBroadcast } from '../networking/types';
+import type { Direction } from '../common/types';
 
 export class GameScene extends Phaser.Scene {
   #levelData!: LevelData;
@@ -102,6 +110,10 @@ export class GameScene extends Phaser.Scene {
   #earthWallLastPlacedY: number = -Infinity;
   // Tracks previous-frame left-mouse state so we can detect a fresh click
   #earthWallMouseWasDown: boolean = false;
+  // Multiplayer: remote players keyed by playerId
+  #remotePlayers = new Map<string, Player>();
+  #remoteSpellGroup!: Phaser.GameObjects.Group;
+  #remoteFireBreaths = new Map<string, FireBreath>();
 
   constructor() {
     super({
@@ -138,14 +150,16 @@ export class GameScene extends Phaser.Scene {
     this.#rewardItem = this.add.image(0, 0, ASSET_KEYS.UI_ICONS, 0).setVisible(false).setOrigin(0, 1);
     this.#earthWallGroup = this.add.group();
     this.#debugFlyingObeliskGroup = this.add.group();
+    this.#remoteSpellGroup = this.add.group({ runChildUpdate: false });
 
     this.#registerColliders();
     this.#registerCustomEvents();
+    this.#setupNetworking();
 
     this.scene.launch(SCENE_KEYS.UI_SCENE);
   }
 
-  public update(): void {
+  public update(_time: number, delta: number): void {
     this.#handleHitboxDebugToggle();
     this.#updateFireSpellCombos();
     this.#updateFireBreathChanneling();
@@ -154,6 +168,7 @@ export class GameScene extends Phaser.Scene {
     this.#updateEarthBoltFireAreaCombo();
     this.#updateEarthWallSpell();
     this.#handleRadialMenuInput();
+    this.#interpolateRemotePlayers(delta);
   }
 
   #handleRadialMenuInput(): void {
@@ -205,6 +220,7 @@ export class GameScene extends Phaser.Scene {
         this.#activeFireBreath.beginEnding();
         this.#fireBreathDamageTimer?.destroy();
         this.#controls.isMovementLocked = false;
+        try { NetworkManager.getInstance().sendBreathEnd(); } catch { /* offline */ }
       }
       return;
     }
@@ -246,6 +262,15 @@ export class GameScene extends Phaser.Scene {
         this.#activeFireBreathAreaCombos.clear();
       });
 
+      try {
+        NetworkManager.getInstance().sendBreathStart({
+          x: this.#player.x,
+          y: this.#player.y,
+          targetX: controls.mouseWorldX,
+          targetY: controls.mouseWorldY,
+        });
+      } catch { /* offline */ }
+
       return;
     }
 
@@ -259,6 +284,15 @@ export class GameScene extends Phaser.Scene {
     this.#player.direction = this.#activeFireBreath.facingDirection;
     this.#player.setFlipX(this.#activeFireBreath.facingDirection === DIRECTION.LEFT);
     this.#player.animationComponent.playAnimation(`IDLE_${this.#player.direction}`);
+
+    try {
+      NetworkManager.getInstance().sendBreathUpdate({
+        x: this.#player.x,
+        y: this.#player.y,
+        targetX: controls.mouseWorldX,
+        targetY: controls.mouseWorldY,
+      });
+    } catch { /* offline */ }
   }
 
   #updateFireBreathAreaCombo(): void {
@@ -326,8 +360,14 @@ export class GameScene extends Phaser.Scene {
     }
 
     const spellChildren = this.#player.spellCastingComponent.spellGroup.getChildren();
-    const fireBolts = spellChildren.filter((spell): spell is FireBolt => spell instanceof FireBolt && spell.active);
-    const fireAreas = spellChildren.filter((spell): spell is FireArea => spell instanceof FireArea && spell.active);
+    const remoteChildren = this.#remoteSpellGroup?.getChildren() ?? [];
+    const allSpells = [...spellChildren, ...remoteChildren];
+    const fireBolts = allSpells.filter(
+      (spell): spell is FireBolt => spell instanceof FireBolt && spell.active && !!(spell.body as Phaser.Physics.Arcade.Body)?.enable,
+    );
+    const fireAreas = allSpells.filter(
+      (spell): spell is FireArea => spell instanceof FireArea && spell.active && !!(spell.body as Phaser.Physics.Arcade.Body)?.enable,
+    );
 
     const activeBolts = new Set(fireBolts);
 
@@ -382,8 +422,14 @@ export class GameScene extends Phaser.Scene {
     }
 
     const spellChildren = this.#player.spellCastingComponent.spellGroup.getChildren();
-    const earthBolts = spellChildren.filter((s): s is EarthBolt => s instanceof EarthBolt && s.active);
-    const fireBolts = spellChildren.filter((s): s is FireBolt => s instanceof FireBolt && s.active);
+    const remoteChildren = this.#remoteSpellGroup?.getChildren() ?? [];
+    const allSpells = [...spellChildren, ...remoteChildren];
+    const earthBolts = allSpells.filter(
+      (s): s is EarthBolt => s instanceof EarthBolt && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+    );
+    const fireBolts = allSpells.filter(
+      (s): s is FireBolt => s instanceof FireBolt && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+    );
 
     if (earthBolts.length === 0 || fireBolts.length === 0) {
       return;
@@ -391,7 +437,6 @@ export class GameScene extends Phaser.Scene {
 
     for (const earthBolt of earthBolts) {
       for (const fireBolt of fireBolts) {
-        // physics.overlap returns false once either body is disabled, preventing double-triggers
         if (this.physics.overlap(earthBolt, fireBolt)) {
           const midX = (earthBolt.x + fireBolt.x) / 2;
           const midY = (earthBolt.y + fireBolt.y) / 2;
@@ -420,8 +465,14 @@ export class GameScene extends Phaser.Scene {
     }
 
     const spellChildren = this.#player.spellCastingComponent.spellGroup.getChildren();
-    const earthBolts = spellChildren.filter((s): s is EarthBolt => s instanceof EarthBolt && s.active);
-    const fireAreas = spellChildren.filter((s): s is FireArea => s instanceof FireArea && s.active);
+    const remoteChildren = this.#remoteSpellGroup?.getChildren() ?? [];
+    const allSpells = [...spellChildren, ...remoteChildren];
+    const earthBolts = allSpells.filter(
+      (s): s is EarthBolt => s instanceof EarthBolt && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+    );
+    const fireAreas = allSpells.filter(
+      (s): s is FireArea => s instanceof FireArea && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+    );
 
     if (earthBolts.length === 0 || fireAreas.length === 0) {
       return;
@@ -504,6 +555,15 @@ export class GameScene extends Phaser.Scene {
     this.#earthWallLastPlacedX = tx;
     this.#earthWallLastPlacedY = ty;
     this.#earthWallDrawingPillarCount++;
+
+    // When this local pillar is destroyed, notify other clients
+    pillar.once(Phaser.GameObjects.Events.DESTROY, () => {
+      try { NetworkManager.getInstance().sendEarthWallPillarDestroy({ x: tx, y: ty }); } catch { /* offline */ }
+    });
+
+    try {
+      NetworkManager.getInstance().sendEarthWallPillar({ x: tx, y: ty });
+    } catch { /* offline */ }
 
     if (this.#earthWallDrawingPillarCount >= EARTH_WALL_PILLAR_COUNT) {
       this.#earthWallDrawingMode = false;
@@ -671,6 +731,26 @@ export class GameScene extends Phaser.Scene {
             if (spellObj instanceof EarthBump) {
               spellObj.hitEnemy(enemyGameObject);
             }
+
+            // IceShard projectile — damages and explodes on hit
+            if (spellObj instanceof IceShard) {
+              enemyGameObject.hit(DIRECTION.DOWN, spellObj.baseDamage);
+              spellObj.explode();
+              return;
+            }
+
+            // WindBolt projectile — damages and explodes on hit
+            if (spellObj instanceof WindBolt) {
+              enemyGameObject.hit(DIRECTION.DOWN, spellObj.baseDamage);
+              spellObj.explode();
+              return;
+            }
+
+            // ThunderStrike area — hitEnemy handles once-per-enemy deduplication
+            if (spellObj instanceof ThunderStrike) {
+              spellObj.hitEnemy(enemyGameObject);
+              return;
+            }
           },
         );
 
@@ -734,6 +814,48 @@ export class GameScene extends Phaser.Scene {
       if (spellObj instanceof EarthBolt) {
         spellObj.explode();
       }
+      if (spellObj instanceof IceShard) {
+        spellObj.explode();
+      }
+      if (spellObj instanceof WindBolt) {
+        spellObj.explode();
+      }
+    });
+
+    // Remote spells also explode on walls
+    this.physics.add.collider(this.#remoteSpellGroup, this.#collisionLayer, (spellObj) => {
+      if (spellObj instanceof FireBolt) {
+        spellObj.explode();
+      }
+      if (spellObj instanceof EarthBolt) {
+        spellObj.explode();
+      }
+      if (spellObj instanceof IceShard) {
+        spellObj.explode();
+      }
+      if (spellObj instanceof WindBolt) {
+        spellObj.explode();
+      }
+    });
+
+    // Remote spells vs enemies (per room, same behavior as local spells)
+    Object.keys(this.#objectsByRoomId).forEach((key) => {
+      const roomId = parseInt(key, 10);
+      if (!this.#objectsByRoomId[roomId]?.enemyGroup) return;
+      this.physics.add.overlap(
+        this.#remoteSpellGroup,
+        this.#objectsByRoomId[roomId].enemyGroup,
+        (spellObj, enemy) => {
+          const enemyGameObject = enemy as CharacterGameObject;
+          if (enemyGameObject.isDefeated) return;
+          if (spellObj instanceof IceShard) { enemyGameObject.hit(DIRECTION.DOWN, spellObj.baseDamage); spellObj.explode(); return; }
+          if (spellObj instanceof WindBolt) { enemyGameObject.hit(DIRECTION.DOWN, spellObj.baseDamage); spellObj.explode(); return; }
+          if (spellObj instanceof FireBolt) { enemyGameObject.hit(DIRECTION.DOWN, spellObj.baseDamage); spellObj.explode(); return; }
+          if (spellObj instanceof EarthBolt) { enemyGameObject.hit(DIRECTION.DOWN, spellObj.baseDamage); spellObj.explode(); return; }
+          if (spellObj instanceof ThunderStrike) { spellObj.hitEnemy(enemyGameObject); return; }
+          if (spellObj instanceof WaterSpike) { spellObj.hitEnemy(enemyGameObject); return; }
+        },
+      );
     });
 
     // Player spell projectiles can crack Earth Wall pillars
@@ -783,6 +905,22 @@ export class GameScene extends Phaser.Scene {
       EVENT_BUS.off(CUSTOM_EVENTS.DEBUG_SPAWN_FLYING_OBELISK, this.#spawnDebugFlyingObelisk, this);
       this.#fireBreathDamageTimer?.destroy();
       this.#activeFireBreath?.destroy();
+      // Cleanup network listeners and remote players
+      EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_ROOM_TRANSITION, this.#onNetworkRoomTransition, this);
+      EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_PLAYER_UPDATE, this.#onRemotePlayerUpdate, this);
+      EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_SPELL_CAST, this.#onRemoteSpellCast, this);
+      EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_BREATH_START, this.#onRemoteBreathStart, this);
+      EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_BREATH_UPDATE, this.#onRemoteBreathUpdate, this);
+      EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_BREATH_END, this.#onRemoteBreathEnd, this);
+      EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_EARTH_WALL_PILLAR, this.#onRemoteEarthWallPillar, this);
+      EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_EARTH_WALL_PILLAR_DESTROY, this.#onRemoteEarthWallPillarDestroy, this);
+      EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_PLAYER_DISCONNECTED, this.#onRemotePlayerDisconnected, this);
+      EVENT_BUS.off(CUSTOM_EVENTS.SPELL_CAST, this.#onLocalSpellCast, this);
+      try { NetworkManager.getInstance().stopGameTick(); } catch { /* offline */ }
+      this.#remotePlayers.forEach((p) => p.destroy());
+      this.#remotePlayers.clear();
+      this.#remoteFireBreaths.forEach((b) => { if (b.active) b.destroy(); });
+      this.#remoteFireBreaths.clear();
       // Note: #earthWallGroup is a Phaser.GameObjects.Group that registers its own
       // SHUTDOWN listener (before ours) and calls destroy() on itself, setting
       // this.children to undefined. Calling clear() here would crash. Phaser already
@@ -1100,7 +1238,16 @@ export class GameScene extends Phaser.Scene {
         roomId: door.targetRoomId,
         doorId: door.targetDoorId,
       };
-      this.scene.start(SCENE_KEYS.GAME_SCENE, sceneData);
+
+      // Online mode: request server to broadcast transition to all clients
+      let nm: NetworkManager | null = null;
+      try { nm = NetworkManager.getInstance(); } catch { /* offline */ }
+      if (nm && nm.isConnected) {
+        nm.sendRoomTransitionRequest({ levelName: modifiedLevelName, roomId: door.targetRoomId, doorId: door.targetDoorId });
+        // Do NOT start scene locally — wait for NETWORK_ROOM_TRANSITION echo from server
+      } else {
+        this.scene.start(SCENE_KEYS.GAME_SCENE, sceneData);
+      }
       return;
     }
     const targetDoor = this.#objectsByRoomId[door.targetRoomId].doorMap[door.targetDoorId];
@@ -1320,4 +1467,241 @@ export class GameScene extends Phaser.Scene {
     DataManager.instance.defeatedCurrentAreaBoss();
     this.#handleAllEnemiesDefeated();
   }
+
+  // ---- Multiplayer networking ----
+
+  static readonly #PLAYER_TINT_PALETTE = [0xffffff, 0x00aaff, 0xff4444, 0x44ff44, 0xff44ff];
+
+  #setupNetworking(): void {
+    let nm: NetworkManager | null = null;
+    try { nm = NetworkManager.getInstance(); } catch { /* offline — skip */ }
+    if (!nm || !nm.isConnected) return;
+
+    nm.startGameTick(() => this.#buildLocalPlayerSnapshot());
+    EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_ROOM_TRANSITION, this.#onNetworkRoomTransition, this);
+    EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_PLAYER_UPDATE, this.#onRemotePlayerUpdate, this);
+    EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_SPELL_CAST, this.#onRemoteSpellCast, this);
+    EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_BREATH_START, this.#onRemoteBreathStart, this);
+    EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_BREATH_UPDATE, this.#onRemoteBreathUpdate, this);
+    EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_BREATH_END, this.#onRemoteBreathEnd, this);
+    EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_EARTH_WALL_PILLAR, this.#onRemoteEarthWallPillar, this);
+    EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_EARTH_WALL_PILLAR_DESTROY, this.#onRemoteEarthWallPillarDestroy, this);
+    EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_PLAYER_DISCONNECTED, this.#onRemotePlayerDisconnected, this);
+    EVENT_BUS.on(CUSTOM_EVENTS.SPELL_CAST, this.#onLocalSpellCast, this);
+  }
+
+  #buildLocalPlayerSnapshot(): PlayerUpdatePayload | null {
+    if (!this.#player?.active) return null;
+    return {
+      x: this.#player.x,
+      y: this.#player.y,
+      direction: this.#player.direction,
+      state: this.#player.stateMachine.currentStateName ?? 'IDLE_STATE',
+      element: ElementManager.instance.activeElement,
+    };
+  }
+
+  #onNetworkRoomTransition = (payload: RoomTransitionPayload): void => {
+    if (!isLevelName(payload.levelName.toUpperCase())) return;
+    this.scene.start(SCENE_KEYS.GAME_SCENE, {
+      level: payload.levelName.toUpperCase() as LevelData['level'],
+      roomId: payload.roomId,
+      doorId: payload.doorId,
+    });
+  };
+
+  #onRemotePlayerUpdate = (payload: PlayerUpdateBroadcast): void => {
+    let nm: NetworkManager | null = null;
+    try { nm = NetworkManager.getInstance(); } catch { /* offline */ }
+    if (nm && payload.playerId === nm.localPlayerId) return;
+
+    let remote = this.#remotePlayers.get(payload.playerId);
+    if (!remote) {
+      const tint = this.#resolveRemotePlayerTint(payload.playerId);
+      const ric = new RemoteInputComponent();
+      remote = new Player({
+        scene: this,
+        position: { x: payload.x, y: payload.y },
+        controls: ric,
+        maxLife: CONFIG.PLAYER_START_MAX_HEALTH,
+        currentLife: CONFIG.PLAYER_START_MAX_HEALTH,
+        tintColor: tint,
+      });
+      this.#remotePlayers.set(payload.playerId, remote);
+    }
+
+    // Store network target — per-frame interpolation in #interpolateRemotePlayers handles rendering
+    const ric = remote.controls as RemoteInputComponent;
+    if (typeof ric.applySnapshot === 'function') {
+      ric.applySnapshot({ x: payload.x, y: payload.y, direction: payload.direction, state: payload.state, element: payload.element });
+    }
+  };
+
+  #interpolateRemotePlayers(delta: number): void {
+    const lerpSpeed = 20;
+    const t = Math.min(1, lerpSpeed * (delta / 1000));
+
+    for (const remote of this.#remotePlayers.values()) {
+      const ric = remote.controls as RemoteInputComponent;
+      if (typeof ric.getTarget !== 'function') continue;
+
+      const target = ric.getTarget();
+      if (!target.hasTarget) continue;
+
+      remote.x = Phaser.Math.Linear(remote.x, target.x, t);
+      remote.y = Phaser.Math.Linear(remote.y, target.y, t);
+
+      const dirChanged = target.direction && target.direction !== remote.direction;
+      if (dirChanged) {
+        remote.direction = target.direction as Direction;
+        remote.setFlipX(target.direction === DIRECTION.LEFT);
+      }
+
+      if (target.state && remote.stateMachine) {
+        const currentState = remote.stateMachine.currentStateName;
+        const stateChanged = target.state !== currentState;
+        if (stateChanged) {
+          remote.stateMachine.setState(target.state);
+        }
+
+        // MoveState has no onEnter and its onUpdate is blocked by isMovementLocked,
+        // so we must drive the walk/idle animation explicitly for remote players.
+        if (stateChanged || dirChanged) {
+          if (target.state === CHARACTER_STATES.MOVE_STATE) {
+            remote.animationComponent.playAnimation(`WALK_${remote.direction}`);
+          } else if (target.state === CHARACTER_STATES.IDLE_STATE) {
+            remote.animationComponent.playAnimation(`IDLE_${remote.direction}`);
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Returns a deterministic tint for a remote player.
+   * Uses team-based colors when team data is available from matchConfig.
+   * Falls back to stable-index palette when team is unassigned or matchConfig is unavailable.
+   */
+  #resolveRemotePlayerTint(playerId: string): number {
+    const len = GameScene.#PLAYER_TINT_PALETTE.length;
+    let nm: NetworkManager | null = null;
+    try { nm = NetworkManager.getInstance(); } catch { /* offline */ }
+
+    if (nm) {
+      const matchPlayers = nm.matchPlayers;
+      const playerIndex = matchPlayers.findIndex((p: PlayerInfo) => p.id === playerId);
+      if (playerIndex !== -1) {
+        const info = matchPlayers[playerIndex];
+        if (info.team === 0) return 0x0055ff;
+        if (info.team === 1) return 0xdd2200;
+        // Unassigned team — use stable index (+1 to skip white at index 0)
+        return GameScene.#PLAYER_TINT_PALETTE[(playerIndex + 1) % len];
+      }
+    }
+
+    // Not found (offline / no matchConfig) — fall back to slot-count-based
+    return GameScene.#PLAYER_TINT_PALETTE[(this.#remotePlayers.size + 1) % len];
+  }
+
+  #onLocalSpellCast = (payload: { spellId: string; slotIndex: number; casterX: number; casterY: number; targetX: number; targetY: number }): void => {
+    let nm: NetworkManager | null = null;
+    try { nm = NetworkManager.getInstance(); } catch { return; }
+    if (!nm?.isConnected || !this.#player?.active) return;
+    nm.sendSpellCast({
+      spellId: payload.spellId,
+      element: ElementManager.instance.activeElement,
+      x: payload.casterX,
+      y: payload.casterY,
+      direction: this.#player.direction,
+      targetX: payload.targetX,
+      targetY: payload.targetY,
+    });
+  };
+
+  #onRemoteSpellCast = (payload: SpellCastBroadcast): void => {
+    // Instantiate the spell directly via the registry — do NOT re-emit SPELL_CAST (that would
+    // trigger #onLocalSpellCast and re-broadcast, creating an infinite loop).
+    const factory = SPELL_FACTORY_REGISTRY[payload.spellId as keyof typeof SPELL_FACTORY_REGISTRY];
+    if (!factory) {
+      console.warn(`[GameScene] No factory for remote spellId: ${payload.spellId}`);
+      return;
+    }
+
+    const spell = factory(
+      this,
+      payload.x,
+      payload.y,
+      payload.targetX ?? payload.x + 1,
+      payload.targetY ?? payload.y,
+      payload.direction as import('../common/types').Direction,
+    );
+
+    this.#remoteSpellGroup.add(spell.gameObject);
+
+    spell.gameObject.once(Phaser.GameObjects.Events.DESTROY, () => {
+      this.#remoteSpellGroup.remove(spell.gameObject, false, false);
+    });
+  };
+
+  #onRemoteBreathStart = (payload: BreathStartBroadcast): void => {
+    // Create a visual-only fire breath (no mana component) for the remote player
+    const breath = new FireBreath(
+      this,
+      payload.x,
+      payload.y,
+      payload.targetX,
+      payload.targetY,
+      this.#collisionLayer,
+      this.#blockingGroup,
+    );
+    this.#remoteFireBreaths.set(payload.playerId, breath);
+  };
+
+  #onRemoteBreathUpdate = (payload: BreathUpdateBroadcast): void => {
+    const breath = this.#remoteFireBreaths.get(payload.playerId);
+    if (breath?.active && !breath.isEnding) {
+      breath.update(payload.x, payload.y, payload.targetX, payload.targetY);
+    }
+  };
+
+  #onRemoteBreathEnd = (payload: BreathEndBroadcast): void => {
+    const breath = this.#remoteFireBreaths.get(payload.playerId);
+    if (breath?.active && !breath.isEnding) {
+      breath.beginEnding();
+    }
+    this.#remoteFireBreaths.delete(payload.playerId);
+  };
+
+  #onRemoteEarthWallPillar = (payload: EarthWallPillarBroadcast): void => {
+    const pillar = new EarthWallPillar(this, payload.x, payload.y);
+    this.#earthWallGroup.add(pillar);
+  };
+
+  #onRemoteEarthWallPillarDestroy = (payload: EarthWallPillarDestroyBroadcast): void => {
+    const children = this.#earthWallGroup.getChildren() as EarthWallPillar[];
+    const match = children.find(
+      (p) => p.active && !p.isBeingDestroyed && Math.abs(p.x - payload.x) < 2 && Math.abs(p.y - payload.y) < 2,
+    );
+    if (match) {
+      match.takeDamage(99999);
+    }
+  };
+
+  #onRemotePlayerDisconnected = (payload: PlayerDisconnectedPayload): void => {
+    const remote = this.#remotePlayers.get(payload.playerId);
+    if (remote) {
+      remote.destroy();
+      this.#remotePlayers.delete(payload.playerId);
+    }
+    const msg = this.add
+      .text(this.cameras.main.centerX, this.cameras.main.centerY - 40, 'A player disconnected', {
+        fontFamily: '"Press Start 2P"',
+        fontSize: '8px',
+        color: '#ff4444',
+      })
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(999);
+    this.time.delayedCall(3000, () => msg.destroy());
+  };
 }

@@ -277,5 +277,56 @@ export class PreloadScene extends Phaser.Scene {
       repeat: 0,
       hideOnComplete: true,
     });
+
+    // Ice Shard projectile animation (all 15 frames, looping)
+    this.anims.create({
+      key: ASSET_KEYS.ICE_SHARD,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.ICE_SHARD, { start: 0, end: 14 }),
+      frameRate: 15,
+      repeat: -1,
+    });
+
+    // Ice Shard hit/explode animation (all 12 frames, play once then hide)
+    this.anims.create({
+      key: ASSET_KEYS.ICE_SHARD_HIT,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.ICE_SHARD_HIT, { start: 0, end: 11 }),
+      frameRate: 18,
+      repeat: 0,
+      hideOnComplete: true,
+    });
+
+    // Wind Bolt projectile animation (all 6 frames, looping)
+    this.anims.create({
+      key: ASSET_KEYS.WIND_BOLT,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.WIND_BOLT, { start: 0, end: 5 }),
+      frameRate: 12,
+      repeat: -1,
+    });
+
+    // Wind Bolt hit animation (all 6 frames, play once then hide)
+    this.anims.create({
+      key: ASSET_KEYS.WIND_BOLT_HIT,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.WIND_BOLT_HIT, { start: 0, end: 5 }),
+      frameRate: 18,
+      repeat: 0,
+      hideOnComplete: true,
+    });
+
+    // Thunder Strike descending animation (13 frames, play once — body activates on complete)
+    this.anims.create({
+      key: ASSET_KEYS.THUNDER_STRIKE,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.THUNDER_STRIKE, { start: 0, end: 12 }),
+      frameRate: 18,
+      repeat: 0,
+    });
+
+    // Thunder Splash dissipation animation (14 frames, play once then hide)
+    this.anims.create({
+      key: ASSET_KEYS.THUNDER_SPLASH,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.THUNDER_SPLASH, { start: 0, end: 13 }),
+      frameRate: 18,
+      repeat: 0,
+      hideOnComplete: true,
+    });
   }
 }

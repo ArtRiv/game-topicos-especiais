@@ -1,90 +1,85 @@
-# Requirements — Mages v2.0 PvP Event Multiplayer
+# Requirements — Mages PvP
 
-## v2.0 Requirements (College Event Build — PvP)
+## v1.0 Requirements (College Event Build — Phase 1 Complete)
 
-### Authentication & Accounts (AUTH)
+### Networking (NET) — ✓ ALL COMPLETE (Phase 1)
 
-- [ ] **AUTH-01**: Player can log in using their Google account (Google OAuth via better-auth)
-- [ ] **AUTH-02**: Each player has a persistent account tied to their Google email — account persists across sessions
-- [ ] **AUTH-03**: Account stores player display name, rank score, level, and accumulated upgrade points
-
-### Lobby & Matchmaking (LBY)
-
-- [ ] **LBY-01**: Player can create a lobby session from the main menu and receive a short invite code
-- [ ] **LBY-02**: Player can join an existing lobby by entering the invite code
-- [ ] **LBY-03**: All players in a lobby see each other's names and ready status before the match starts
-- [ ] **LBY-04**: Lobby owner can select the game mode (Battle Royale, 2v2, 3v3, 4v4) before starting
-- [ ] **LBY-05**: If the lobby host disconnects, lobby ownership transfers automatically to another player
-- [ ] **LBY-06**: A match cannot start unless the minimum player count for the selected mode is met
-
-### Networking & Sync (NET)
-
-- [ ] **NET-01**: Player positions and character states are synchronized across all clients via socket.io in real time
-- [ ] **NET-02**: Spell projectiles cast by any player are visible and correctly positioned on all clients
-- [ ] **NET-03**: Server is authoritative for damage resolution — clients cannot self-report damage
-- [ ] **NET-04**: Players have a reconnection grace window (~15 seconds) — a brief disconnect does not immediately eliminate them
-
-### PvP Gameplay (PVP)
-
-- [ ] **PVP-01**: Up to 8 simultaneous player characters can exist in the same match arena
-- [ ] **PVP-02**: Player spells deal damage to other player characters
-- [ ] **PVP-03**: When a player's HP reaches 0, they are eliminated from the match
-- [ ] **PVP-04**: All 6 elements are available to all players (Fire, Earth, Water, Ice, Wind, Thunder) — no per-player restriction
-- [ ] **PVP-05**: A dedicated PvP arena map exists (open single-room arena, not a multi-room dungeon)
-- [ ] **PVP-06**: Match result (winner / team placements / elimination order) is sent to the server at match end
-
-### Game Modes (GM)
-
-- [ ] **GM-01**: Battle Royale mode — all players fight each other, last mage standing wins; arena has a shrinking safe zone that deals tick damage to players outside it
-- [ ] **GM-02**: Eliminated players in Battle Royale can spectate the ongoing match from the perspective of living players
-- [ ] **GM-03**: Team vs Team modes support 2v2, 3v3, and 4v4 configurations
-- [ ] **GM-04**: Team colors are displayed on player characters and HUD so teams are visually distinct
-- [ ] **GM-05**: Friendly fire is disabled in team modes — players cannot damage teammates
-
-### Ranking & Leaderboard (RNK)
-
-- [ ] **RNK-01**: Each player has an ELO-based rank score (starting at 1000, K-factor 32) that updates after every match
-- [ ] **RNK-02**: Rank score increases for wins/high placements and decreases for losses/low placements
-- [ ] **RNK-03**: A global leaderboard screen shows top-ranked players by score
-- [ ] **RNK-04**: Player can view their own current rank score and level from the main menu
-
-### Spell Progression & Leveling (PRG)
-
-- [ ] **PRG-01**: Players earn XP after each match (bonus XP for wins, eliminations, and high placement)
-- [ ] **PRG-02**: Accumulating XP levels up the player's account
-- [ ] **PRG-03**: Each level-up grants 1 upgrade point to spend on spell stats
-- [ ] **PRG-04**: Upgradeable stats include: spell cooldown reduction, max mana, max HP — total delta across all stats is capped at ≤15% at max level to preserve competitive balance
-- [ ] **PRG-05**: Upgraded stats are applied to the player at match start in every subsequent match
-
-### Infrastructure & Deployment (INF)
-
-- [ ] **INF-01**: Game server is deployed to an internet-accessible production environment with HTTPS (not localhost)
-- [ ] **INF-02**: Google OAuth production credentials are configured and tested against the deployed URL before the event
-- [ ] **INF-03**: An 8-player simultaneous load test is completed and passes with acceptable latency before the event
-- [ ] **INF-04**: Server can be quickly restarted (process manager, e.g., PM2) without losing player account data
+- [x] **NET-01**: Player can enter server IP on a connect screen to join a LAN session
+- [x] **NET-02**: All players must be connected before the game starts (lobby/wait screen)
+- [x] **NET-03**: Each player's position and state are visible on all other clients in real time
+- [x] **NET-04**: Spell projectiles cast by any player are visible on all clients
+- [x] **NET-05**: Room transitions are synchronized across all clients
+- [x] **NET-06**: If a player disconnects mid-match, remaining clients are notified immediately (no freeze)
 
 ---
 
-## Future Requirements (Post-Event, If Time Allows)
+## v1.1 Requirements (PvP Team Deathmatch)
 
-- Cosmetic customization (spell color variants, character skins)
-- In-game emotes or pings
-- Tournament bracket mode with seeding by rank
-- Match replay viewer
-- Controller / gamepad support
-- Larger player counts (8v8 or 16-player BR)
-- Seasonal rank resets with rewards
+### Multi-Player Control (PLR)
+
+- [x] **PLR-01**: Each player controls their own character on their own machine via keyboard — no fixed role assignments (Player[i], not P1/P2)
+- [x] **PLR-02**: Each player has independent health and mana
+- [x] **PLR-03**: Remote players are rendered on each client driven by network snapshots (existing `RemoteInputComponent`)
+- [x] **PLR-04**: Lobby supports N players with no hard cap enforced in code; teams are configured per lobby session
+
+### Spells — New Elements (SPL)
+
+- [ ] **SPL-01**: At least one Ice spell implemented (~3 spells per element target; start with 1, design for extensibility)
+- [ ] **SPL-02**: At least one Wind spell implemented
+- [ ] **SPL-03**: At least one Thunder spell implemented
+- [ ] **SPL-04**: Each new spell has config values (damage, mana cost, cooldown) in `config.ts`
+- [ ] **SPL-05**: Element/spell system is designed so new elements can be added without refactoring core casting logic
+
+### Player-vs-Player Combat (PVP)
+
+- [ ] **PVP-01**: All players have access to all available spells (no per-player loadout restrictions in v1.1)
+- [ ] **PVP-02**: Spells cast by any player can collide with and damage any opponent (cross-player hit detection)
+- [ ] **PVP-03**: Client renders spell cast and movement immediately (client-side prediction) without waiting for host confirmation
+- [ ] **PVP-04**: Host validates hit events and broadcasts confirmed damage + elimination to all clients
+- [ ] **PVP-05**: Each client applies damage to the correct player only after receiving host confirmation
+- [ ] **PVP-06**: Friendly fire is controlled by a configurable toggle (default: OFF); if complex, friendly fire disabled by default
+
+### Match Loop (MTH)
+
+- [ ] **MTH-01**: All players are loaded into the same scene before combat begins (synchronized match start)
+- [ ] **MTH-02**: A player who reaches 0 HP is eliminated (death state, removed from active play)
+- [ ] **MTH-03**: Win condition: last team standing (all opponents eliminated)
+- [ ] **MTH-04**: Match-end screen is shown simultaneously on all clients with the result
+- [ ] **MTH-05**: Players can return to the lobby from the match-end screen for a rematch
+- [ ] **MTH-06**: Match flow (Lobby → Match Start → Combat → Win Condition → Match End → Lobby) is structured to support future modes (battle royale, FFA) without refactoring
+
+### HUD & Feedback (HUD)
+
+- [x] **HUD-01**: Each player sees their own HP bar on their screen
+- [ ] **HUD-02**: Player death is visually communicated on all clients (death animation, character removed)
+
+### Scalability & Stability (SCL)
+
+- [ ] **SCL-01**: A 5v5 match (10 players total) is the minimum stable baseline — no desync, freeze, or crash; this is a floor, not a ceiling
+- [ ] **SCL-02**: The system scales beyond 10 players for stress testing with no code changes required; real performance limits are determined empirically
+- [ ] **SCL-03**: No crash or freeze when any player disconnects mid-match (relies on existing disconnect detection)
+- [ ] **SCL-04**: All combat logic (hits, damage, elimination) works correctly with multiple simultaneous players, not just 1v1
+
+### Network Performance (NETPERF) — Phase 02.1 (INSERTED)
+
+- [ ] **NETPERF-01**: Position tick rate reduced to 20 Hz — per-client outbound bandwidth reduced by ~66% vs 60 Hz
+- [ ] **NETPERF-02**: No position messages sent when player state (x, y, direction, state, element) is unchanged since last send (dirty-checking)
+- [ ] **NETPERF-03**: Network debug metrics available: messages sent/sec, messages received/sec — togglable via config flag
+- [ ] **NETPERF-04**: 3+ client test shows all tabs responsive with sub-second latency (no multi-second delay on 3rd client)
+- [ ] **NETPERF-05**: Remote player interpolation uses delta-time — movement is smooth and animation/spell sync remain correct at 20 Hz
 
 ---
 
-## Out of Scope (v2.0)
+## Out of Scope (v1.1)
 
-- PvE content (enemies, bosses, puzzle rooms, NPCs) — full PvP pivot; v1 PvE content remains in git history but is not used
-- LAN-only mode — server is internet-accessible to support all event attendees
-- Cooperative (co-op) game modes — PvP only for v2.0
-- Branching narrative or story content — no narrative
-- Mobile or controller support — keyboard per machine is sufficient for the event
-- Stat progression larger than ≤15% delta — research-confirmed competitive balance risk
+- Cooperative puzzle rooms — deferred
+- Bosses / final boss — deferred
+- NPCs and narrative — deferred
+- Combo journal UI — not in scope
+- Per-player element/spell restrictions (loadouts, classes) — system designed for it but not enforced in v1.1
+- Free-for-all / battle royale mode — MTH-06 enables it; not building the mode in v1.1
+- Full multi-player HUD (all players' HP visible) — HUD shows own HP only in v1.1; expandable later
+- WebRTC redesign — networking layer is complete; building on top only
 
 ---
 
@@ -92,60 +87,40 @@
 
 | Req ID | Phase | Status |
 |--------|-------|--------|
-| AUTH-01 | Phase 1 — Auth + Server Scaffold | Pending |
-| AUTH-02 | Phase 1 — Auth + Server Scaffold | Pending |
-| AUTH-03 | Phase 1 — Auth + Server Scaffold | Pending |
-| LBY-01 | Phase 2 — Lobby & Networking Foundation | Pending |
-| LBY-02 | Phase 2 — Lobby & Networking Foundation | Pending |
-| LBY-03 | Phase 2 — Lobby & Networking Foundation | Pending |
-| LBY-04 | Phase 2 — Lobby & Networking Foundation | Pending |
-| LBY-05 | Phase 2 — Lobby & Networking Foundation | Pending |
-| LBY-06 | Phase 2 — Lobby & Networking Foundation | Pending |
-| NET-01 | Phase 2 — Lobby & Networking Foundation | Pending |
-| NET-02 | Phase 2 — Lobby & Networking Foundation | Pending |
-| NET-03 | Phase 2 — Lobby & Networking Foundation | Pending |
-| NET-04 | Phase 2 — Lobby & Networking Foundation | Pending |
-| PVP-01 | Phase 3 — PvP Arena Core | Pending |
-| PVP-02 | Phase 3 — PvP Arena Core | Pending |
-| PVP-03 | Phase 3 — PvP Arena Core | Pending |
-| PVP-04 | Phase 3 — PvP Arena Core | Pending |
-| PVP-05 | Phase 3 — PvP Arena Core | Pending |
-| PVP-06 | Phase 3 — PvP Arena Core | Pending |
-| GM-01 | Phase 4 — Game Modes | Pending |
-| GM-02 | Phase 4 — Game Modes | Pending |
-| GM-03 | Phase 4 — Game Modes | Pending |
-| GM-04 | Phase 4 — Game Modes | Pending |
-| GM-05 | Phase 4 — Game Modes | Pending |
-| RNK-01 | Phase 5 — Ranking & Leaderboard | Pending |
-| RNK-02 | Phase 5 — Ranking & Leaderboard | Pending |
-| RNK-03 | Phase 5 — Ranking & Leaderboard | Pending |
-| RNK-04 | Phase 5 — Ranking & Leaderboard | Pending |
-| PRG-01 | Phase 6 — Spell Progression & Leveling | Pending |
-| PRG-02 | Phase 6 — Spell Progression & Leveling | Pending |
-| PRG-03 | Phase 6 — Spell Progression & Leveling | Pending |
-| PRG-04 | Phase 6 — Spell Progression & Leveling | Pending |
-| PRG-05 | Phase 6 — Spell Progression & Leveling | Pending |
-| INF-01 | Phase 7 — Infrastructure + Pre-Event QA | Pending |
-| INF-02 | Phase 7 — Infrastructure + Pre-Event QA | Pending |
-| INF-03 | Phase 7 — Infrastructure + Pre-Event QA | Pending |
-| INF-04 | Phase 7 — Infrastructure + Pre-Event QA | Pending |
+| NET-01 | Phase 1 | ✓ Complete |
+| NET-02 | Phase 1 | ✓ Complete |
+| NET-03 | Phase 1 | ✓ Complete |
+| NET-04 | Phase 1 | ✓ Complete |
+| NET-05 | Phase 1 | ✓ Complete |
+| NET-06 | Phase 1 | ✓ Complete |
+| PLR-01 | Phase 2 | Complete |
+| PLR-02 | Phase 2 | Complete |
+| PLR-03 | Phase 2 | Complete |
+| PLR-04 | Phase 2 | Complete |
+| HUD-01 | Phase 2 | Complete |
+| SPL-01 | Phase 3 | Pending |
+| SPL-02 | Phase 3 | Pending |
+| SPL-03 | Phase 3 | Pending |
+| SPL-04 | Phase 3 | Pending |
+| SPL-05 | Phase 3 | Pending |
+| PVP-01 | Phase 3 | Pending |
+| PVP-02 | Phase 4 | Pending |
+| PVP-03 | Phase 4 | Pending |
+| PVP-04 | Phase 4 | Pending |
+| PVP-05 | Phase 4 | Pending |
+| PVP-06 | Phase 4 | Pending |
+| MTH-02 | Phase 4 | Pending |
+| HUD-02 | Phase 4 | Pending |
+| SCL-04 | Phase 4 | Pending |
+| MTH-01 | Phase 5 | Pending |
+| MTH-03 | Phase 5 | Pending |
+| MTH-04 | Phase 5 | Pending |
+| MTH-05 | Phase 5 | Pending |
+| MTH-06 | Phase 5 | Pending |
+| SCL-01 | Phase 5 | Pending |
+| SCL-02 | Phase 5 | Pending |
+| SCL-03 | Phase 5 | Pending |
 
----
-
-## v1 Requirements (Archived — PvE Co-op, never executed)
-
-> The following requirements were defined for v1.0 (2-player LAN co-op PvE) but were never implemented.
-> The project pivoted to v2.0 PvP before any v1 phase was executed.
-> Preserved here for historical reference only.
-
-### Networking (NET)
-
-- [ ] **NET-01**: Player can enter server IP and port on a connect screen to join a LAN session
-- [ ] **NET-02**: Both players must be connected before the game starts (lobby/wait screen)
-- [ ] **NET-03**: Player 1's character position and state are visible on Player 2's screen in real time (and vice versa)
-- [ ] **NET-04**: Spell projectiles cast by either player are visible on both screens
-- [ ] **NET-05**: Enemy positions and health are synchronized — both players see the same enemy state
-- [ ] **NET-06**: If one player disconnects, the game displays a reconnect/error message
 
 ### Second Player (P2)
 
