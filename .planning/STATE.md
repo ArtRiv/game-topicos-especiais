@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
 status: executing
-last_updated: "2026-04-01T23:59:00.000Z"
-last_activity: 2026-04-01 -- Phase 03 complete (all 5 plans done, 36 tests pass, 3 new spells)
+last_updated: "2026-04-06T00:00:00.000Z"
+last_activity: 2026-04-06 -- Phase 06 complete (3 plans: SplashScene, cinematic menu, font audit + SCREENS.md)
 progress:
   total_phases: 6
-  completed_phases: 4
-  total_plans: 21
-  completed_plans: 16
+  completed_phases: 5
+  total_plans: 24
+  completed_plans: 19
 ---
 
 # GSD Project State
@@ -31,18 +31,18 @@ progress:
 | 3 | New Spells | complete |
 | 4 | PvP Combat | not-started |
 | 5 | Match Loop & Scalability | not-started |
-| 6 | UI Flow & Screen Design — Splash to Lobby | not-started |
+| 6 | UI Flow & Screen Design — Splash to Lobby | complete |
 
 ## Active Phase
 
-Phase 3 — New Spells — **COMPLETE**
+Phase 6 — UI Flow & Screen Design — Splash to Lobby — **COMPLETE**
 
 ## Current Position
 
-Phase: 03 (New Spells) — COMPLETE (5/5 plans done)
-Next: Phase 04 (PvP Combat)
-Status: Phase 03 complete — awaiting verify/complete
-Last activity: 2026-04-01 -- Phase 03 complete (all 5 plans done, 36 tests pass, 3 new spells)
+Phase: 06 (UI Flow & Screen Design) — COMPLETE (3/3 plans done)
+Next: Phase 04 (PvP Combat) — not started
+Status: Phase 06 complete — all screens designed, SplashScene live, cinematic menu intro implemented
+Last activity: 2026-04-06 -- Phase 06 complete (3 plans: SplashScene, cinematic menu, font audit + SCREENS.md)
 
 ## Key Decisions (v1.1)
 

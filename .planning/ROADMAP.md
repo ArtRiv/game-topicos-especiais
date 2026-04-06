@@ -240,9 +240,9 @@ All 5 phases complete = event-ready.
 **Plans:** 3 plans
 
 Plans:
-- [ ] 06-01-PLAN.md — SplashScene + boot wiring (SPLASH_SCENE, any-key → MainMenu)
-- [ ] 06-02-PLAN.md — Cinematic main menu intro + fade transitions (all scene switches)
-- [ ] 06-03-PLAN.md — Font-resolution audit (LobbyScene) + SCREENS.md documentation
+- [x] 06-01-PLAN.md — SplashScene + boot wiring (SPLASH_SCENE, any-key → MainMenu)
+- [x] 06-02-PLAN.md — Cinematic main menu intro + fade transitions (all scene switches)
+- [x] 06-03-PLAN.md — Font-resolution audit (LobbyScene) + SCREENS.md documentation
 
 ---
 
