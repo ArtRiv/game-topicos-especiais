@@ -22,7 +22,30 @@ Turn the completed WebRTC P2P networking foundation into a playable multi-player
 
 ## Phase Details
 
-### Phase 1: LAN Foundation
+### Phase 1: Auth + Server Scaffold
+**Goal**: Players can authenticate with Google and have a persistent account; Phaser boots only after auth
+**Depends on**: Nothing (first phase)
+**Requirements**: AUTH-01, AUTH-02, AUTH-03
+**Success Criteria** (what must be TRUE):
+  1. Player visits the game URL, sees a login page, and can authenticate with their Google account
+  2. After login, player's display name, rank score, level, and upgrade points are stored in the DB
+  3. Phaser client boots only after a valid JWT is confirmed — unauthenticated users cannot enter game
+  4. Player can log out from the main menu and return cleanly to the login screen
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 2: Lobby & Networking Foundation
+**Goal**: Players can form lobbies with invite codes and have synchronized real-time game sessions
+**Depends on**: Phase 1
+**Requirements**: LBY-01, LBY-02, LBY-03, LBY-04, LBY-05, LBY-06, NET-01, NET-02, NET-03, NET-04
+**Success Criteria** (what must be TRUE):
+  1. A player can create a lobby and share a 6-character invite code with others
+  2. Another player can join using the code and see all lobby members with their ready status in real time
+  3. Lobby owner can select the game mode; match cannot start without minimum player count
+  4. If the host disconnects, lobby ownership transfers automatically to another player
+  5. A 15-second reconnection grace window prevents immediate elimination on brief disconnect
+**Plans**: TBD
+**UI hint**: yes
 
 **Goal**: WebRTC P2P networking is working — players can connect, form a lobby, and see each other move and cast spells in real time
 **Depends on**: Nothing
