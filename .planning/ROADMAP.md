@@ -202,10 +202,6 @@ All 5 phases complete = event-ready.
 **Definition of Done:**
 - Both players can sit at separate LAN machines and complete a full ~15-minute session
 - At least 6 cross-player combos work and appear in the combo journal
-- At least 3 puzzle rooms exist (1 timed, 1 cooperative, 1 environmental combo)
-- A mini-boss and final boss exist with discoverable weaknesses
-- An intro and ending exist
-- Comedy NPCs are present
 
 ### Phase 6: UI Flow & Screen Design — Splash to Lobby
 

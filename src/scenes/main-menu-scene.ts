@@ -89,7 +89,7 @@ type MenuEntry = {
 
 // ms from the start of menu_music.ogg to the beat drop.
 // Adjust by listening in browser and counting seconds to the drop.
-const MUSIC_DROP_MS = 14_200;
+const MUSIC_DROP_MS = 2_000;
 
 // Skip the cinematic intro when revisiting the menu (e.g. back-nav from sub-scenes).
 // Module-level so it persists across scene restarts within the same session.
