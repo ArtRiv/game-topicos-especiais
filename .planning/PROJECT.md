@@ -1,16 +1,17 @@
 # Mages
 
-## Current Milestone: v2.0 — PvP Event Multiplayer
+## Current Milestone: v1.2 — Lobby & Game Start Flow
 
-**Goal:** Rebuild the game as a competitive PvP experience for the college event — players create accounts, form lobbies, pick game modes, and fight each other with elemental spells.
+**Goal:** Build the complete lobby-to-game-start pipeline — players can create/browse/join lobbies, configure game modes (1v1 through 10v10), manage teams, and launch into matches with a pre-game loading screen, spawn placement, and countdown timer.
 
 **Target features:**
-- Google OAuth login (account per player, tied to Google email)
-- Lobby creation & joining (session-based matchmaking)
-- Multiple game modes: Battle Royale, 2v2 / 3v3 / 4v4 team vs team
-- PvP arena gameplay (spell combat, player elimination)
-- Ranking system + global leaderboard
-- Spell progression / leveling (upgrade cooldown, mana, HP per account)
+- Lobby creation with custom name, browsing with refresh, private lobbies with password
+- Game mode selection (1v1, 2v2, ... 10v10) with auto-defaulting map size
+- Player management: kick, team assign, auto-balance, shuffle, ready-up
+- Real-time lobby state (joins, leaves, team swaps, chat, ping indicators, AFK detection)
+- Pre-game loading screen (map preview, player names, game mode info)
+- Match initialization: spawn points per map, movement lock, camera zoom-in, 10s countdown
+- In-match QoL: kill feed, match timer, spectator mode, quick rematch
 
 ## What This Is
 
@@ -148,4 +149,15 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-27 — v2.0 PvP pivot; v1.0 co-op design fully discarded*
+## Future Milestone: v2.0 — PvP Event Multiplayer
+
+**Goal:** Full competitive PvP experience for the college event — auth, ranking, progression on top of v1.2 lobby system.
+
+**Target features:**
+- Google OAuth login (account per player, tied to Google email)
+- Ranking system + global leaderboard
+- Spell progression / leveling (upgrade cooldown, mana, HP per account)
+- PvP arena gameplay polish
+
+---
+*Last updated: 2026-04-21 — v1.2 Lobby & Game Start Flow milestone started*

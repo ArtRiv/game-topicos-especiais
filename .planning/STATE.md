@@ -1,15 +1,15 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.1
-milestone_name: milestone
-status: executing
-last_updated: "2026-04-01T23:59:00.000Z"
-last_activity: 2026-04-01 -- Phase 03 complete (all 5 plans done, 36 tests pass, 3 new spells)
+milestone: v1.2
+milestone_name: Lobby & Game Start Flow
+status: planning
+last_updated: "2026-04-21T00:00:00.000Z"
+last_activity: 2026-04-21 -- Milestone v1.2 started
 progress:
-  total_phases: 6
-  completed_phases: 4
-  total_plans: 21
-  completed_plans: 16
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # GSD Project State
@@ -19,29 +19,24 @@ progress:
 - **Name:** Mages PvP
 - **Engine:** Phaser 3.87.0 + TypeScript 5.7.3
 - **Build:** Vite 6.0.7 (pnpm)
-- **Milestone:** v1.1 — PvP Team Deathmatch
+- **Milestone:** v1.2 — Lobby & Game Start Flow
 
 ## Phases
 
 | # | Title | Status |
 |---|-------|--------|
-| 1 | LAN Foundation | complete |
-| 2 | Multi-Player Control | complete |
-| 2.1 | Network Stability & Performance | complete |
-| 3 | New Spells | complete |
-| 4 | PvP Combat | not-started |
-| 5 | Match Loop & Scalability | not-started |
+| (pending roadmap) | | |
 
 ## Active Phase
 
-Phase 3 — New Spells — **COMPLETE**
+None — defining requirements
 
 ## Current Position
 
-Phase: 03 (New Spells) — COMPLETE (5/5 plans done)
-Next: Phase 04 (PvP Combat)
-Status: Phase 03 complete — awaiting verify/complete
-Last activity: 2026-04-01 -- Phase 03 complete (all 5 plans done, 36 tests pass, 3 new spells)
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-04-21 — Milestone v1.2 started
 
 ## Key Decisions (v1.1)
 
