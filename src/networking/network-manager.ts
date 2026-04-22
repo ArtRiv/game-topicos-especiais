@@ -107,6 +107,19 @@ export class NetworkManager {
     this.#socket.disconnect();
   }
 
+  /**
+   * Tears down the WebRTC mesh (all peer connections and data channels) while
+   * keeping the socket.io signaling connection alive. Used when returning to
+   * lobby after a match -- enables rematch without full reconnect (FND-04).
+   */
+  teardownMesh(): void {
+    this.stopGameTick();
+    this.#closeAllPeerConnections();
+    this.#lastSentSnapshot = null;
+    this.#matchPlayers = [];
+    // DO NOT call this.#socket.disconnect() -- keep signaling alive for lobby
+  }
+
   // --- Lobby methods (socket.io — reliable, low-frequency) ---
   sendLobbyCreate(playerName: string): void { this.#socket.emit('lobby:create', { playerName }); }
   sendLobbyList(): void { this.#socket.emit('lobby:list'); }
