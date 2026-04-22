@@ -96,6 +96,10 @@ export class NetworkManager {
     return this.#matchPlayers;
   }
 
+  get socketId(): string {
+    return this.#socket.id ?? '';
+  }
+
   connect(): void {
     this.#socket.connect();
   }
@@ -272,6 +276,11 @@ export class NetworkManager {
         this.#reliableChannels.delete(player.socketId);
       }
       EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_PLAYER_DISCONNECTED, { playerId } as PlayerDisconnectedPayload);
+    });
+
+    // Host migration — server reassigned host after a disconnect
+    this.#socket.on('host:changed', ({ newHostPlayerId }: { newHostPlayerId: string }) => {
+      EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_HOST_CHANGED, { newHostPlayerId });
     });
   }
 

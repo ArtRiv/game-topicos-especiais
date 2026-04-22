@@ -16,7 +16,7 @@ type ViewObjects = Phaser.GameObjects.GameObject[];
 
 export class LobbyScene extends Phaser.Scene {
   #playerName: string = 'Player';
-  #isHost: boolean = false;
+  #localSocketId: string = '';
   #viewObjects: ViewObjects = [];
   #ipInput!: Phaser.GameObjects.DOMElement;
   #nickInput!: Phaser.GameObjects.DOMElement;
@@ -35,7 +35,8 @@ export class LobbyScene extends Phaser.Scene {
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_LOBBY_STARTED, this.#onLobbyStarted, this);
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_DISCONNECTED, this.#onDisconnected, this);
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_LOBBY_UPDATED, this.#onWaitingRoomUpdate, this);
-      this.#isHost = false;
+      EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_HOST_CHANGED, this.#onHostChanged, this);
+      this.#currentLobby = null;
       this.#clearView();
     });
   }
@@ -68,6 +69,7 @@ export class LobbyScene extends Phaser.Scene {
   #onConnected = (): void => {
     EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_CONNECTED, this.#onConnected, this);
     const nm = NetworkManager.getInstance();
+    this.#localSocketId = nm.socketId;
     nm.sendLobbyList();
     this.#showLobbyListView();
   };
@@ -110,7 +112,6 @@ export class LobbyScene extends Phaser.Scene {
     const hint = this.add.text(cx, 65, 'Click a lobby to join it', FONT_SMALL).setOrigin(0.5);
 
     const createBtn = this.#createButton(cx, 100, 'CREATE LOBBY', () => {
-      this.#isHost = true;
       NetworkManager.getInstance().sendLobbyCreate(this.#playerName);
     });
 
@@ -126,24 +127,13 @@ export class LobbyScene extends Phaser.Scene {
 
   #onLobbyUpdated = (data: { lobby?: Lobby; lobbies?: Lobby[] }): void => {
     if (data.lobbies) {
-      // List update
       this.#lobbies = data.lobbies;
       this.#renderLobbyList();
       return;
     }
     if (data.lobby) {
-      // Single lobby update — means we joined or created it
-      const lobby = data.lobby;
-      const nm = NetworkManager.getInstance();
-      const isInLobby = lobby.players.some(
-        (p) => p.socketId === (nm as unknown as { _socket?: { id?: string } })._socket?.id || true
-      );
-      // If this is a creation/join response, switch to waiting room
-      // We detect this by checking if the response has a single lobby (not a list)
-      // Actually we need a different mechanism — check if local player is in this lobby
-      // We'll use the fact that after sendLobbyCreate or sendLobbyJoin the server sends lobby:created or lobby:updated
-      // with our socket, so we switch to waiting room
-      this.#showWaitingRoomView(lobby);
+      this.#currentLobby = data.lobby;
+      this.#showWaitingRoomView(data.lobby);
     }
   };
 
@@ -181,6 +171,12 @@ export class LobbyScene extends Phaser.Scene {
   #waitingRoomObjects: Phaser.GameObjects.GameObject[] = [];
   #currentLobby: Lobby | null = null;
 
+  get #isHost(): boolean {
+    if (!this.#currentLobby) return false;
+    const me = this.#currentLobby.players.find(p => p.socketId === this.#localSocketId);
+    return me !== undefined && me.id === this.#currentLobby.hostPlayerId;
+  }
+
   #showWaitingRoomView(lobby: Lobby): void {
     // Remove lobby list view listeners and objects
     EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_LOBBY_UPDATED, this.#onLobbyUpdated, this);
@@ -200,9 +196,7 @@ export class LobbyScene extends Phaser.Scene {
 
     this.#renderPlayerList(lobby.players);
 
-    // Show START button only for the host.
-    // #isHost is set to true when sendLobbyCreate() is called (before response arrives).
-    // Do NOT use nm.localPlayerId here — it is empty until lobby:started fires.
+    // Show START button only for the host (derived from lobby.hostPlayerId)
     if (this.#isHost) {
       const startBtn = this.#createButton(cx, cy + 120, 'START GAME', () => {
         NetworkManager.getInstance().sendLobbyStart();
@@ -213,6 +207,7 @@ export class LobbyScene extends Phaser.Scene {
     // Listen for further updates
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_LOBBY_UPDATED, this.#onWaitingRoomUpdate, this);
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_LOBBY_STARTED, this.#onLobbyStarted, this);
+    EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_HOST_CHANGED, this.#onHostChanged, this);
   }
 
   #onWaitingRoomUpdate = (data: { lobby?: Lobby }): void => {
@@ -222,10 +217,18 @@ export class LobbyScene extends Phaser.Scene {
     }
   };
 
+  #onHostChanged = (data: { newHostPlayerId: string }): void => {
+    if (this.#currentLobby) {
+      this.#currentLobby = { ...this.#currentLobby, hostPlayerId: data.newHostPlayerId };
+      this.#showWaitingRoomView(this.#currentLobby);
+    }
+  };
+
   #onLobbyStarted = (): void => {
     EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_LOBBY_UPDATED, this.#onWaitingRoomUpdate, this);
     EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_LOBBY_STARTED, this.#onLobbyStarted, this);
-    this.#isHost = false;
+    EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_HOST_CHANGED, this.#onHostChanged, this);
+    this.#currentLobby = null;
     this.scene.stop(SCENE_KEYS.LOBBY_SCENE);
     this.scene.start(SCENE_KEYS.PRELOAD_SCENE);
   };
