@@ -290,7 +290,11 @@ export class NetworkManager {
     // RTCPeerConnection is browser-only; guard for Node.js / test environments
     if (typeof RTCPeerConnection === 'undefined') return;
 
-    const mySocketId = this.#socket.id!;
+    const mySocketId = this.#socket.id;
+    if (!mySocketId) {
+      console.error('[NET] Cannot init WebRTC mesh: socket has no ID');
+      return;
+    }
     const myIndex = players.findIndex((p) => p.socketId === mySocketId);
 
     players.forEach((peer, peerIndex) => {
@@ -436,8 +440,10 @@ export class NetworkManager {
         try {
           ch.send(msg);
           this.#msgSentCount++;
-        } catch {
-          // Send queue full — drop the message rather than crashing
+        } catch (err) {
+          if (NETWORK_DEBUG) {
+            console.warn('[NET] Failed to send reliable message:', err);
+          }
         }
       }
     }
