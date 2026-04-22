@@ -2,7 +2,7 @@
 
 ## v1.0 Requirements (College Event Build — Phase 1 Complete)
 
-### Networking (NET) — ALL COMPLETE (Phase 1)
+### Networking (NET) — ✓ ALL COMPLETE (Phase 1)
 
 - [x] **NET-01**: Player can enter server IP on a connect screen to join a LAN session
 - [x] **NET-02**: All players must be connected before the game starts (lobby/wait screen)
@@ -15,21 +15,16 @@
 
 ## v1.1 Requirements (PvP Team Deathmatch)
 
-### Multi-Player Control (PLR) — ALL COMPLETE (Phase 2)
+### Multi-Player Control (PLR)
 
-- [x] **PLR-01**: Each player controls their own character on their own machine via keyboard — no fixed role assignments
+- [x] **PLR-01**: Each player controls their own character on their own machine via keyboard — no fixed role assignments (Player[i], not P1/P2)
 - [x] **PLR-02**: Each player has independent health and mana
-- [x] **PLR-03**: Remote players are rendered on each client driven by network snapshots
+- [x] **PLR-03**: Remote players are rendered on each client driven by network snapshots (existing `RemoteInputComponent`)
 - [x] **PLR-04**: Lobby supports N players with no hard cap enforced in code; teams are configured per lobby session
-
-### HUD & Feedback (HUD) — Phase 2 Complete
-
-- [x] **HUD-01**: Each player sees their own HP bar on their screen
-- [ ] **HUD-02**: Player death is visually communicated on all clients (death animation, character removed)
 
 ### Spells — New Elements (SPL)
 
-- [ ] **SPL-01**: At least one Ice spell implemented
+- [ ] **SPL-01**: At least one Ice spell implemented (~3 spells per element target; start with 1, design for extensibility)
 - [ ] **SPL-02**: At least one Wind spell implemented
 - [ ] **SPL-03**: At least one Thunder spell implemented
 - [ ] **SPL-04**: Each new spell has config values (damage, mana cost, cooldown) in `config.ts`
@@ -39,10 +34,10 @@
 
 - [ ] **PVP-01**: All players have access to all available spells (no per-player loadout restrictions in v1.1)
 - [ ] **PVP-02**: Spells cast by any player can collide with and damage any opponent (cross-player hit detection)
-- [ ] **PVP-03**: Client renders spell cast and movement immediately (client-side prediction)
+- [ ] **PVP-03**: Client renders spell cast and movement immediately (client-side prediction) without waiting for host confirmation
 - [ ] **PVP-04**: Host validates hit events and broadcasts confirmed damage + elimination to all clients
 - [ ] **PVP-05**: Each client applies damage to the correct player only after receiving host confirmation
-- [ ] **PVP-06**: Friendly fire is controlled by a configurable toggle (default: OFF)
+- [ ] **PVP-06**: Friendly fire is controlled by a configurable toggle (default: OFF); if complex, friendly fire disabled by default
 
 ### Match Loop (MTH)
 
@@ -51,161 +46,182 @@
 - [ ] **MTH-03**: Win condition: last team standing (all opponents eliminated)
 - [ ] **MTH-04**: Match-end screen is shown simultaneously on all clients with the result
 - [ ] **MTH-05**: Players can return to the lobby from the match-end screen for a rematch
-- [ ] **MTH-06**: Match flow is structured to support future modes without refactoring
+- [ ] **MTH-06**: Match flow (Lobby → Match Start → Combat → Win Condition → Match End → Lobby) is structured to support future modes (battle royale, FFA) without refactoring
+
+### HUD & Feedback (HUD)
+
+- [x] **HUD-01**: Each player sees their own HP bar on their screen
+- [ ] **HUD-02**: Player death is visually communicated on all clients (death animation, character removed)
 
 ### Scalability & Stability (SCL)
 
-- [ ] **SCL-01**: A 5v5 match (10 players total) is the minimum stable baseline
-- [ ] **SCL-02**: The system scales beyond 10 players with no code changes required
-- [ ] **SCL-03**: No crash or freeze when any player disconnects mid-match
-- [ ] **SCL-04**: All combat logic works correctly with multiple simultaneous players
+- [ ] **SCL-01**: A 5v5 match (10 players total) is the minimum stable baseline — no desync, freeze, or crash; this is a floor, not a ceiling
+- [ ] **SCL-02**: The system scales beyond 10 players for stress testing with no code changes required; real performance limits are determined empirically
+- [ ] **SCL-03**: No crash or freeze when any player disconnects mid-match (relies on existing disconnect detection)
+- [ ] **SCL-04**: All combat logic (hits, damage, elimination) works correctly with multiple simultaneous players, not just 1v1
 
-### Network Performance (NETPERF) — Phase 02.1 COMPLETE
+### Network Performance (NETPERF) — Phase 02.1 (INSERTED)
 
-- [x] **NETPERF-01**: Position tick rate reduced to 20 Hz
-- [x] **NETPERF-02**: No position messages sent when player state unchanged (dirty-checking)
-- [x] **NETPERF-03**: Network debug metrics available
-- [x] **NETPERF-04**: 3+ client test shows all tabs responsive with sub-second latency
-- [x] **NETPERF-05**: Remote player interpolation uses delta-time
-
----
-
-## v1.2 Requirements (Lobby & Game Start Flow)
-
-Requirements for milestone v1.2. Each maps to roadmap phases.
-
-### Foundation Cleanup (FND)
-
-- [ ] **FND-01**: All Phaser scenes use consistent EVENT_BUS bind in create() and unbind in shutdown() — no listener leaks across scene transitions
-- [ ] **FND-02**: Host detection is reactive — derived from lobby state, not a static boolean; updates automatically on host migration
-- [ ] **FND-03**: All singleton managers (DataManager, InventoryManager, ElementManager) have reset() methods that restore clean state for rematch
-- [ ] **FND-04**: WebRTC mesh can be torn down independently of the socket.io signaling connection — enabling rematch without full reconnect
-
-### Lobby Management (LBY)
-
-- [ ] **LBY-01**: Player can create a lobby with a custom name visible in the lobby list
-- [ ] **LBY-02**: Player can browse available lobbies with player count, game mode, and a refresh button
-- [ ] **LBY-03**: Player can join a lobby from the lobby list
-- [ ] **LBY-04**: Lobby owner can set the game mode (1v1, 2v2, ... up to 10v10) before starting
-- [ ] **LBY-05**: Each player can toggle their ready status; match cannot start until all players are ready and minimum player count is met
-- [ ] **LBY-06**: Lobby owner can kick a player from the lobby
-- [ ] **LBY-07**: Lobby owner can auto-balance teams (distribute players evenly) or shuffle teams randomly
-- [ ] **LBY-08**: Players can self-assign to a team by clicking the team they want
-- [ ] **LBY-09**: All lobby state changes (joins, leaves, team swaps, ready toggles, mode changes) update in real-time for all lobby members
-- [ ] **LBY-10**: Lobby owner can set an optional password; joining players must enter the correct password
-
-### Lobby Communication (COM)
-
-- [ ] **COM-01**: Players can send and receive text chat messages within the lobby
-- [ ] **COM-02**: Each player's ping/latency is visible to all lobby members
-
-### Pre-Game Flow (PGF)
-
-- [ ] **PGF-01**: After host starts the match, all clients transition to a loading screen showing map preview, player names by team, and game mode
-- [ ] **PGF-02**: Match proceeds only when all clients report loaded (with a 15-second timeout fallback)
-- [ ] **PGF-03**: Each map has predefined spawn points in Tiled data, tagged by team; server assigns players to spawn positions based on team and game mode
-- [ ] **PGF-04**: Players are placed at their assigned spawn points with movement and spell casting locked during a 10-second countdown
-- [ ] **PGF-05**: Camera performs a zoom-in effect on the player's spawn position during the countdown, pulling out to normal view on "GO"
-
-### In-Match QoL (QOL)
-
-- [ ] **QOL-01**: A kill feed displays recent elimination events ("X eliminated Y") in the top-right corner with auto-fade
-- [ ] **QOL-02**: A server-authoritative match timer is visible to all players, counting down the remaining match time
-- [ ] **QOL-03**: Eliminated players enter spectator mode — camera detaches and follows alive players, cycled with arrow keys
-- [ ] **QOL-04**: Spectators see a "SPECTATING: [PlayerName]" overlay and cannot interact with the game
-
-### Post-Match (PMT)
-
-- [ ] **PMT-01**: When the match ends, all clients display a results screen showing winner/teams, eliminations, and match stats
-- [ ] **PMT-02**: The host can click "Rematch" to return all connected players to the lobby with the same settings
-- [ ] **PMT-03**: Lobby state persists across matches — lobby is not destroyed when a match starts
+- [ ] **NETPERF-01**: Position tick rate reduced to 20 Hz — per-client outbound bandwidth reduced by ~66% vs 60 Hz
+- [ ] **NETPERF-02**: No position messages sent when player state (x, y, direction, state, element) is unchanged since last send (dirty-checking)
+- [ ] **NETPERF-03**: Network debug metrics available: messages sent/sec, messages received/sec — togglable via config flag
+- [ ] **NETPERF-04**: 3+ client test shows all tabs responsive with sub-second latency (no multi-second delay on 3rd client)
+- [ ] **NETPERF-05**: Remote player interpolation uses delta-time — movement is smooth and animation/spell sync remain correct at 20 Hz
 
 ---
 
-## Future Requirements
+## Out of Scope (v1.1)
 
-Deferred to future milestones. Tracked but not in current roadmap.
-
-- **DEF-01**: Map auto-sizing by game mode (small/medium/big maps based on player count)
-- **DEF-02**: AFK detection with auto-kick after timeout
-- **DEF-03**: Team color tinting on player sprites for visual team identification
-
----
-
-## Out of Scope
-
-| Feature | Reason |
-|---------|--------|
-| Ranked matchmaking queue | Requires large concurrent player pool; college event has 20-50 players |
-| Voice chat | Players are physically in the same room at the event |
-| Mid-match player join | State sync too complex; matches are short (5-15 min) |
-| Map voting system | Only valuable with 3+ maps; host picks mode, map auto-selected |
-| Surrender / forfeit vote | Matches are short enough (15 min max) to finish naturally |
-| Replay system | Massive engineering; spectator mode covers live experience |
-| Custom game rules | Exponential test matrix; breaks balance assumptions |
+- Cooperative puzzle rooms — deferred
+- Bosses / final boss — deferred
+- NPCs and narrative — deferred
+- Combo journal UI — not in scope
+- Per-player element/spell restrictions (loadouts, classes) — system designed for it but not enforced in v1.1
+- Free-for-all / battle royale mode — MTH-06 enables it; not building the mode in v1.1
+- Full multi-player HUD (all players' HP visible) — HUD shows own HP only in v1.1; expandable later
+- WebRTC redesign — networking layer is complete; building on top only
 
 ---
 
 ## Traceability
 
-| Requirement | Phase | Status |
-|-------------|-------|--------|
-| NET-01 | Phase 1 (v1.0) | Complete |
-| NET-02 | Phase 1 (v1.0) | Complete |
-| NET-03 | Phase 1 (v1.0) | Complete |
-| NET-04 | Phase 1 (v1.0) | Complete |
-| NET-05 | Phase 1 (v1.0) | Complete |
-| NET-06 | Phase 1 (v1.0) | Complete |
-| PLR-01 | Phase 2 (v1.1) | Complete |
-| PLR-02 | Phase 2 (v1.1) | Complete |
-| PLR-03 | Phase 2 (v1.1) | Complete |
-| PLR-04 | Phase 2 (v1.1) | Complete |
-| HUD-01 | Phase 2 (v1.1) | Complete |
-| NETPERF-01 | Phase 2.1 (v1.1) | Complete |
-| NETPERF-02 | Phase 2.1 (v1.1) | Complete |
-| NETPERF-03 | Phase 2.1 (v1.1) | Complete |
-| NETPERF-04 | Phase 2.1 (v1.1) | Complete |
-| NETPERF-05 | Phase 2.1 (v1.1) | Complete |
-| SPL-01 | Phase 3 (v1.1) | Complete |
-| SPL-02 | Phase 3 (v1.1) | Complete |
-| SPL-03 | Phase 3 (v1.1) | Complete |
-| SPL-04 | Phase 3 (v1.1) | Complete |
-| SPL-05 | Phase 3 (v1.1) | Complete |
-| PVP-01 | Phase 3 (v1.1) | Complete |
-| FND-01 | Phase 6 (v1.2) | Pending |
-| FND-02 | Phase 6 (v1.2) | Pending |
-| FND-03 | Phase 6 (v1.2) | Pending |
-| FND-04 | Phase 6 (v1.2) | Pending |
-| LBY-01 | Phase 7 (v1.2) | Pending |
-| LBY-02 | Phase 7 (v1.2) | Pending |
-| LBY-03 | Phase 7 (v1.2) | Pending |
-| LBY-04 | Phase 7 (v1.2) | Pending |
-| LBY-05 | Phase 7 (v1.2) | Pending |
-| LBY-06 | Phase 7 (v1.2) | Pending |
-| LBY-07 | Phase 7 (v1.2) | Pending |
-| LBY-08 | Phase 7 (v1.2) | Pending |
-| LBY-09 | Phase 7 (v1.2) | Pending |
-| LBY-10 | Phase 7 (v1.2) | Pending |
-| COM-01 | Phase 7 (v1.2) | Pending |
-| COM-02 | Phase 7 (v1.2) | Pending |
-| PGF-01 | Phase 8 (v1.2) | Pending |
-| PGF-02 | Phase 8 (v1.2) | Pending |
-| PGF-03 | Phase 8 (v1.2) | Pending |
-| PGF-04 | Phase 8 (v1.2) | Pending |
-| PGF-05 | Phase 8 (v1.2) | Pending |
-| QOL-01 | Phase 9 (v1.2) | Pending |
-| QOL-02 | Phase 9 (v1.2) | Pending |
-| QOL-03 | Phase 9 (v1.2) | Pending |
-| QOL-04 | Phase 9 (v1.2) | Pending |
-| PMT-01 | Phase 10 (v1.2) | Pending |
-| PMT-02 | Phase 10 (v1.2) | Pending |
-| PMT-03 | Phase 10 (v1.2) | Pending |
+| Req ID | Phase | Status |
+|--------|-------|--------|
+| NET-01 | Phase 1 | ✓ Complete |
+| NET-02 | Phase 1 | ✓ Complete |
+| NET-03 | Phase 1 | ✓ Complete |
+| NET-04 | Phase 1 | ✓ Complete |
+| NET-05 | Phase 1 | ✓ Complete |
+| NET-06 | Phase 1 | ✓ Complete |
+| PLR-01 | Phase 2 | Complete |
+| PLR-02 | Phase 2 | Complete |
+| PLR-03 | Phase 2 | Complete |
+| PLR-04 | Phase 2 | Complete |
+| HUD-01 | Phase 2 | Complete |
+| SPL-01 | Phase 3 | Pending |
+| SPL-02 | Phase 3 | Pending |
+| SPL-03 | Phase 3 | Pending |
+| SPL-04 | Phase 3 | Pending |
+| SPL-05 | Phase 3 | Pending |
+| PVP-01 | Phase 3 | Pending |
+| PVP-02 | Phase 4 | Pending |
+| PVP-03 | Phase 4 | Pending |
+| PVP-04 | Phase 4 | Pending |
+| PVP-05 | Phase 4 | Pending |
+| PVP-06 | Phase 4 | Pending |
+| MTH-02 | Phase 4 | Pending |
+| HUD-02 | Phase 4 | Pending |
+| SCL-04 | Phase 4 | Pending |
+| MTH-01 | Phase 5 | Pending |
+| MTH-03 | Phase 5 | Pending |
+| MTH-04 | Phase 5 | Pending |
+| MTH-05 | Phase 5 | Pending |
+| MTH-06 | Phase 5 | Pending |
+| SCL-01 | Phase 5 | Pending |
+| SCL-02 | Phase 5 | Pending |
+| SCL-03 | Phase 5 | Pending |
 
-**Coverage:**
-- v1.2 requirements: 28 total
-- Mapped to phases: 28
-- Unmapped: 0
+
+### Second Player (P2)
+
+- [ ] **P2-01**: A second distinct player character (visually different from Player 1) exists in the game world
+- [ ] **P2-02**: Player 1 is assigned Fire, Earth, and Water elements; Player 2 is assigned Ice, Wind, and Thunder
+- [ ] **P2-03**: Player 2 has independent health, mana, and element switching state
+- [ ] **P2-04**: Player 2 can be controlled from a separate keyboard on a separate machine
+- [ ] **P2-05**: Both players share the same game world and room progression simultaneously
+
+### Spells — New Elements (SPL)
+
+- [ ] **SPL-01**: At least one Ice spell is implemented (projectile or area effect) for Player 2
+- [ ] **SPL-02**: At least one Wind spell is implemented (projectile or area effect) for Player 2
+- [ ] **SPL-03**: At least one Thunder spell is implemented (projectile or area effect) for Player 2
+- [ ] **SPL-04**: Each new element has distinct visual identity (color-coded particles/effects)
+- [ ] **SPL-05**: New spells have mana costs, cooldowns, and damage values defined in `config.ts`
+
+### Cross-Player Combo System (CMB)
+
+- [ ] **CMB-01**: When Player 1's spell and Player 2's spell collide, a combo effect triggers automatically
+- [ ] **CMB-02**: At least 6 distinct cross-player combo effects exist (covering both players' element pairings)
+- [ ] **CMB-03**: Combo effects deal more damage or have a greater area than individual spells
+- [ ] **CMB-04**: A visual effect clearly communicates that a combo was triggered (distinct from regular hits)
+- [ ] **CMB-05**: The server confirms the combo event so both clients execute the same effect at the same time
+
+### Environmental Puzzle Rooms (PZL)
+
+- [ ] **PZL-01**: At least 3 dedicated puzzle rooms exist in the game (clearly separate from combat rooms)
+- [ ] **PZL-02**: Environmental interactable objects exist that respond to individual spell elements (e.g., water spell wets an object)
+- [ ] **PZL-03**: Environmental interactable objects respond to spell combos (e.g., wet surface + thunder spell = device activated)
+- [ ] **PZL-04**: At least 1 cooperative puzzle requires both players to act simultaneously to solve it
+- [ ] **PZL-05**: At least 1 puzzle is sequence-based (elements must be applied in a specific order)
+- [ ] **PZL-06**: At least 1 puzzle room has a hard countdown timer visible to both players
+- [ ] **PZL-07**: Failing a timed puzzle spawns a hard enemy wave in the room instead of a hard reset
+- [ ] **PZL-08**: Solving a puzzle has clear visual/audio feedback (door opens, device lights up, etc.)
+
+### Enemy & Boss Design (ENM / BOS)
+
+- [ ] **ENM-01**: At least 2 new enemy types exist with elemental resistances (resistant to some elements, weak to others)
+- [ ] **ENM-02**: Enemy elemental weakness can be discovered through experimentation or NPC hints
+- [ ] **BOS-01**: At least 1 mini-boss exists per game level with a telegraphed elemental weakness
+- [ ] **BOS-02**: A final boss exists that requires coordinated cross-player combo strategy to defeat
+- [ ] **BOS-03**: The final boss has multiple phases or attacks that change during the fight
+- [ ] **BOS-04**: Defeating the final boss triggers the game's ending sequence
+
+### Narrative & NPCs (NPC)
+
+- [ ] **NPC-01**: An intro sequence presents the premise before gameplay starts
+- [ ] **NPC-02**: At least 3 NPCs exist in the world with interactive dialogue
+- [ ] **NPC-03**: At least 1 NPC hints at or explains a spell combo to the players
+- [ ] **NPC-04**: NPCs have personality and comedy — written with the devs' voices
+- [ ] **NPC-05**: An ending sequence plays after the final boss is defeated
+
+### Discovery UX (DSC)
+
+- [ ] **DSC-01**: A combo journal/UI exists that tracks which cross-player combos the players have discovered
+- [ ] **DSC-02**: Newly discovered combos are added to the journal automatically on first trigger
+
+### Core Game Loop (CORE)
+
+- [ ] **CORE-01**: Both players share a health system — if either player dies, there is a penalty (respawn or game over)
+- [ ] **CORE-02**: Players can progress through at least 2 levels with escalating enemy difficulty
+- [ ] **CORE-03**: Room transitions work for both players simultaneously (camera sync)
+- [ ] **CORE-04**: Players can switch active elements via the existing radial menu, with their selection visible to the other player on the HUD
 
 ---
-*Requirements defined: 2026-04-21*
-*Last updated: 2026-04-21 after v1.2 roadmap creation*
+
+## v2 Requirements (Post-Event, If Time Allows)
+
+- "Ghost preview" of ally's active charging spell shown on screen
+- Controller/gamepad support
+- AI companion stub for solo testing sessions
+- 3+ levels instead of 2
+- More than 6 cross-player combos
+- Additional NPC dialogue and lore
+- Leaderboard / score system for the event
+
+---
+
+## Out of Scope
+
+- Isometric perspective — staying top-down; isometric requires reworking camera, collision, and all assets
+- Internet multiplayer — LAN only; online netcode is a separate engineering effort
+- More than 2 players — scope control for the 3-4 month deadline
+- Character progression / XP / leveling — 15-min sessions don't benefit from this
+- Branching dialogue / dialogue choices — linear light narrative only
+- Mobile or controller support (v1) — keyboard per machine is sufficient for the event
+
+---
+
+## Traceability
+
+| Req ID | Phase | Status |
+|--------|-------|--------|
+| NET-01 to NET-06 | Phase 1 | — |
+| P2-01 to P2-05 | Phase 2 | — |
+| SPL-01 to SPL-05 | Phase 3 | — |
+| CMB-01 to CMB-05 | Phase 3 | — |
+| PZL-01 to PZL-08 | Phase 4 | — |
+| ENM-01 to ENM-02 | Phase 5 | — |
+| BOS-01 to BOS-04 | Phase 5 | — |
+| NPC-01 to NPC-05 | Phase 4–5 | — |
+| DSC-01 to DSC-02 | Phase 3–4 | — |
+| CORE-01 to CORE-04 | Phase 1–2 | — |
