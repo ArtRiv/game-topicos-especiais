@@ -79,7 +79,11 @@
   2. When the original host disconnects, the new host's client automatically gains host privileges (kick, start match) without any page reload or manual action
   3. After a match ends and players return to lobby, all game state (health, mana, element selection, inventory) is fully reset — a second match starts with clean defaults
   4. Players can return to the lobby after a match without a full WebRTC reconnect — the signaling connection stays alive while the mesh is torn down and rebuilt for the next match
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 06-01-PLAN.md — EVENT_BUS listener cleanup across all scenes (FND-01)
+- [ ] 06-02-PLAN.md — Singleton reset methods and mesh teardown (FND-03, FND-04)
+- [ ] 06-03-PLAN.md — Reactive host migration on server and client (FND-02)
 
 ### Phase 7: Lobby Enhancements
 **Goal**: Players have a complete lobby experience — create, browse, join, configure game mode, manage teams, ready up, chat, and control access with passwords
@@ -144,7 +148,7 @@ Phases execute in numeric order: 6 -> 7 -> 8 -> 9 -> 10
 | 3. New Spells | v1.1 | -/- | Complete | - |
 | 4. PvP Combat | v1.1 | -/- | Complete | - |
 | 5. Match Loop & Scalability | v1.1 | -/- | Complete | - |
-| 6. Foundation Cleanup | v1.2 | 0/? | Not started | - |
+| 6. Foundation Cleanup | v1.2 | 0/3 | Not started | - |
 | 7. Lobby Enhancements | v1.2 | 0/? | Not started | - |
 | 8. Pre-Game Flow & Spawn | v1.2 | 0/? | Not started | - |
 | 9. In-Match QoL | v1.2 | 0/? | Not started | - |
