@@ -93,6 +93,7 @@ export class LobbyScene extends Phaser.Scene {
     const url = ip.includes(':') ? `http://${ip}` : `http://${ip}:${port}`;
 
     EVENT_BUS.once(CUSTOM_EVENTS.NETWORK_CONNECTED, this.#onConnected, this);
+    EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_DISCONNECTED, this.#onDisconnected, this);
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_DISCONNECTED, this.#onDisconnected, this);
 
     const nm = NetworkManager.init(url);
