@@ -1,413 +1,357 @@
-# Technology Stack — Mages v2.0 PvP Multiplayer
+# Stack Research: v1.2 Lobby & Game Start Flow
 
-**Project:** Mages — competitive wizard PvP game
-**Milestone:** v2.0 — Internet-accessible PvP event server
-**Researched:** March 26, 2026
-**Confidence:** HIGH (all versions verified against npm registry on this date)
-
----
-
-## Recommended Stack Summary
-
-| Layer | Technology | Version | Purpose |
-|-------|-----------|---------|---------|
-| **HTTP Framework** | Express | 5.2.1 | REST API + socket.io host |
-| **Real-time** | socket.io (server) | 4.8.3 | PvP game loop, lobbies, events |
-| **Real-time (client)** | socket.io-client | 4.8.3 | Phaser scene → server bridge |
-| **Authentication** | better-auth | 1.5.6 | Google OAuth, sessions, user records |
-| **Database** | SQLite via better-sqlite3 | 12.8.0 | All persistence (accounts, rank, XP) |
-| **ORM** | drizzle-orm | 0.45.1 | Schema-safe queries, TypeScript types |
-| **Migrations** | drizzle-kit | 0.31.10 | Schema generation and push |
-| **CORS** | cors | 2.8.6 | Allow Vite dev origin + prod origin |
-| **JWT** | jsonwebtoken | 9.0.3 | Socket handshake token after login |
-| **Ranking** | Custom Elo (no library) | — | Post-match score updates |
-
-**Total new runtime dependencies: 7 packages** added to a new `server/` project.
-**Client change: 1 package** (`socket.io-client`) added to the existing Phaser repo.
+**Domain:** Multiplayer PvP game — lobby system, matchmaking, chat, spectator mode, game start flow
+**Researched:** 2026-04-21
+**Confidence:** HIGH (recommendations build entirely on existing validated stack; no new dependencies)
 
 ---
 
-## 1. Authentication — Google OAuth
+## Executive Finding
 
-### Recommendation: `better-auth@1.5.6`
-
-better-auth is a TypeScript-first, framework-agnostic auth library published to npm as a single package. It ships a handler function that mounts directly on any Node.js HTTP server — Express, Fastify, or plain `http` — with no framework lock-in. It has first-class support for Google as a social provider, manages user sessions via cookies, and includes a Drizzle ORM adapter that auto-generates and migrates the required `user`, `session`, `account`, and `verification` tables.
-
-**Verified capabilities** (HIGH confidence — official docs at better-auth.com):
-- Google OAuth redirect flow via `socialProviders.google`
-- Cookie-based sessions with server-side validation
-- TypeScript schema auto-generated via `betterAuthDrizzleAdapter`
-- `prompt: "select_account"` forces the Google account picker — critical for event machines where multiple people may be using the same browser
-- `idToken` bypass for Google One Tap (optional, useful for kiosks)
-
-```ts
-// server/src/auth.ts
-import { betterAuth } from "better-auth";
-import { drizzleAdapter } from "better-auth/adapters/drizzle";
-
-export const auth = betterAuth({
-  baseURL: process.env.BETTER_AUTH_URL, // e.g. https://mages.example.com
-  database: drizzleAdapter(db, { provider: "sqlite" }),
-  socialProviders: {
-    google: {
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-      prompt: "select_account",
-    },
-  },
-});
-
-// Server: mount all /api/auth/* routes
-app.all("/api/auth/*", (req, res) => auth.handler(req, res));
-```
-
-### Auth Comparison Matrix
-
-| Library | Version | Last Publish | Google OAuth | TS-first | Framework tie-in | Event-safe |
-|---------|---------|-------------|-------------|---------|-----------------|-----------|
-| **better-auth** | **1.5.6** | **4 days ago** | ✅ Built-in | ✅ | None (handler fn) | ✅ Self-hosted |
-| Passport.js + google strategy | 2.0.0 | **7 years ago** | ⚠️ Extra package | ❌ (needs @types) | Connect/Express | ⚠️ Unmaintained |
-| Firebase Auth | cloud SDK | Managed | ✅ Built-in | ✅ | Firebase ecosystem | ❌ Cloud-dependent |
-| Auth.js (NextAuth v5) | 5.x | Recent | ✅ Built-in | ✅ | Next.js optimized | ⚠️ Express adapter experimental |
-
-**Why NOT Passport.js:**
-`passport-google-oauth20` is at v2.0.0 and was last published in **2018 — 7 years ago**. It still works but is effectively abandoned: no TypeScript declarations without a separate `@types` package, no maintained session management (you hand-wire `express-session` or JWTs yourself), and no active bug fixes. The strategy package has no published updates to support modern OAuth2 consent screen requirements. The boilerplate burden is entirely on the developer.
-
-**Why NOT Firebase Auth:**
-Firebase Auth is a cloud service. At a college venue event, if the internet connection degrades or drops, players cannot log in because Google's ID-token verification endpoint (`googleapis.com`) becomes unreachable. All game state — accounts, rank, XP — must live on the local server. Splitting auth to the cloud and game data locally creates a fragile dependency. Additionally: Firebase Admin SDK adds ~200KB to the server package, requires firebase credentials separate from Google OAuth credentials, and introduces an entirely new API surface to learn on a 3-month deadline.
-
-**Why NOT Auth.js (NextAuth v5):**
-Despite the rebrand from "NextAuth" to "Auth.js", v5 is still architecturally centered on Next.js. The generic Express/Fastify framework adapters are documented as experimental, with significantly less community coverage than the Next.js path. The added migration risk is not worth it when better-auth handles the same use case more cleanly for a plain Node.js server.
+**Zero new npm packages are needed for v1.2.** The existing stack (Phaser 3.87.0, socket.io 4.8.3, TypeScript 5.7.3, Express 4.21.0, @msgpack/msgpack 3.1.3) already provides every capability required for lobby creation/browsing, private lobbies, game mode selection, team management, ready-up, chat, pre-game loading, spawn points, countdown, kill feed, spectator mode, quick rematch, AFK detection, and ping indicators. This is a pure feature-layer milestone — no infrastructure changes.
 
 ---
 
-## 2. HTTP Framework
+## Current Stack (Validated — DO NOT CHANGE)
 
-### Recommendation: `express@5.2.1`
-
-Express 5 (stable release, published ~4 months ago) resolves async error handling, aligns with Node 18+ semantics, and is a drop-in upgrade from Express 4. With 75M weekly downloads and the largest Node.js HTTP framework ecosystem, every major socket.io integration tutorial uses Express — the official socket.io documentation shows Express integration as its primary example.
-
-At event scale (at most ~100 simultaneous players, making dozens of HTTP requests per minute), the performance delta vs Fastify is entirely irrelevant. The productivity advantage — familiar API, abundant examples, minimal setup — is the deciding factor for a 2-dev, 3-month delivery.
-
-**Why NOT Fastify 5.8.4:**
-Fastify benchmarks at ~77K req/s vs Express's ~14K on synthetic "hello world" tests. This means nothing for a game server handling at most 50 concurrent matches with simple REST calls for lobby management. Fastify's plugin encapsulation system is more opinionated and has meaningfully fewer real-world examples for the socket.io + auth + session combination. A team hitting an unfamiliar Fastify plugin registration problem the night before an event is a preventable risk.
-
----
-
-## 3. Real-Time Transport — PvP Gameplay + Lobby
-
-### Recommendation: `socket.io@4.8.3` (server) + `socket.io-client@4.8.3` (client)
-
-socket.io 4.8.3 was published 3 months ago. The client and server are version-locked at 4.8.3 by design — they must match major version.
-
-**Features that map directly to game requirements:**
-
-- **Rooms = lobbies.** `socket.join(lobbyCode)` groups all players in a lobby. `io.to(lobbyCode).emit("playerJoined", data)` broadcasts to everyone in that room. The lobby layer requires no custom routing code.
-- **Namespaces = separation of concerns.** Use `/lobby` namespace for pre-match browsing/creation and `/game` namespace for active match play. Different auth middleware and lifecycle rules per namespace.
-- **Acknowledgements = reliable state transitions.** Server confirms match start, slot assignment, spell resolution to the initiating client before broadcasting to others. Critical events do not silently drop.
-- **Auto-reconnect.** Handles venue wifi hiccups without breaking the game session. Exponential back-off with configurable retry limit.
-
-**Integration with Phaser 3 + Vite:**
-
-socket.io-client ships with built-in TypeScript declarations and is imported as an ESM module — no configuration required in the existing Vite + ESM setup.
-
-```ts
-// In a Phaser Scene (e.g., GameScene.ts)
-import { io, Socket } from "socket.io-client";
-
-const socket: Socket = io("/game", {
-  auth: { token: localStorage.getItem("game_token") },
-  transports: ["websocket"], // skip long-polling at an event venue
-});
-
-socket.on("spell_hit", ({ caster, target, damage }) => {
-  this.applySpellHit(target, damage);
-});
-```
-
-`transports: ["websocket"]` skips the HTTP long-poll → WebSocket upgrade handshake. All modern browsers at a college event support WebSocket natively; skipping the upgrade shaves ~200ms off connection time.
-
-### Game Architecture: Server-Authoritative
-
-Every spell cast, position update, and elimination is processed on the server. The client sends *intent*, the server sends *truth*.
-
-```
-Client → server: CAST_SPELL { element: "fire", direction: { x, y } }
-Server validates: alive? has mana? cooldown expired?
-Server computes: hit detection against all players in room
-Server → all clients in room: SPELL_RESULT { caster, targets: [{ id, damage }] }
-Clients: animate the result they receive
-```
-
-This is non-negotiable for PvP integrity. Never trust clients to report their own hit detection. The existing Phaser spell logic can be extracted into a shared `spell-engine` module and run on the server for authoritative computation.
+| Technology | Version | Location | Status |
+|------------|---------|----------|--------|
+| Phaser | 3.87.0 | Client `dependencies` | Installed, working |
+| TypeScript | 5.7.3 | Both client + server `devDependencies` | Installed, working |
+| Vite | 6.0.7 | Client `devDependencies` | Installed, working |
+| socket.io-client | 4.8.3 | Client `dependencies` | Installed, working |
+| socket.io | 4.8.3 | Server `dependencies` | Installed, working |
+| Express | 4.21.0 | Server `dependencies` | Installed, working |
+| @msgpack/msgpack | 3.1.3 | Server `dependencies` | Installed, working |
+| tsx | 4.19.0 | Server `devDependencies` | Installed, working |
+| WebRTC (browser API) | N/A | Browser native | Implemented in NetworkManager |
 
 ---
 
-## 4. Database
+## Feature-to-Existing-Tech Mapping
 
-### Recommendation: `better-sqlite3@12.8.0` (SQLite)
+Every v1.2 feature maps directly to already-installed technology:
 
-SQLite is a file-based embedded database — zero server process, zero configuration, single `.db` file. Backup = `cp game.db game.db.bak`. Published 13 days ago.
+### Lobby Features (socket.io 4.8.3)
 
-**Scale analysis for this use case:**
-- Expected concurrent players: 10–100 (college event)
-- DB write pattern: match-end score writes (~every 5–10 minutes per match)
-- DB read pattern: player stats on lobby join (~every 30 seconds)
-- better-sqlite3 documented throughput: **2000+ queries/second** with 5-way joins
-- Verdict: SQLite handles this load with 2 orders of magnitude headroom
+| Feature | Implementation | Existing Code to Extend |
+|---------|---------------|------------------------|
+| Lobby creation with custom name | Add `lobbyName` field to `lobby:create` payload | `LobbyManager.createLobby()` — add name param |
+| Lobby browsing with refresh | Already implemented — `lobby:list` event exists | `LobbyScene.#showLobbyListView()` — add refresh button + auto-refresh timer |
+| Private lobbies (password) | Add `password` field to Lobby type; validate on join | `LobbyManager.joinLobby()` — add password check |
+| Game mode selection (1v1–10v10) | Extend `lobby:set-mode` with structured mode object | `LobbyManager.setMode()` — parse mode into team size + player cap |
+| Team management (kick) | New `lobby:kick` socket event, host-only | `LobbyManager` — new `kickPlayer()` method |
+| Team auto-balance / shuffle | New `lobby:shuffle` socket event | `LobbyManager` — new `shuffleTeams()` method |
+| Ready-up system | Add `ready: boolean` to PlayerInfo, new `lobby:ready` event | `LobbyManager` — new `setReady()` + `allReady()` methods |
+| Real-time lobby state | Already implemented — `lobby:updated` broadcasts full state | No change needed; just add new fields to Lobby type |
+| Lobby chat | New `lobby:chat` socket event, broadcast to room | `server.ts` — 5-line handler: receive, sanitize, broadcast |
+| Ping indicators | socket.io built-in latency measurement | Access via `socket.io` ping/pong — emit latency in lobby updates |
+| AFK detection | Client tracks `Date.now()` of last input, server kicks after timeout | Client: input timestamp tracking. Server: `setInterval` check per lobby |
 
-Enable WAL mode immediately on startup — it allows concurrent reads while a write is in progress:
+### Game Start Flow (Phaser 3.87.0)
 
-```ts
-const db = new Database("game.db");
-db.pragma("journal_mode = WAL");
-db.pragma("foreign_keys = ON");
-```
+| Feature | Implementation | Phaser API |
+|---------|---------------|------------|
+| Pre-game loading screen | New `LoadingScene` — map preview, player names, mode info | `this.load.image()` for map thumbnail, `this.add.text()` for info |
+| Map preview | Render a pre-captured tilemap screenshot as Phaser image | `this.add.image()` from preloaded asset |
+| Spawn points per map | Tiled object layer with spawn point markers per team | Already using Tiled; add "spawns" object layer with `team` property |
+| Movement lock during countdown | Disable player input component temporarily | Set a `locked: boolean` flag on KeyboardComponent |
+| Camera zoom-in animation | Tween the camera zoom from wide to gameplay zoom | `this.cameras.main.setZoom()` + `this.tweens.add()` |
+| 10-second countdown | Phaser timer with text overlay | `this.time.addEvent({ delay: 1000, repeat: 9 })` + large centered text |
 
-### Database Schema Design
+### In-Match QoL (Phaser 3.87.0 + socket.io 4.8.3)
 
-better-auth manages its own tables via Drizzle adapter (auto-migrated on startup):
-
-```
-users          — better-auth: id, email, name, emailVerified, image, createdAt, updatedAt
-sessions       — better-auth: session tokens + expiry
-accounts       — better-auth: googleId linking (OAuth account → user)
-```
-
-Game-owned tables:
-
-```sql
-player_stats (
-  userId        TEXT PRIMARY KEY REFERENCES users(id),
-  rankScore     INTEGER DEFAULT 1000,
-  xp            INTEGER DEFAULT 0,
-  level         INTEGER DEFAULT 0,
-  upgradePoints INTEGER DEFAULT 0,
-  spellUpgrades TEXT DEFAULT '{}' -- JSON: { maxHp, maxMana, cooldownMult }
-)
-
-matches (
-  id         TEXT PRIMARY KEY,  -- UUID
-  mode       TEXT,              -- "battle_royale" | "2v2" | "3v3" | "4v4"
-  createdAt  INTEGER,           -- Unix timestamp
-  endedAt    INTEGER
-)
-
-match_players (
-  matchId    TEXT REFERENCES matches(id),
-  userId     TEXT REFERENCES users(id),
-  team       INTEGER,           -- 0 = BattleRoyale (no team)
-  placement  INTEGER,           -- 1st, 2nd, etc.
-  kills      INTEGER DEFAULT 0,
-  ratingDelta INTEGER           -- Elo change this match
-)
-```
-
-### DB Alternatives Rejected
-
-| Database | Verdict | Reason |
-|----------|---------|--------|
-| PostgreSQL (self-hosted) | ❌ | Requires running a Postgres server process; adds ops complexity (user, password, pg_hba.conf) for a 2-dev team on event day. No scale advantage at <100 players. |
-| MongoDB | ❌ | Schema-less is a liability for gaming data that needs consistency (rank can't be undefined, XP must be numeric). Learning curve for a team already on SQL path. |
-| Firebase Firestore | ❌ | Cloud-dependent. Same internet-failure risk as Firebase Auth. All data must live on the event server. |
-| PlanetScale / Neon / Turso | ❌ | Cloud-dependent. Match result writes fail if internet drops during a match. |
+| Feature | Implementation | Key Decision |
+|---------|---------------|-------------|
+| Kill feed | Phaser text container overlay in MatchHUDScene | Use Phaser GameObjects, NOT DOM — consistent with existing UI style |
+| Match timer | Phaser timed event displayed in HUD | `this.time.addEvent()` with callback each second |
+| Spectator mode | Camera follows living player, input disabled, cycle targets | `camera.startFollow(target)`, arrow keys to switch |
+| Quick rematch | socket.io `game:rematch` vote event, server resets lobby | Server sets lobby `status: 'waiting'`, players skip connect screen |
 
 ---
 
-## 5. ORM + Migrations
+## Critical Architecture Decision: Spectator Data Path
 
-### Recommendation: `drizzle-orm@0.45.1` + `drizzle-kit@0.31.10`
+**Spectators MUST receive game state via socket.io, NOT WebRTC.**
 
-Drizzle is a TypeScript-first, lightweight ORM (~7.4kb minified+gzipped, 0 dependencies). It generates fully typed query results from schema declarations. Both packages were published within the last 3 days — actively maintained.
+Reason: When a player dies, their WebRTC peer connections become stale — they are no longer sending position data, and the mesh was designed for active players only. Dead/spectating players need to observe the remaining players' positions and kills.
 
-```ts
-// schema.ts (game-owned tables)
-import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+**Implementation approach:**
+1. When a player dies, the host (or server) continues sending match events (kills, eliminations) via socket.io to the lobby room — all sockets stay connected to the lobby room
+2. For spectator position data, two options (recommend Option A):
+   - **Option A (simpler):** Spectators see the last-known positions from their still-open WebRTC channels. The WebRTC channels don't close immediately on death — they stay open as long as the browser tab is open. The dead player just stops *sending* but keeps *receiving*. This works because WebRTC `ondatachannel` listeners are still active.
+   - **Option B (if Option A proves unreliable):** Server relays a reduced-rate position stream (5 Hz instead of 20 Hz) to spectators via socket.io.
 
-export const playerStats = sqliteTable("player_stats", {
-  userId:        text("user_id").primaryKey(),
-  rankScore:     integer("rank_score").default(1000).notNull(),
-  xp:            integer("xp").default(0).notNull(),
-  level:         integer("level").default(0).notNull(),
-  upgradePoints: integer("upgrade_points").default(0).notNull(),
-  spellUpgrades: text("spell_upgrades").default("{}").notNull(),
-});
-
-// Fully typed: db.select().from(playerStats) returns PlayerStats[]
-```
-
-Migration workflow:
-```bash
-# During development: push schema directly (no migration files)
-pnpm drizzle-kit push
-
-# For production deploys: generate SQL migration files
-pnpm drizzle-kit generate
-pnpm drizzle-kit migrate
-```
-
-**Why NOT Prisma:**
-Prisma requires downloading a ~50MB binary during `npm install` (Prisma Engines). This `postinstall` download can fail or be slow on event-day internet. Prisma also requires a code-generation step (`prisma generate`) before the TypeScript compiler can resolve types, adding a build step that trips up first-time devs. Drizzle has no binary, no generation step, and is ~10x smaller.
+**Start with Option A** — it requires zero new code for position relay. Only kill events and match-end events need socket.io broadcast (which is already the pattern for `game:player-disconnected`).
 
 ---
 
-## 6. CORS
+## Server-Side Extensions (No New Packages)
 
-### Recommendation: `cors@2.8.6`
+### LobbyManager New Methods
 
-Standard Express CORS middleware. Must be configured with specific origins (not `*`) and `credentials: true` because better-auth uses cookie-based sessions.
+| Method | Purpose | Complexity |
+|--------|---------|------------|
+| `createLobby(socketId, playerName, lobbyName, password?)` | Extend existing with name + optional password | Low — add 2 fields |
+| `joinLobby(lobbyId, socketId, name, password?)` | Extend existing with password validation | Low — add conditional check |
+| `kickPlayer(hostSocketId, targetPlayerId)` | Host removes a player from lobby | Low — filter + re-emit |
+| `setReady(socketId, ready: boolean)` | Player toggles ready state | Low — set field on PlayerInfo |
+| `allReady(lobbyId): boolean` | Check if all players are ready | Low — `every()` check |
+| `shuffleTeams(hostSocketId)` | Randomly assign balanced teams | Low — Fisher-Yates shuffle + split |
+| `autoBalance(hostSocketId)` | Even out team sizes | Low — move excess players |
+| `getSpawnPoints(mode, mapId): SpawnPoint[]` | Return spawn coords for the map/mode | Med — needs map-to-spawn data |
 
-```ts
-app.use(cors({
-  origin: [
-    "http://localhost:5173",       // Vite dev server
-    process.env.CLIENT_ORIGIN!,    // e.g. "https://mages.example.com"
-  ],
-  credentials: true,               // required for cookie auth
-}));
-```
+### New Socket Events in server.ts
 
-Security note: `credentials: true` with `origin: "*"` is rejected by browsers. Always specify exact origins.
-
----
-
-## 7. Socket Authentication — Game Session Tokens
-
-### Recommendation: `jsonwebtoken@9.0.3`
-
-better-auth handles HTTP auth (login, session cookies). Socket.io needs a separate, stateless auth mechanism — passing cookies through socket.io is fragile and exposes them to JavaScript storage. The pattern is:
-
-1. Player logs in via Google OAuth → better-auth issues session cookie
-2. Player hits `GET /api/game-token` (REST endpoint, authenticated via cookie) → server issues a short-lived JWT (15 min), signed with `JWT_SECRET`
-3. Phaser client stores JWT in memory (not localStorage — it expires quickly anyway)
-4. Phaser passes JWT as `auth.token` on socket.io connection
-5. Socket.io middleware on server verifies JWT on each namespace join
-
-```ts
-// Socket.io auth middleware
-io.of("/game").use((socket, next) => {
-  const token = socket.handshake.auth.token as string;
-  try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET!) as { sub: string };
-    socket.data.userId = payload.sub;
-    next();
-  } catch {
-    next(new Error("unauthorized"));
-  }
-});
-```
-
-**Security requirements:**
-- `JWT_SECRET` must be randomly generated (at least 32 bytes of entropy), never hardcoded
-- 15-minute expiry minimises the exposure window if a token is intercepted
-- Client requests a fresh token before each match start (not per-message — just once per connection)
-- Never validate tokens on the client side — only the server verifies JWTs
+| Event | Direction | Purpose |
+|-------|-----------|---------|
+| `lobby:kick` | Client -> Server | Host kicks a player |
+| `lobby:ready` | Client -> Server -> Room | Player toggles ready, broadcast updated lobby |
+| `lobby:shuffle` | Client -> Server -> Room | Host shuffles teams |
+| `lobby:chat` | Client -> Server -> Room | Chat message (text + playerName + timestamp) |
+| `lobby:ready-to-play` | Client -> Server | Client finished loading assets |
+| `game:all-loaded` | Server -> Room | All clients loaded, begin countdown |
+| `game:kill` | Client -> Server -> Room | Kill event for feed + spectators |
+| `game:match-end` | Server -> Room | Match over, results payload |
+| `game:rematch-vote` | Client -> Server | Player votes for rematch |
+| `game:rematch-start` | Server -> Room | Enough votes, resetting lobby |
 
 ---
 
-## 8. Ranking System
+## Type Extensions
 
-### Recommendation: Custom Elo implementation — **no library needed**
+Extend existing types in both `src/networking/types.ts` and `game-server/src/types.ts`:
 
-Elo is 5 lines of arithmetic. No library is warranted; it would add a versioned dependency for a trivial mathematical formula.
+```typescript
+// --- Extend existing types ---
 
-```ts
-const K_FACTOR = 32;
+export type PlayerInfo = {
+  id: string;
+  name: string;
+  socketId: string;
+  element?: string;
+  team?: number;
+  ready?: boolean;          // NEW: lobby ready-up
+  alive?: boolean;          // NEW: alive status in match
+};
 
-export function eloUpdate(winnerRating: number, loserRating: number) {
-  const expectedWinner = 1 / (1 + Math.pow(10, (loserRating - winnerRating) / 400));
-  return {
-    winner: Math.round(winnerRating + K_FACTOR * (1 - expectedWinner)),
-    loser:  Math.round(loserRating  + K_FACTOR * (0 - (1 - expectedWinner))),
+export type Lobby = {
+  id: string;
+  hostPlayerId: string;
+  players: PlayerInfo[];
+  mode: string | null;
+  status: 'waiting' | 'loading' | 'in-progress' | 'finished';  // NEW: loading, finished
+  name?: string;            // NEW: custom lobby name
+  password?: string;        // NEW: private lobby (server-only, never sent to clients)
+  maxPlayers?: number;      // NEW: derived from game mode (2 for 1v1, 20 for 10v10)
+  mapId?: string;           // NEW: selected map identifier
+};
+
+// --- New types ---
+
+export type ChatMessage = {
+  playerId: string;
+  playerName: string;
+  text: string;
+  timestamp: number;
+};
+
+export type KillEvent = {
+  killerId: string;
+  killerName: string;
+  victimId: string;
+  victimName: string;
+  spellElement: string;
+};
+
+export type SpawnPoint = {
+  x: number;
+  y: number;
+  team?: number;            // undefined = FFA spawn
+};
+
+export type GameMode = {
+  type: 'ffa' | 'team';    // ffa = Battle Royale, team = team deathmatch
+  teamSize: number;         // 1 for ffa/1v1, 2 for 2v2, etc.
+  teamCount: number;        // 2 for team modes, N for ffa
+  maxPlayers: number;       // teamSize * teamCount
+};
+
+export type MatchResult = {
+  winnerId?: string;
+  winningTeam?: number;
+  placements: { playerId: string; placement: number; kills: number }[];
+  duration: number;         // seconds
+};
+```
+
+---
+
+## New Phaser Scenes
+
+| Scene Key | Purpose | Lifecycle |
+|-----------|---------|-----------|
+| `LOADING_SCENE` | Pre-game: map preview, player list, mode info, asset loading progress | After `lobby:started`, before `GAME_SCENE` |
+| `MATCH_HUD_SCENE` | Kill feed, match timer, spectator UI (overlay) | Launched parallel with `GAME_SCENE` via `this.scene.launch()` |
+
+The existing `LobbyScene` should be **extended in-place** for: custom lobby name input, password field, game mode dropdown, ready-up buttons, chat panel, kick buttons, shuffle/balance buttons.
+
+The existing `GameOverScene` should be **extended** for: match results display, kill/death stats, quick rematch button.
+
+---
+
+## New Event Bus Events
+
+Add to `CUSTOM_EVENTS` in `src/common/event-bus.ts`:
+
+```typescript
+// Lobby phase
+NETWORK_LOBBY_CHAT: 'NETWORK_LOBBY_CHAT',
+NETWORK_LOBBY_KICK: 'NETWORK_LOBBY_KICK',
+NETWORK_LOBBY_READY: 'NETWORK_LOBBY_READY',
+
+// Game start flow
+NETWORK_ALL_LOADED: 'NETWORK_ALL_LOADED',
+MATCH_COUNTDOWN_TICK: 'MATCH_COUNTDOWN_TICK',
+MATCH_STARTED: 'MATCH_STARTED',
+
+// In-match
+MATCH_KILL: 'MATCH_KILL',
+MATCH_TIMER_TICK: 'MATCH_TIMER_TICK',
+MATCH_ENDED: 'MATCH_ENDED',
+SPECTATOR_TARGET_CHANGED: 'SPECTATOR_TARGET_CHANGED',
+
+// Rematch
+MATCH_REMATCH_VOTE: 'MATCH_REMATCH_VOTE',
+MATCH_REMATCH_START: 'MATCH_REMATCH_START',
+```
+
+---
+
+## What NOT to Add
+
+| Avoid | Why | Use Instead |
+|-------|-----|-------------|
+| Any UI framework (React, Vue, DOM overlays) | Project uses Phaser-native UI throughout; DOM mixing breaks pixel-art aesthetic and adds bundle size | Phaser text, containers, rectangles (existing pattern in LobbyScene) |
+| Chat library (Stream Chat, Sendbird) | Chat is lobby-scoped, ephemeral, max 20 players; socket.io handles this in 10 lines | `socket.emit('lobby:chat', { text })` |
+| Matchmaking library/service | LAN-based with manual lobby join; no MMR queue needed for v1.2 | LobbyManager with mode/team config |
+| Redis | Single-server, single-process, <100 players; in-memory `Map` is fine | Existing `Map<string, Lobby>` in LobbyManager |
+| State management library (Zustand, MobX) | Phaser EventEmitter pattern is working; second state system = two sources of truth | EVENT_BUS + scene-local state (existing pattern) |
+| Colyseus / geckos.io / other game framework | Would require rewriting the entire networking layer that is already validated | Extend existing server.ts + NetworkManager |
+| Database (for v1.2) | Lobbies are ephemeral; no persistence needed until v2.0 adds accounts/ranking | In-memory Map (defer DB to v2.0) |
+| Express 5 upgrade | Server works on Express 4.21.0; upgrading mid-milestone adds risk for zero benefit | Stay on Express 4.21.0 for v1.2 |
+| Additional WebRTC libraries | WebRTC mesh is fully implemented; spectator mode works via existing channels | Existing NetworkManager WebRTC implementation |
+
+---
+
+## Chat Implementation (No Library)
+
+Server-side (add to `server.ts`):
+
+```typescript
+// Rate limit: Map<socketId, lastMessageTimestamp>
+const chatRateLimit = new Map<string, number>();
+
+socket.on('lobby:chat', ({ text }: { text: string }) => {
+  const now = Date.now();
+  const last = chatRateLimit.get(socket.id) ?? 0;
+  if (now - last < 1000) return; // 1 msg/sec rate limit
+  chatRateLimit.set(socket.id, now);
+
+  const lobby = lobbyManager.getLobbyBySocketId(socket.id);
+  if (!lobby) return;
+  const player = lobby.players.find(p => p.socketId === socket.id);
+  if (!player) return;
+
+  const sanitized = text.slice(0, 200).trim();
+  if (!sanitized) return;
+
+  const msg: ChatMessage = {
+    playerId: player.id,
+    playerName: player.name,
+    text: sanitized,
+    timestamp: now,
   };
-}
+  io.to(`lobby:${lobby.id}`).emit('lobby:chat', msg);
+});
 ```
 
-**Battle Royale Elo:** Apply pairwise against the player who eliminated you. 1st place is considered the "winner" against all other players for secondary Elo adjustments.
-
-**Team mode Elo:** Average the Elo of each team, update team average, distribute proportionally per-player.
-
-Starting Elo: 1000 for all new accounts. Displayed rank tier can be derived from score bands (e.g., Bronze < 1100, Silver 1100–1300, Gold 1300+).
+No XSS risk because Phaser `Text` objects do not render HTML. No profanity filter needed for a college event (players know each other).
 
 ---
 
-## 9. Spell Progression & XP Leveling
+## AFK Detection Design
 
-### No additional library needed — pure DB schema + arithmetic
+| Phase | Timeout | Action |
+|-------|---------|--------|
+| Lobby (waiting) | 60s no input | Server emits `lobby:afk-warning` at 45s, auto-kicks at 60s |
+| Lobby (loading) | No AFK check | Players are passively loading assets |
+| In-match (alive) | 30s no input | Broadcast "[Player] is AFK" via chat; no auto-kick (they lose by dying) |
+| In-match (spectating) | No AFK check | Spectators are passively watching |
 
-**XP formula:**
-- Win: 100 XP + 10 × kills
-- Loss: 25 XP + 10 × kills
-
-**Level formula** (smooth growth curve):
-```ts
-level = Math.floor(Math.sqrt(xp / 50))
-// Level 1 = 50 XP, Level 2 = 200 XP, Level 5 = 1250 XP, Level 10 = 5000 XP
-```
-
-**Upgrade points:** 1 point per level-up. Spent on stats stored in `player_stats.spellUpgrades` JSON:
-
-```json
-{
-  "maxHp": 0,        // 0–3 upgrades, +10 HP each → max +30 HP
-  "maxMana": 0,      // 0–3, +15 mana each → max +45 mana
-  "cooldownMult": 0  // 0–3, −5% cooldown each → max −15%
-}
-```
-
-Server reads `player_stats` at lobby join and factors upgraded stats into the authoritative game session. Clients receive their effective stats in the match-start event and display them in HUD.
+Client implementation: track `Date.now()` on any keyboard/mouse event. Send `lobby:heartbeat` every 15s with `lastInputTime`. Server compares timestamps.
 
 ---
 
-## 10. What NOT to Add
+## Spawn Point System
 
-| Technology | Decision | Reason |
-|-----------|----------|--------|
-| **Redis** | ❌ Skip | In-process `Map<lobbyCode, LobbyState>` in the Node.js server is sufficient for one process at event scale. No need for a separate cache/pubsub service. |
-| **GraphQL** | ❌ Skip | REST is faster to implement, easier to debug, and the data access patterns are simple enough (player profile, match history, leaderboard). |
-| **P2P / WebRTC** | ❌ Skip | Server-authoritative socket.io is required for PvP anti-cheat. All spell hit detection runs on the server. |
-| **Firebase (any)** | ❌ Skip | Creates a cloud-dependent failure mode for a physical venue event. Self-host everything. |
-| **PostgreSQL** | ❌ Skip | SQLite handles the load with headroom. Adding Postgres adds ops complexity with zero benefit at event scale. |
-| **Prisma** | ❌ Skip | Binary download, code-generation step. Drizzle is simpler, smaller, and faster. |
-| **Colyseus** | ❌ Skip | Adds a framework abstraction layer over socket.io that increases learning overhead without adding meaningful capabilities for 2 devs. |
-| **NextAuth / Auth.js** | ❌ Skip | Better-auth covers the same ground with a cleaner non-Next.js integration story. |
+Use Tiled object layers (already integrated via existing map system):
+
+1. Add a `spawns` object layer to each Tiled map
+2. Each spawn point is a Tiled point object with custom properties: `team` (number), `index` (number)
+3. Server stores spawn point data per map (loaded from a JSON config, or hardcoded initially)
+4. `matchConfig` payload (already sent on `lobby:started`) includes spawn assignments per player
+
+```typescript
+// Extend existing MatchConfig
+export type MatchConfig = {
+  lobbyId: string;
+  players: PlayerInfo[];
+  mode: string;
+  spawns: Record<string, SpawnPoint>;  // NEW: playerId -> spawn position
+  mapId: string;                        // NEW: which map to load
+};
+```
 
 ---
 
-## Installation Commands
+## Version Compatibility (All Verified from Installed Packages)
 
-### Server (new `server/` sub-project)
+| Package | Installed Version | Compatible With | Notes |
+|---------|------------------|-----------------|-------|
+| socket.io | 4.8.3 | socket.io-client 4.8.3 | Major versions must match; already matched |
+| Phaser | 3.87.0 | TypeScript 5.7.3 | Ships proper .d.ts since 3.80+ |
+| Vite | 6.0.7 | TypeScript 5.7.3 | No issues |
+| Node.js | 20.11.0 (volta) | All server deps | LTS, fully supported through 2026 |
+| Express | 4.21.0 | socket.io 4.8.3 | Standard integration, verified in existing server.ts |
+
+---
+
+## Installation
 
 ```bash
-# Runtime
-pnpm add express socket.io better-auth drizzle-orm better-sqlite3 jsonwebtoken cors
-
-# Dev / types
-pnpm add -D drizzle-kit tsx @types/express @types/node @types/cors @types/jsonwebtoken @types/better__sqlite3 typescript
-```
-
-### Client (existing Phaser repo root)
-
-```bash
-pnpm add socket.io-client
+# No new packages needed for v1.2.
+# Verify existing installs:
+cd /c/Users/Arthu/Desktop/code/game-topicos-especiais && pnpm install
+cd game-server && npm install
 ```
 
 ---
 
 ## Sources
 
-All versions verified against npmjs.com on March 26, 2026.
+| Source | What Was Verified | Confidence |
+|--------|------------------|------------|
+| Installed `node_modules/socket.io/package.json` | Version 4.8.3, rooms/broadcasting are core features | HIGH |
+| Installed `node_modules/phaser/package.json` | Version 3.87.0, Scene/Camera/Timer APIs | HIGH |
+| Existing `game-server/src/server.ts` | socket.io room pattern already working for lobbies | HIGH |
+| Existing `game-server/src/lobby-manager.ts` | Lobby CRUD already implemented, just needs extensions | HIGH |
+| Existing `src/networking/network-manager.ts` | WebRTC mesh fully implemented, channels stay open after death | HIGH |
+| Existing `src/scenes/lobby-scene.ts` | Phaser-native UI pattern established (text, containers, rectangles) | HIGH |
+| Existing `src/common/event-bus.ts` | EventEmitter pattern for decoupled communication | HIGH |
+| Training data for socket.io rooms/chat patterns | Well-established patterns, stable since socket.io 2.x | MEDIUM |
+| Training data for Phaser camera.startFollow() | Documented in Phaser 3 API since 3.0 | MEDIUM |
 
-| Library | Verified Version | Source | Confidence |
-|---------|-----------------|--------|-----------|
-| socket.io | 4.8.3 | npmjs.com/package/socket.io | HIGH |
-| socket.io-client | 4.8.3 | npmjs.com/package/socket.io-client | HIGH |
-| better-auth | 1.5.6 — published 4 days ago | npmjs.com/package/better-auth + better-auth.com/docs | HIGH |
-| passport-google-oauth20 | 2.0.0 — published **7 years ago** | npmjs.com/package/passport-google-oauth20 | HIGH |
-| better-sqlite3 | 12.8.0 — published 13 days ago | npmjs.com/package/better-sqlite3 | HIGH |
-| drizzle-orm | 0.45.1 — published 3 days ago | npmjs.com/package/drizzle-orm | HIGH |
-| drizzle-kit | 0.31.10 — published 3 days ago | npmjs.com/package/drizzle-kit | HIGH |
-| express | 5.2.1 — published 4 months ago | npmjs.com/package/express | HIGH |
-| fastify | 5.8.4 | npmjs.com/package/fastify | HIGH |
-| jsonwebtoken | 9.0.3 | npmjs.com/package/jsonwebtoken | HIGH |
-| cors | 2.8.6 | npmjs.com/package/cors | HIGH |
+---
+*Stack research for: v1.2 Lobby & Game Start Flow*
+*Researched: 2026-04-21*

@@ -1,197 +1,170 @@
-# Research Summary — Mages v2.0 PvP Event Multiplayer
+# Project Research Summary
 
-**Synthesized:** 2026-03-26  
-**Sources:** STACK.md · FEATURES.md · ARCHITECTURE.md · PITFALLS.md  
-**Confidence:** HIGH across all areas
-
----
+**Project:** v1.2 Lobby & Game Start Flow
+**Domain:** Multiplayer PvP game -- lobby system, matchmaking, pre-game flow, in-match QoL
+**Researched:** 2026-04-21
+**Confidence:** HIGH
 
 ## Executive Summary
 
-Mages v2.0 is a competitive, real-time PvP web game playable at a live college event (~50–100 players). The established pattern for this class of game is: **server-authoritative game loop** over socket.io rooms, with Google OAuth handled entirely on the server and JWT passed via the socket.io handshake. All spell hit detection runs on the server; Phaser handles only visuals and local movement feel. This architecture eliminates the two largest risk classes (client-side cheat, physics desync) at the cost of one new `server/` sub-project.
+This milestone is a pure feature-layer build on top of a validated stack. Zero new dependencies are needed -- Phaser 3.87.0, socket.io 4.8.3, TypeScript 5.7.3, Express 4.21.0, and the existing WebRTC mesh provide every capability required. The work spans lobby enhancements (password, game modes, ready-up, kick, chat, AFK), a pre-game loading and countdown flow, in-match QoL (kill feed, match timer, spectator mode), and post-match rematch. All patterns are well-established in multiplayer game development with high-confidence references.
 
-The stack choice is clear: Express + socket.io + better-auth + SQLite (via better-sqlite3 + drizzle-orm) gives a self-contained, zero-cloud, zero-ops server that fits a 2-dev team on a 3-month timeline. SQLite is not a compromise for this scale — it handles 2000+ queries/second, requires no server process, and its entire state is a single file. Backup = copy the file.
+The recommended approach is a strict five-phase build that respects dependency chains: first fix critical existing debt (event listener cleanup, reactive host detection, singleton reset methods), then build lobby enhancements, then the pre-game flow with spawn points, then in-match features, and finally post-match/rematch. This ordering prevents the top pitfalls -- particularly the WebRTC mesh leak on rematch, lobby state divergence, and broken host migration -- from compounding as features stack up.
 
-The biggest development risk is not technical complexity — it is **time compression**: single-day event players will experience the full XP/level spread in 4 hours, not months. Level advantages must be capped at ≤15% stat delta. Deploy early (week 2), test on the real campus WiFi, and reserve the final week for stability-only work.
-
----
-
+The key risks are: (1) event listener leaks across Phaser scene transitions, which must be fixed before adding any new scenes; (2) WebRTC mesh not being torn down between matches, which blocks the rematch loop; (3) singletons without reset() methods, which corrupt game state on rematch; and (4) the host migration boolean never updating from server state, which breaks all host-only controls. All four are addressable with targeted refactors before feature work begins.
 ## Key Findings
 
-### Stack Additions (server/ sub-project + 1 client package)
+### Recommended Stack
 
-| Layer | Package | Version | Purpose |
-|-------|---------|---------|---------|
-| HTTP | `express` | 5.2.1 | REST API + socket.io host |
-| Real-time (server) | `socket.io` | 4.8.3 | Lobbies, game loop, events |
-| Real-time (client) | `socket.io-client` | 4.8.3 | Phaser → server bridge |
-| Auth | `better-auth` | 1.5.6 | Google OAuth, sessions, user records |
-| Database | `better-sqlite3` | 12.8.0 | All persistence (self-hosted, no cloud) |
-| ORM | `drizzle-orm` | 0.45.1 | Type-safe queries |
-| Migrations | `drizzle-kit` | 0.31.10 | Schema push / migration files |
-| CORS | `cors` | 2.8.6 | Exact-origin allow-list with `credentials: true` |
-| JWT | `jsonwebtoken` | 9.0.3 | Socket handshake token after login |
-| Ranking | Custom Elo | — | 5-line formula, no library needed |
+No changes to the stack. The existing installed packages handle every v1.2 requirement. This is unusual and valuable -- it means zero integration risk from new dependencies.
 
-**Not added:** Redis, PostgreSQL, Prisma, Firebase, GraphQL, Colyseus, NextAuth, WebRTC.
+**Core technologies (all existing, validated):**
+- **Phaser 3.87.0**: All client UI, scenes, camera, timers, tweens -- kill feed, spectator camera, countdown overlay, loading screen
+- **socket.io 4.8.3**: All lobby communication, chat, ready-up, kick, timer sync, match lifecycle events -- rooms API handles lobby scoping natively
+- **WebRTC (browser native)**: P2P game state during matches -- spectators can passively receive on existing channels without new code
+- **Tiled (via existing map system)**: Spawn points as object layers -- existing parsing infrastructure supports this directly
 
----
+### Expected Features
 
-### Feature Table Stakes
+**Must have (table stakes) -- 11 features:**
+- Lobby browser with names and refresh
+- Game mode selection (1v1 through 10v10)
+- Ready-up system with host start gating
+- Kick player (host-only)
+- Auto-balance / shuffle teams
+- Pre-game loading screen (map preview, player list, mode info)
+- Spawn point system per map
+- Match countdown (10s) with movement lock
+- Match timer
+- Kill feed
+- Quick rematch
 
-#### Auth / Accounts
-- Google OAuth via `better-auth` — redirect flow on server only, never in Phaser client
-- JWT issued from `GET /api/game-token` after cookie session; passed in socket.io handshake `auth.token`
-- "Continue as [Name] or Switch Account?" prompt on page load (shared event machines)
-- Prominent logout button on main menu; return to login screen after match ends
+**Should have (differentiators) -- 4 features:**
+- Spectator mode (high value for college event crowd engagement)
+- Lobby chat
+- Private lobbies with password
+- AFK detection
 
-#### Lobby System
-- 6-char invite code (server-generated, collision-checked); shareable link
-- Player list with ready-state toggle; host controls mode and start
-- Lobby state machine: `WAITING → STARTING → IN_MATCH` — no joins accepted once `STARTING`
-- On owner disconnect pre-start: auto-close lobby and notify remaining players
-- Auto-destroy lobby when empty; 60s inactivity timeout
+**Defer (v2+):**
+- Camera zoom-in on spawn (pure polish)
+- Map auto-sizing by game mode (needs multiple map variants)
+- Team color tinting on sprites (visual polish, no gameplay impact)
+- Ranked matchmaking, voice chat, mid-match join, replay system (anti-features for this context)
 
-#### Battle Royale Mode
-- Shrinking safe zone (2–3 stages, visual ring, damage outside boundary)
-- No respawn; remaining-player count HUD; placement tracking (1st, 2nd, …)
-- Zone contractions announced ("Zone closing in 15s"); kill feed in HUD
-- Disconnect during match = eliminated at disconnect moment (after 15s reconnection window)
+### Architecture Approach
 
-#### Team vs Team (2v2, 3v3, 4v4)
-- Team color-coding on player sprites; team roster in lobby
-- Last-team-standing win condition; friendly fire OFF
-- Equal team size enforced before host can start
-- On full team disconnect: surviving team wins immediately
+The architecture extends the existing Phaser parallel-scene pattern. Three new scenes (LoadingScene, MatchHudScene, PostMatchScene) join the existing scene graph. Match lifecycle logic is extracted into a src/match/ module (spawn manager, kill feed, spectator controller, match state) to prevent GameScene from growing past its current 1700+ lines. Lobby features are modularized into src/lobby/ (chat, ready state, AFK detector, game mode config). The server remains a thin signaling and authority layer with LobbyManager extensions and a new GameRoom concept for match-scoped state.
 
-#### Match Lifecycle FSM
-`LOBBY → LOADING → COUNTDOWN → ACTIVE → ENDED → RESULTS → LOBBY/DISBANDED`
-- 3-2-1 countdown before play begins; server validates all state transitions
-- Match timeout (10-min hard limit) prevents infinite stalemates
-- Disconnect handling: 15-second reconnection window before treating as eliminated
-- Match abandoned (all disconnect) → no ranking changes
+**Major components:**
+1. **LobbyScene (modify)** -- Add password, game mode picker, ready-up, kick, auto-balance, shuffle, chat, AFK, ping display
+2. **LoadingScene (new)** -- Pre-game screen: map preview, player list, teams, mode, asset loading progress
+3. **GameScene (modify)** -- Add spawn point placement, countdown overlay, movement lock
+4. **MatchHudScene (new)** -- Overlay: kill feed, match timer, spectator controls
+5. **PostMatchScene (new)** -- Results display, quick rematch voting, return to lobby
+6. **src/match/ modules (new)** -- match-state.ts, spawn-manager.ts, kill-feed.ts, spectator-controller.ts
+7. **src/lobby/ modules (new)** -- lobby-chat.ts, ready-state.ts, afk-detector.ts, game-mode-config.ts
+8. **LobbyManager (server, modify)** -- Password, ready-up tracking, kick, AFK timeout, mode validation
+9. **NetworkManager (modify)** -- New socket events, separate mesh lifecycle from socket lifecycle (teardownMesh)
 
-#### Ranking System
-- ELO with K=32, base 1000, placement-weighted for BR
-- BR formula: 1st = S1.0, 2nd = S0.75, 3rd = S0.5, 4th+ = S0.1 (zero-sum across match)
-- Team mode: Win = S1.0, Loss = S0.0; ELO update per player vs average opponent team ELO
-- Global leaderboard; provisional indicator for < 3 matches played
-- Disconnect mid-match = last-place rank penalty (no ragequit bypass)
+### Critical Pitfalls
 
-#### Spell Progression / Leveling
-- XP: Win = 100 + (10 × kills), Loss = 25 + (10 × kills)
-- Level = `floor(sqrt(xp / 50))` — Level 5 ≈ 1250 XP (~10 matches)
-- 1 upgrade point per level; max 3 per stat: HP (+10 each), Mana (+15 each), Cooldown (−5% each)
-- All 6 elements available from match 1 — zero progression gates on gameplay access
-- Server computes and sends final stats at match start; client never receives raw upgrade points
+1. **Event listener leaks across scene transitions** -- Phaser scene.restart() calls shutdown then create in sequence; if cleanup is incomplete, listeners double-bind. Fix: ALL EVENT_BUS.on() in create(), ALL EVENT_BUS.off() in shutdown(). Must be enforced before adding any new scenes.
 
----
+2. **WebRTC mesh not torn down between matches** -- NetworkManager conflates socket connection with mesh lifetime. Rematch creates duplicate peer connections. Fix: Extract a public teardownMesh() method that closes WebRTC without killing the socket. Call it on match-end-to-lobby transition.
 
-## Key Architectural Decisions
+3. **Singletons without reset() methods** -- DataManager, InventoryManager, ElementManager hold stale state across matches. Fix: Add reset() to every singleton before building rematch. Non-negotiable prerequisite.
 
-1. **Pre-Phaser login page.** `index.html` detects no JWT → redirect to `/login.html`. Phaser boots only after auth is complete. Prevents OAuth redirect from destroying in-memory game state.
+4. **Host migration not propagated to client** -- LobbyScene.#isHost is a local boolean set once on create, never updated from server state. Fix: Replace with reactive derivation from currentLobby.hostPlayerId === myPlayerId. Must happen before any host-only features.
 
-2. **Server-authoritative hit detection.** Client sends `CAST_SPELL { element, x, y, targetX, targetY }`. Server validates (alive? cooldown? mana?), resolves hits, broadcasts `HIT { targetId, damage, newHp }` to all clients. Phaser physics = visual only.
+5. **Spawn points unvalidated against player count** -- No contract between map data and runtime requirements. Fix: Validate spawn count >= max players at map load, add fallback generation, mode-aware team filtering.
 
-3. **NetworkManager singleton.** `src/common/network-manager.ts` wraps socket.io. Knows nothing about Phaser scenes. Scenes listen to its events. Created before any networking code is written — prevents the `GameScene` god-object from absorbing networking logic.
+## Implications for Roadmap
 
-4. **`PvPGameScene` = fork of `GameScene`.** Original `GameScene` untouched. `PvPGameScene` replaces single `#player` with `#localPlayer + Map<string, RemotePlayer>`. Enemies removed, server events drive damage.
+Based on research, suggested phase structure:
 
-5. **RemotePlayer with 100ms interpolation buffer.** No state machine on remote players. `applySnapshot()` lerps position toward server-broadcast coordinates with a 100ms render delay, eliminating jitter at 20Hz tick rate.
+### Phase 1: Foundation Cleanup and Lobby Infrastructure
 
-6. **REST for persistence, socket.io for real-time.** Leaderboard and account info = `GET /api/*`. Lobby state, positions, match events = socket.io. Match-end rank/XP update = socket event triggers internal DB write.
+**Rationale:** Four critical bugs (event listener leaks, host migration boolean, singleton resets, mesh lifecycle) must be fixed before any feature work. These are load-bearing architectural fixes that every subsequent phase depends on.
+**Delivers:** Clean scene transition pattern, reactive host detection, singleton reset methods, mesh teardown capability, typed event bus constants for all new events
+**Addresses:** No user-facing features -- pure stability
+**Avoids:** Pitfalls #1 (listener leaks), #2 (mesh leak), #4 (host migration), #12 (singleton state)
 
-7. **SQLite with WAL mode.** `db.pragma("journal_mode = WAL")` on startup. Allows concurrent reads during writes. Single `.db` file — backup strategy is a file copy.
+### Phase 2: Lobby Enhancements
 
-### Build Order (dependencies determine sequence)
+**Rationale:** Lobby features have zero match dependencies and can be built and tested independently. Game mode config is a prerequisite for spawn points and loading screen.
+**Delivers:** Full-featured lobby with game mode selection, ready-up, kick, auto-balance/shuffle, lobby chat, private lobbies (password), lobby browser refresh, AFK detection in lobby
+**Addresses:** 9 of 11 P1 features (lobby-side), plus 3 P2 features (chat, password, AFK)
+**Avoids:** Pitfalls #3 (state divergence -- add version counter), #6 (ready-up race -- atomic server check), #13 (mode vs player count -- server validation), #14 (password leak -- server-only storage)
 
-```
-Phase 1: Auth + server scaffold    (everything depends on player identity)
-Phase 2: Lobby system              (match lifecycle depends on lobby state)
-Phase 3: Match lifecycle FSM       (ranking and progression depend on match end events)
-Phase 4: Battle Royale mode        (most complex game mode; establishes combat sync)
-Phase 5: Team vs Team modes        (built on BR foundation; adds team assignment layer)
-Phase 6: Ranking system            (depends on match results from Phase 3–5)
-Phase 7: Spell progression         (depends on auth, match lifecycle, ranking)
-Phase 8: Deployment + pre-event QA (must start in week 2, not the final week)
-```
+### Phase 3: Pre-Game Flow and Spawn System
 
----
+**Rationale:** Depends on game mode config from Phase 2. Spawn points must exist before countdown can place players. Loading screen must exist before match initialization.
+**Delivers:** LoadingScene with map preview and player list, spawn point system in Tiled maps, SpawnManager, server loading coordinator with timeout, match countdown with movement lock
+**Addresses:** Pre-game loading screen, spawn point system, match countdown with movement lock
+**Avoids:** Pitfalls #5 (spawn validation), #9 (loading deadlock -- 30s timeout)
 
-## Top 5 Pitfalls to Avoid
+### Phase 4: In-Match QoL
 
-### 1. Client-Side Hit Detection (CRITICAL)
-Never trust clients to report `DEAL_DAMAGE`. Any Phaser `physics.overlap()` result for PvP must be replicated on the server. Decision made in Phase 4; impossible to fix after the fact without rewriting combat.
+**Rationale:** Requires an active match with spawn points and countdown already working. Kill feed, match timer, and spectator mode are independent of each other but all need the match lifecycle in place.
+**Delivers:** MatchHudScene overlay, kill feed with sequence ordering, server-authoritative match timer, spectator mode with camera cycling, player elimination flow
+**Addresses:** Kill feed, match timer, spectator mode
+**Avoids:** Pitfalls #7 (spectator mesh overhead -- use passive WebRTC receive or socket relay), #8 (chat channel flooding -- all chat via socket.io), #10 (AFK false positives -- phase-aware), #11 (kill ordering -- sequence numbers from host)
 
-**Fix:** Server receives `SPELL_CAST`, runs AABB/circle overlap at each 50ms tick, broadcasts authoritative `HIT` events.
+### Phase 5: Post-Match and Rematch
 
-### 2. OAuth Client Secret in Phaser Bundle (CRITICAL)
-Vite bundles everything. A `client_secret` in any TypeScript file is readable in DevTools > Sources.
+**Rationale:** Depends on match end detection from Phase 4. Rematch depends on singleton resets from Phase 1 and mesh teardown from Phase 1. This is the capstone that closes the play loop.
+**Delivers:** PostMatchScene with results/stats, quick rematch voting, lobby persistence across matches, full lobby-match-lobby cycle
+**Addresses:** Quick rematch (last P1 feature)
+**Avoids:** Pitfalls #2 (mesh leak -- teardownMesh before re-init), #12 (singleton state -- reset() calls in MatchLifecycle.cleanup())
 
-**Fix:** Token exchange (`auth_code → access_token`) lives exclusively in `server/src/auth/`. Phaser only initiates the redirect. Use `better-auth` which enforces this cleanly.
+### Phase Ordering Rationale
 
-### 3. Deploy Late + Never Test on Real Network (CRITICAL)
-Google OAuth requires HTTPS on production credentials. Campus WiFi blocks non-443 ports. CORS origins differ from localhost. These issues surface only on the deployed URL.
+- Phase 1 before everything: The four critical debt items (listener leaks, host migration, singletons, mesh lifecycle) are load-bearing. Building features on top of these bugs creates cascading failures that are extremely hard to debug later.
+- Phase 2 before Phase 3: Game mode config defines player counts, which determine spawn point requirements and loading screen content.
+- Phase 3 before Phase 4: The match must initialize correctly (spawn, countdown, lock) before in-match features can be tested.
+- Phase 4 before Phase 5: Match end detection must work before post-match results and rematch can be built.
+- Lobby features (Phase 2) are the largest phase by feature count but lowest complexity -- most are 5-20 line socket event handlers extending existing patterns.
 
-**Fix:** Working deployment from development week 2. Test Google Login from the production URL on real campus WiFi at least 1 week before the event. Use Let's Encrypt or a platform with automatic TLS (Render, Railway, Fly.io).
+### Research Flags
 
-### 4. Level Advantage Breaks Event Pacing (CRITICAL for single-day events)
-The XP curve compresses to ~2 hours at the event. Level-5 players with +50% HP / −30% cooldown stomp every new arrival. Attendees stop playing.
+Phases likely needing deeper research during planning:
+- **Phase 1 (Foundation Cleanup):** Needs careful analysis of every EVENT_BUS binding in existing scenes to establish the cleanup pattern. The singleton reset scope needs auditing.
+- **Phase 3 (Spawn System):** Tiled object layer integration needs verification against existing map parsing code. Spawn validation rules need to be defined per game mode.
+- **Phase 4 (Spectator Mode):** Architecture decision needed: passive WebRTC receive (Option A from STACK.md) vs. socket.io relay (Option B). Test Option A first on LAN.
 
-**Fix:** Hard cap all upgrade effects at ≤15% stat delta total. One developer must fight a max-level account as a level-0 account before ranking goes live — if win rate < 4/10, the formula is wrong.
-
-### 5. Singleton Managers Don't Reset Between Matches (HIGH)
-`DataManager`, `ElementManager`, `InventoryManager` were designed for a single-playthrough. Match 2 starts with Match 1's leftover HP, mana, and element state.
-
-**Fix:** Add `reset()` methods to all three singletons as the first task in the architecture phase, before any multiplayer code is written. Call them in order at match start, populated from server-fetched account data.
-
----
+Phases with standard patterns (skip deeper research):
+- **Phase 2 (Lobby Enhancements):** All features are straightforward socket.io event handlers with Phaser UI. Extremely well-documented patterns.
+- **Phase 5 (Post-Match/Rematch):** Standard scene + socket event pattern. The hard prerequisite work is in Phase 1.
 
 ## Confidence Assessment
 
-| Area | Confidence | Basis |
-|------|-----------|-------|
-| Stack (versions) | HIGH | Verified against npmjs.com on 2026-03-26 |
-| Features (scope) | HIGH | Industry-standard patterns (socket.io lobbies, ELO, BR zone) |
-| Architecture (patterns) | HIGH | Direct codebase analysis + established Phaser 3 + socket.io integration |
-| Pitfalls | HIGH | Concrete prevention strategies; security-critical ones (P1.1, P3.2) are non-negotiable |
-
-**Gaps to address during planning:**
-- Exact XP thresholds and Elo K-factor need a simulation script before Phase 6 locks in
-- Reconnection window (15s) is an estimate — calibrate against expected college WiFi quality
-- Spectator / projector view scoped as post-core; confirm event organizer requirement before Phase 8
-
----
-
-## Roadmap Implications
-
-| Phase | Name | Key Deliverable | Pitfalls to Address |
-|-------|------|-----------------|---------------------|
-| 1 | Auth + Server Scaffold | Google OAuth, JWT, socket.io server | P1.1, P1.2, P1.3, P1.4, P1.5 |
-| 2 | Lobby System | Invite codes, ready state, host controls | P2.1, P2.2, P2.3, P2.4 |
-| 3 | Match Lifecycle FSM | State machine, disconnect handling | P3.7 (singleton reset) |
-| 4 | Battle Royale Mode | Zone mechanic, server-auth combat sync | P3.1, P3.2, P3.3, P3.4 |
-| 5 | Team Modes | 2v2/3v3/4v4 with team assignment | P3.6 (no god-object) |
-| 6 | Ranking System | ELO updates, leaderboard, zero-sum formula | P4.1, P4.2, P4.4 |
-| 7 | Spell Progression | XP, levels, stat upgrades (≤15% delta) | P5.1, P5.2, P5.3 |
-| 8 | Deploy + Pre-Event QA | TLS, CORS, 8-player concurrent load test | P6.1, P6.2, P6.3, P6.8 |
-
-**Research flags:** Phases 4 and 6 may benefit from `/gsd-research-phase` (combat sync lag compensation and ELO simulation respectively). All other phases follow well-documented patterns.
-
----
-
-## Research Files
-- [STACK.md](.planning/research/STACK.md) — 9 packages, versions verified 2026-03-26
-- [FEATURES.md](.planning/research/FEATURES.md) — 6 feature areas, table stakes + anti-features
-- [ARCHITECTURE.md](.planning/research/ARCHITECTURE.md) — component design, wire protocol, DB schema
-- [PITFALLS.md](.planning/research/PITFALLS.md) — 25 pitfalls across 6 sections with phase assignments
-
-## Confidence Levels
 | Area | Confidence | Notes |
-|------|-----------|-------|
-| socket.io for LAN | HIGH | Very standard for browser multiplayer |
-| Sync model (20Hz full state) | HIGH | Works fine for 2 players on LAN |
-| Reusing CharacterGameObject for P2 | HIGH | Architecture supports it |
-| Combo detection via server confirm | MEDIUM | Simple to implement; may need iteration |
-| Puzzle room Tiled schema | MEDIUM | Needs design session before implementation |
-| Boss weakness system | MEDIUM | State machine pattern exists; boss design is game design, not tech |
+|------|------------|-------|
+| Stack | HIGH | Zero new dependencies; all capabilities verified against installed packages |
+| Features | HIGH | Established multiplayer game patterns; competitor analysis confirms feature set |
+| Architecture | HIGH | Based on direct codebase analysis; extends proven Phaser parallel-scene pattern |
+| Pitfalls | MEDIUM-HIGH | Based on codebase analysis + domain expertise; no external verification available |
+
+**Overall confidence:** HIGH
+
+### Gaps to Address
+
+- **WebRTC mesh at 10+ players (10v10 mode):** 45-190 peer connections untested on target LAN hardware. May need fallback to server relay for position data. Test early in Phase 2 when mode selection is available.
+- **Spectator data path:** Option A (passive WebRTC receive) is unverified. If channels close on player death, Option B (socket.io relay) adds moderate complexity. Test during Phase 4.
+- **Phaser rendering at 20 players:** Performance with 20 simultaneous player sprites + spells is untested. May need sprite culling or particle reduction. Test during Phase 4.
+- **Browser tab backgrounding:** Throttled timers may cause missed socket events for lobby browser. Needs visibility change handler (minor, address in Phase 2 polish).
+
+## Sources
+
+### Primary (HIGH confidence)
+- Installed node_modules/ package analysis -- exact versions and API capabilities verified
+- Direct codebase analysis of src/ and game-server/src/ -- all architecture recommendations based on actual code
+- Existing .planning/codebase/CONCERNS.md -- known technical debt items
+
+### Secondary (MEDIUM confidence)
+- Training data for socket.io rooms, chat patterns, Phaser 3 camera/scene APIs -- well-established, stable patterns
+- Multiplayer game design patterns from Brawl Stars, ZombsRoyale.io, Among Us -- feature expectations
+
+---
+*Research completed: 2026-04-21*
+*Ready for roadmap: yes*

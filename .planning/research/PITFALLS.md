@@ -1,642 +1,326 @@
-# Domain Pitfalls — v2.0 PvP Multiplayer Milestone
+# Domain Pitfalls — v1.2 Lobby & Game Start Flow
 
-**Domain:** Competitive PvP browser game with Google OAuth, lobbies, real-time socket.io combat, ranking, and spell progression  
-**Stack:** Phaser 3 + TypeScript client / Node.js + socket.io + PostgreSQL server  
-**Context:** 2-developer team, ~3-4 months, public college event (single-day live demo)  
-**Researched:** 2026-03-27  
+**Domain:** Lobby management, matchmaking, pre-game flows, spawn systems, spectator mode, and real-time chat for a WebRTC P2P Phaser 3 game
+**Stack:** Phaser 3 + TypeScript client / Node.js + socket.io signaling / WebRTC P2P mesh / Host-authoritative model
+**Context:** 2-developer team, existing networking in `src/networking/`, existing LobbyScene with basic create/join/start flow
+**Researched:** 2026-04-21
+**Confidence:** MEDIUM (based on deep codebase analysis + domain expertise; web search unavailable for external verification)
 
 ---
 
-## Section 1 — Google OAuth + Phaser 3 + Node.js
+## Critical Pitfalls
 
-### P1.1 — Exposing Client Secrets in the Phaser Bundle
+Mistakes that cause rewrites or major issues.
 
-**Risk Level:** CRITICAL
+### Pitfall 1: Event Listener Leak Across Scene Transitions
 
-**What goes wrong:** Implementing the OAuth Authorization Code flow with a `client_secret` in client-side TypeScript. Vite bundles everything; the secret is readable in the browser's DevTools > Sources.
+**What goes wrong:** The existing `LobbyScene` binds listeners to `EVENT_BUS` (a global singleton) in view-switching methods and removes them in `shutdown()`. When adding new scenes (LobbyBrowserScene, PreGameScene, SpectatorScene, ChatOverlay), every scene that touches `EVENT_BUS` or `NetworkManager` events risks leaving dangling listeners when scenes restart, stop, or switch. Phaser 3's scene lifecycle calls `shutdown` on `scene.stop()` but NOT on `scene.restart()` -- and `destroy` is only called when the scene is removed from the scene manager entirely.
 
-**Why it happens:** Tutorials for "OAuth with Node.js" assume a server-side web app. Copy-paste into a Phaser game without reading which parts are server-only.
+**Why it happens:** The current code already shows the risk pattern: `LobbyScene.#onLobbyUpdated` is bound in `#showLobbyListView()` and unbound in `#showWaitingRoomView()`, but if the scene restarts between those views, the old listener survives. Adding 10+ new scenes and overlays multiplies this fragile pattern. Phaser's lifecycle is `init -> preload -> create -> update (loop) -> shutdown (on stop) -> destroy (on remove)`. Developers assume `shutdown` always fires cleanly before `create` re-runs, but `scene.restart()` calls `shutdown` then `create` in sequence, and if cleanup is incomplete, listeners double-bind.
+
+**Consequences:** Duplicate event handlers fire multiple times per event. Lobby updates trigger stale scene references. Memory grows with each lobby-to-game-to-lobby cycle. Ghost listeners from dead scenes mutate state in active scenes.
 
 **Prevention:**
-- All OAuth token exchange must happen in the Node.js server, never in the Phaser client.
-- Phaser client only initiates the OAuth redirect/popup — the token exchange (`code` ? `access_token`) happens exclusively on the server via a `/auth/callback` endpoint.
-- Use PKCE (Proof Key for Code Exchange) for any browser-side flow — this is designed specifically for public clients (SPAs) with no client secret.
+- Establish a strict pattern: ALL `EVENT_BUS.on()` calls happen in `create()`, ALL `EVENT_BUS.off()` calls happen in `shutdown()`. Never bind mid-lifecycle in view-switching methods.
+- Add a `this.events.on('shutdown', () => this.#cleanup())` guard in every scene's `create()` as a safety net.
+- For scenes that overlay (chat, spectator HUD), use `scene.sleep()`/`scene.wake()` instead of stop/start, which avoids the full lifecycle teardown.
+- Add a debug assertion during development that counts EVENT_BUS listeners before and after each scene transition.
 
-**Phase to Address:** Auth phase (first deliverable). Architecture decision that cannot be changed later.
+**Detection:** Console warnings about "possible EventEmitter memory leak". Duplicate network messages in logs. Actions firing twice (e.g., two lobby join attempts from one click). Check `EVENT_BUS.listenerCount()` at transition points.
+
+**Phase to address:** First phase (lobby refactoring). Must be fixed before adding any new scenes.
 
 ---
 
-### P1.2 — OAuth Redirects Break the SPA Flow
+### Pitfall 2: WebRTC Mesh Not Torn Down Between Matches (Rematch Leak)
 
-**Risk Level:** HIGH
+**What goes wrong:** The current `NetworkManager` establishes WebRTC peer connections when `lobby:started` fires and tears them down on `disconnect()`. But the v1.2 rematch flow is: Lobby -> PreGame -> Match -> MatchEnd -> Lobby -> PreGame -> Match. If `NetworkManager.disconnect()` is NOT called between matches (because players return to lobby without disconnecting from the signaling server), stale `RTCPeerConnection` objects and data channels from the previous match persist while new ones are created for the next.
 
-**What goes wrong:** After Google redirects back to `https://game.example.com/auth/callback?code=...`, the Phaser game is no longer running (full page redirect). The player loses all pre-auth context (which lobby they were trying to join).
+**Why it happens:** The current architecture conflates "connected to signaling server" with "in a WebRTC mesh". Looking at `network-manager.ts`: `#closeAllPeerConnections()` only runs inside `disconnect()`, which also kills the socket. The socket.io connection SHOULD persist across the lobby-match-lobby cycle, but the WebRTC mesh should be created per-match and destroyed at match end. There is no `teardownMesh()` method.
 
-**Why it happens:** Classic redirect flow assumption — works fine for multi-page apps, but in a Phaser game the entire game state is in memory.
+**Consequences:** Double peer connections per player pair. Messages sent on old channels reach dead scene handlers. Memory leak from unclosed `RTCPeerConnection` objects (each holds ICE agents, DTLS contexts, SCTP transports). Browser tab eventually crashes after 3-4 rematches.
 
 **Prevention:**
-- **Preferred:** Use the OAuth **popup flow** (`window.open(authUrl, '_blank', 'popup=true')`). The main game tab stays alive, the popup handles auth, posts a message back to the parent tab via `window.postMessage`, and closes. No page navigation in the main tab.
-- **Alternative:** If redirect is required, use `localStorage` to save pre-auth context (target lobby code) before redirect. Read it back after the callback reloads the app.
-- Test popup blocking on campus browsers — have a fallback button "If popup was blocked, click here".
+- Split `NetworkManager` lifecycle into two scopes: socket-level (persists across lobby-match cycle) and mesh-level (created on match start, destroyed on match end).
+- Extract `#closeAllPeerConnections()` into a public `teardownMesh()` method that closes all peer connections and channels WITHOUT disconnecting the socket.
+- Call `teardownMesh()` when transitioning from match-end back to lobby.
+- Add a guard in `#initWebRTCMesh()` that calls `teardownMesh()` first if `#peerConnections.size > 0`.
 
-**Phase to Address:** Auth phase.
+**Detection:** Check `#peerConnections.size` at match start -- if nonzero before `#initWebRTCMesh` runs, you have a leak. Monitor browser `chrome://webrtc-internals` during rematch cycles.
+
+**Phase to address:** Pre-game / match lifecycle phase. Must be resolved before quick rematch is implemented.
 
 ---
 
-### P1.3 — JWT Token Storage in localStorage
+### Pitfall 3: Lobby State Divergence Between Server and Clients
 
-**Risk Level:** MEDIUM
+**What goes wrong:** The signaling server (`lobby-manager.ts`) is the source of truth for lobby state, but clients maintain local copies. The current `LobbyScene` stores `#currentLobby` and `#lobbies` locally, updated only when specific socket events arrive. With v1.2 adding password lobbies, ready-up, AFK detection, game mode configuration, ping indicators, and chat -- the surface area for state divergence explodes. If any `lobby:updated` event is missed during reconnection, or if a client joins mid-update, their local state is stale.
 
-**What goes wrong:** Storing JWTs or session tokens in `localStorage` is vulnerable to XSS. If an attacker injects a script, they can steal the token.
+**Why it happens:** The current protocol sends incremental updates (`lobby:updated` with full lobby object) but has no version/sequence number and no mechanism for a client to request a full state refresh. The `lobby:list-updated` broadcast to ALL connected clients on every lobby mutation will also scale poorly with many simultaneous lobbies.
 
-**Why it happens:** `localStorage` is the simplest option. `httpOnly` cookies require a same-domain server.
+**Consequences:** Player sees 4 players in lobby, host sees 3. Ready-up states mismatch. Host starts match with players the server thinks aren't ready. AFK detection fires for players who are active (stale ping data). Game mode shown to joiner differs from what host selected.
 
 **Prevention:**
-- For a college event, `localStorage` is an acceptable risk — the threat model is not malicious players. HttpOnly cookies would be ideal but require more complex same-origin setup.
-- **Critical:** Never store the Google `access_token` or `refresh_token` client-side. Store only your own short-lived session JWT (1-day expiry).
-- Validate the JWT on the server for every socket.io connection (pass it in the socket.io `auth` handshake, not a room event).
-- If using socket.io: `socket.io` auth handshake ? server middleware validates JWT ? attaches `userId` to socket. Never trust a userId sent from the client as a game event.
+- Add a `version` counter to each lobby that increments on every mutation. Clients can detect staleness.
+- Implement a `lobby:sync` request that any client can call to get the full current lobby state.
+- Rate-limit `lobby:list-updated` broadcasts -- batch changes and emit at most once per 500ms to reduce spam.
+- For ready-up and AFK, treat the server as sole authority. Client UI is optimistic but reverts on server rejection.
+- Consider switching the lobby browser to a pull model (client polls every 2s) instead of push, to avoid the broadcast scaling issue.
 
-**Phase to Address:** Auth phase + socket.io connection setup.
+**Detection:** Periodic lobby state hash: client computes hash of local lobby state, server responds with its hash. Mismatch triggers full sync. Log any time a client action is rejected due to stale state.
+
+**Phase to address:** Lobby system phase. Architecture decision needed before implementing ready-up, AFK, or chat.
 
 ---
 
-### P1.4 — CORS Blocking the Auth ? Game Transition
+### Pitfall 4: Host Migration Not Propagated to Client-Side Host Detection
 
-**Risk Level:** HIGH
+**What goes wrong:** `LobbyManager.leaveLobby()` already handles host migration server-side (assigns first remaining player as new host). But the client-side `LobbyScene.#isHost` is set as a local boolean in `#showConnectView` based on whether the player called `sendLobbyCreate()`. This boolean is never updated when server-side host migration occurs. The new host never sees the "START GAME" button. With v1.2 adding host-only controls (kick, team assign, mode selection, auto-balance), a broken host migration freezes the entire lobby.
 
-**What goes wrong:** The Node.js server has `cors({ origin: '*' })` in development but a locked-down origin in production. The deployed game's domain is not in the allowed list. Auth works locally, breaks at the event.
+**Why it happens:** Looking at `lobby-scene.ts` line 204-206: `if (this.#isHost)` controls the START button visibility. `#isHost` is set on line 112 (`this.#isHost = true` in the create button callback) and never updated from server state. The `lobby:updated` handler re-renders the player list but never checks if the local player is now the host.
 
-**Why it happens:** CORS is configured once locally and forgotten. The deployed domain is different from `localhost`.
+**Consequences:** Host leaves: remaining players are stuck with no start button, no kick controls, no mode selection. They must all leave and create a new lobby. During the match phase, host-authoritative damage validation also breaks because no client knows they are the new authority.
 
 **Prevention:**
-- Add `CORS_ALLOWED_ORIGIN` to the server's environment config (not hardcoded).
-- Set it to the exact deployed game origin (e.g., `https://mages.yourschool.edu`).
-- Test auth from the deployed domain at least one week before the event.
-- Also ensure the Google Cloud Console OAuth "Authorized redirect URIs" lists both `localhost:5173` (dev) AND the production URL. Missing this gives `redirect_uri_mismatch` error at the event.
+- Never store host identity as a client-side boolean. Always derive it reactively: `get isHost() { return this.#currentLobby?.hostPlayerId === myPlayerId }`.
+- When the server assigns a new host (via `lobby:updated` with changed `hostPlayerId`), the client UI should automatically update -- start button appears for the new host, team controls enable.
+- For in-match authority transfer, emit a distinct `match:authority-transferred` event so the new host's client begins processing damage validation.
+- Add a 5-second grace period after host disconnect before transferring authority, allowing reconnection.
 
-**Phase to Address:** Auth phase, but must be verified during pre-event deployment test.
+**Detection:** Test by force-closing the host's browser tab at every phase: in lobby, during loading, during match. If remaining players are stuck, host migration is broken.
+
+**Phase to address:** Lobby refactoring phase (first priority). The `#isHost` boolean must be replaced with reactive derivation before any new host-only features are added.
 
 ---
 
-### P1.5 — Session Not Attached to Socket.io Handshake
+### Pitfall 5: Spawn Point System Has No Validation Against Player Count or Map Geometry
 
-**Risk Level:** HIGH
+**What goes wrong:** The current codebase uses Tiled maps with object layers (rooms, doors, chests, enemies). Spawn points will be added as another Tiled object layer. If spawn point data is missing, has fewer points than players, or has points inside collision geometry, the game silently spawns players at (0,0) or overlapping each other.
 
-**What goes wrong:** Authentication succeeds, but socket.io connections are not validated. Any client can connect and send events impersonating any player.
+**Why it happens:** The existing `getTiledPropertyByName<T>()` uses unsafe generic casts with no runtime validation (documented in CONCERNS.md pitfall #11). Spawn points are map-authored data that must match runtime requirements (player count, team count, game mode), but there is no contract enforcement between map design and game logic.
 
-**Why it happens:** Auth and sockets are implemented in different phases by different team members. The JWT check is forgotten at the socket layer.
+**Consequences:** Players spawn inside walls and get stuck. Players spawn on top of each other and engage in combat before countdown ends. 10v10 mode selected but map only has 6 spawn points. FFA mode uses team spawn points, clustering opponents together.
 
 **Prevention:**
-- In the socket.io server: add a middleware in `io.use()` that reads `socket.handshake.auth.token`, verifies it, and attaches the user to `socket.data.userId`. Reject if missing.
-- Client: Set `socket.auth = { token: localStorage.getItem('session_token') }` before connecting.
-- Every game event handler should use `socket.data.userId` (server-verified) — never read player identity from event payloads.
+- Define a `SpawnPointConfig` type: `{ x: number, y: number, team: 0 | 1 | null, index: number }`.
+- Validate spawn points at map load time: assert count >= max players for selected mode, assert no point inside collision layer tiles, assert teams have balanced counts.
+- Implement fallback spawn logic: if not enough spawn points, generate additional ones by offsetting from existing points in a spiral pattern.
+- Spawn points should be mode-aware: FFA ignores team assignment, team mode uses team-tagged points.
+- Add a dev-mode overlay that renders spawn point markers on the map for visual verification.
 
-**Phase to Address:** Auth phase + networking foundation.
+**Detection:** Warning log at PreloadScene if spawn count < max supported players for any mode. Visual overlay in debug builds.
+
+**Phase to address:** Spawn system phase. Map validation should be built before the first pre-game loading screen.
 
 ---
 
-## Section 2 — Lobby System for Live Events
+## Moderate Pitfalls
 
-### P2.1 — Orphaned Lobbies Polluting the Lobby List
+### Pitfall 6: Ready-Up Race Condition at Match Start
 
-**Risk Level:** HIGH
-
-**What goes wrong:** Player A creates a lobby and disconnects without starting. The lobby stays in the list forever, showing as joinable but actually dead.
-
-**Why it happens:** No cleanup logic — lobby is created in DB/memory and deleted only when the match explicitly ends.
+**What goes wrong:** When adding ready-up, there is a window between "all players ready" and "host clicks start" where a player can un-ready or disconnect. If the host sends `lobby:start` and the server processes it, but between the server check and the `lobby:started` broadcast a player disconnects, the match starts with a phantom player who never connects their WebRTC channels.
 
 **Prevention:**
-- Implement lobby expiry: if a lobby has had no activity for 60 seconds and hasn't started, auto-delete it.
-- When the lobby owner's socket disconnects before match start: auto-delete the lobby (simpler and safer for an event than ownership transfer).
-- Use socket.io rooms for lobbies: `socket.join(lobbyId)`. When `io.in(lobbyId).sockets.size === 0`, the lobby is dead — clean it up.
+- Server-side: re-validate all players are still connected AND still ready at the moment `lobby:start` is processed. Use a synchronous check within the same event loop tick.
+- Include the exact player list in `lobby:started` payload (already done via `matchConfig.players`). Clients only attempt WebRTC mesh with players in that list.
+- Add a "mesh readiness" phase: after `lobby:started`, each client reports `mesh:ready` when all their RTCPeerConnections reach `connected` state. Match countdown begins only when all clients report ready (or timeout).
 
-**Phase to Address:** Lobby phase.
+**Phase to address:** Ready-up / match start flow phase.
 
 ---
 
-### P2.2 — No Reconnection Window During Match
+### Pitfall 7: Spectator Mode as Full Mesh Participant Wastes Connections
 
-**Risk Level:** HIGH
-
-**What goes wrong:** A player's laptop hiccups on college WiFi for 8 seconds. They're kicked from the match permanently. A 4v4 becomes a 3v4 one minute in.
-
-**Why it happens:** Default socket.io behavior: disconnect = leave room. No reconnection grace period.
+**What goes wrong:** In a P2P mesh, a spectator must be a full mesh participant to receive WebRTC data from every player. This means a spectator counts toward the O(N^2) connection limit, consumes the same bandwidth as a player, and can even send messages (injection risk).
 
 **Prevention:**
-- On disconnect during an ACTIVE match: mark the player as "disconnected" (not eliminated), don't broadcast their removal immediately.
-- Give a 15-second reconnection window: if they reconnect with valid JWT and matching session, restore their position and state.
-- After 15 seconds: treat as eliminated (Battle Royale) or continue 3v4 (team). Show to all: "Player X disconnected".
-- College WiFi is unreliable. This feature WILL be needed at the event.
+- Add a `role` field to `PlayerInfo`: `'player' | 'spectator'`. Peers check this before processing incoming messages. Spectator outbound channels are ignored.
+- Better: relay-only spectating. Spectators connect only to the signaling server and receive game state via socket.io relay from the host. This avoids mesh overhead entirely and scales better.
+- Limit spectator count (2-3 max) to avoid mesh explosion.
+- For a college event: consider a single "projector spectator" that the host streams to via socket.io, rather than per-player spectator clients.
 
-**Phase to Address:** Lobby + networking phase. Must be designed before first match round-trip works.
+**Phase to address:** Spectator mode phase. Architecture decision needed before implementation.
 
 ---
 
-### P2.3 — Lobby Owner Disconnects Before Match Starts
+### Pitfall 8: Chat Messages Flood WebRTC Reliable Channel (Head-of-Line Blocking)
 
-**Risk Level:** MEDIUM
-
-**What goes wrong:** The player who created the lobby disconnects before pressing "Start". Four players are stuck in the lobby with no way to start the match.
-
-**Why it happens:** Start logic only exists on the owner's client.
+**What goes wrong:** Adding in-game chat over the reliable WebRTC data channel (`events` channel) means text messages share the same ordered, guaranteed-delivery channel as spell casts, damage events, and death notifications. A burst of chat messages causes head-of-line blocking, delaying game-critical events.
 
 **Prevention:**
-- Server-side start logic only. Client sends `LOBBY_START` event; server checks that the sender is the owner and starts the match.
-- On owner disconnect pre-start: auto-close the lobby with a toast to remaining members ("Lobby closed — host disconnected").
+- Route lobby chat through socket.io (already connected, appropriate for low-frequency lobby phase).
+- Route in-game chat through a SEPARATE WebRTC data channel: `pc.createDataChannel('chat', { ordered: true })`. This isolates chat from game events.
+- Simpler alternative: keep ALL chat on socket.io even during matches. Chat latency of 50-100ms is imperceptible for text. Avoids adding a third data channel per peer.
+- Rate-limit chat: max 3 messages per second per player, server-enforced.
 
-**Phase to Address:** Lobby phase.
+**Phase to address:** Chat feature phase. Decision: socket.io vs. dedicated data channel.
 
 ---
 
-### P2.4 — Race Condition When Players Join as Match Starts
+### Pitfall 9: Pre-Game Loading Screen Deadlock (No Timeout)
 
-**Risk Level:** MEDIUM
-
-**What goes wrong:** Owner clicks "Start" while a 4th player is joining at the exact same moment. The new player receives a partial lobby state or joins a match that's already started.
-
-**Why it happens:** No lobby state lock. "Joining" and "starting" are not mutually exclusive without a state machine.
+**What goes wrong:** The pre-game loading screen waits for ALL players to finish loading assets and initializing the game scene before starting the countdown. If one player has a slow machine or a browser that takes longer to parse assets, everyone waits indefinitely. If that player disconnects during loading, no timeout exists to proceed without them.
 
 **Prevention:**
-- Lobby has explicit states: `WAITING ? STARTING ? IN_MATCH`. No new joins accepted once state is `STARTING` or beyond.
-- The `LOBBY_START` event atomically transitions state on the server. Subsequent `JOIN_LOBBY` requests get "match already started" response.
+- Implement a loading timeout (30 seconds). If a player hasn't reported `loaded` by timeout, they are kicked and the match proceeds without them.
+- Use a server-side loading coordinator: each client emits `match:loaded` when ready. Server tracks which clients have reported. When all report (or timeout hits), server emits `match:all-loaded`.
+- Show per-player loading progress in the pre-game UI (via socket.io from each client).
+- Handle the edge case: if the host is the one who times out, transfer authority before proceeding.
 
-**Phase to Address:** Lobby phase.
+**Phase to address:** Pre-game loading phase.
 
 ---
 
-### P2.5 — Lobby Code Collision
+### Pitfall 10: AFK Detection False Positives During Non-Interactive Phases
 
-**Risk Level:** LOW
-
-**What goes wrong:** Two concurrent lobbies get the same 4-letter random code. Players join the wrong match.
-
-**Why it happens:** `Math.random()` codes without uniqueness checks.
+**What goes wrong:** AFK detection based on input inactivity will false-positive during pre-game loading (player is watching countdown, not providing input), during spectator mode (watching, not playing), and during match-end screen (reading results). Getting kicked for AFK while watching the countdown is infuriating.
 
 **Prevention:**
-- Generate codes server-side. Before assigning a code, check that it doesn't already exist in active lobbies.
+- AFK detection active ONLY during lobby waiting and active gameplay. Disable during: pre-game loading, countdown, match-end, spectator mode.
+- Use a phase-aware AFK controller: `{ phase: 'lobby' | 'loading' | 'countdown' | 'combat' | 'spectating' | 'matchEnd', afkEnabled: boolean }`.
+- In lobby: generous threshold (60-90 seconds). In combat: shorter (30 seconds).
+- ANY input (mouse move, key press) resets the timer, not just game-specific inputs.
 
-**Phase to Address:** Lobby phase.
+**Phase to address:** AFK detection feature. Must be aware of match lifecycle phases.
 
 ---
 
-## Section 3 — Socket.io PvP Spell Combat Sync
+### Pitfall 11: Kill Feed Ordering and Duplication in P2P Mesh
 
-### P3.1 — Phaser Arcade Physics Cannot Be Authoritative Across Clients
-
-**Risk Level:** CRITICAL
-
-**What goes wrong:** Spell projectile physics run independently in each Phaser client. Floating-point simulation diverges. Client A sees the fireball hit; Client B sees it miss. Health is different on every screen.
-
-**Why it happens:** Single-player Phaser uses `this.physics.overlap()` for hit detection. Multiplying this across 8 browser tabs with different frame timings causes desync within seconds.
+**What goes wrong:** In the host-authoritative model, kill events originate from the host and are broadcast to all peers via reliable data channel. Network latency means different clients receive events in different orders. If the host broadcasts "PlayerA killed PlayerB" and then "PlayerC killed PlayerD" 10ms apart, some clients display them in reverse order.
 
 **Prevention:**
-- **Server is authoritative for all hit detection.** Client sends `SPELL_CAST { spellId, position, direction, timestamp }`. Server maintains the authoritative spell list updated per server tick. Server broadcasts hit events to all clients.
-- Client-side Phaser physics becomes **visual only** — rendering, local player movement feel, and visual effects. Not for damage calculations.
-- Server runs hit detection on simplified math (AABB or circle overlap) per 50ms tick. When a hit is detected, server broadcasts `HIT { attackerId, targetId, damage, spellId }`. All clients apply the damage.
+- Include a monotonically increasing sequence number in all kill/elimination events from the host.
+- Client-side kill feed buffer: hold events for 100ms before displaying, sort by sequence number, deduplicate.
+- For the host's own display, apply immediately (zero latency).
 
-**Phase to Address:** Networking architecture phase. This decision shapes everything that follows.
+**Phase to address:** Kill feed feature phase.
 
 ---
 
-### P3.2 — Clients Self-Reporting Damage
+### Pitfall 12: Quick Rematch Impossible Without Singleton Reset
 
-**Risk Level:** CRITICAL
+**What goes wrong:** `DataManager`, `InventoryManager`, `ElementManager` are singletons with NO `reset()` method (documented in CONCERNS.md debt #3). Quick rematch flow (match-end -> lobby -> new match) leaves these singletons holding state from the previous match: HP values, mana pools, element assignments, room IDs. The new match starts corrupted.
 
-**What goes wrong:** Client sends `DEAL_DAMAGE { targetId: 'player2', amount: 50 }`. Server trusts it. Any player can open DevTools and spam this event, one-shotting everyone.
-
-**Why it happens:** Fastest path to "it works" — let the hitting client report the damage.
+**Why it happens:** These singletons were designed for a single-playthrough single-player game. The v1.1 networking additions did not address this because matches didn't loop back to lobby.
 
 **Prevention:**
-- Server NEVER accepts damage reports from clients. Clients only report: player inputs, spell casts, and position updates.
-- Only the server computes and applies damage based on its authoritative spell simulation.
-- Server-calculated damage is broadcast to all clients including the caster.
+- Add a `reset()` static method to EVERY singleton manager BEFORE building the rematch flow. This is non-negotiable.
+- Create a `MatchLifecycle.cleanup()` function that calls all reset methods in sequence.
+- Test specifically: play a match, take damage, use mana, switch elements, rematch, verify all values are fresh.
+- Long-term: convert singletons to scoped instances created per-match rather than global statics.
 
-**Phase to Address:** Networking architecture phase. Non-negotiable security constraint.
+**Detection:** After rematch: check starting HP, mana, element assignment. If any differ from defaults, reset is broken.
+
+**Phase to address:** Match lifecycle / cleanup phase. Must be resolved before quick rematch is implemented.
 
 ---
 
-### P3.3 — Internet Latency Makes Spell Hits Feel Wrong
+### Pitfall 13: Game Mode Selection Not Validated Against Player Count
 
-**Risk Level:** HIGH
-
-**What goes wrong:** On LAN, latency is <5ms. At a college event over WiFi, expect 20-100ms. A spell that looks like it hit the player on the caster's screen misses according to the server because the target has already moved.
-
-**Why it happens:** No lag compensation. Server evaluates hit based on current position, but the caster aimed based on their delayed view.
+**What goes wrong:** Host selects 5v5 mode but only 6 players are in the lobby. Or host selects 1v1 but 8 players are waiting. The current `startLobby()` in `lobby-manager.ts` has zero validation -- it just sets `status: 'in-progress'` and returns.
 
 **Prevention:**
-- Implement basic lag compensation: when evaluating a spell hit, rewind the target's position by the caster's estimated latency (rolling average of socket ping).
-- Simpler alternative: increase hitboxes slightly. Less precise but prevents frustrating misses.
-- Show visual feedback immediately on the caster's client (local hit flash); wait for server confirmation before applying damage. Hides the 50ms delay behind effects.
+- Server-side validation in `startLobby()`: check `lobby.players.length` against the selected mode's requirements. Return an error if mismatched.
+- Define a mode config: `{ '1v1': { min: 2, max: 2 }, '2v2': { min: 4, max: 4 }, ... '5v5': { min: 10, max: 10 }, 'ffa': { min: 2, max: 20 } }`.
+- Client shows the error to the host and disables the start button when player count doesn't match mode.
 
-**Phase to Address:** Combat sync phase.
+**Phase to address:** Game mode selection phase.
 
 ---
 
-### P3.4 — Player Jitter from Missing Interpolation
+### Pitfall 14: Private Lobby Passwords Leaked in Broadcast
 
-**Risk Level:** HIGH
-
-**What goes wrong:** At 20 position updates/second, remote players teleport 50px every 50ms instead of moving smoothly. Game looks broken even if it functions correctly.
-
-**Why it happens:** No interpolation between received positions. Client just teleports remote sprite to latest received position.
+**What goes wrong:** Adding password-protected lobbies. If the password is stored in the `Lobby` type and that object is broadcast via `lobby:list-updated` to ALL clients, every client can see every lobby's password in DevTools.
 
 **Prevention:**
-- Maintain a position buffer for each remote player (last 2-3 received positions with timestamps).
-- Render remote players at an interpolated position 100ms in the past (always have future positions to interpolate toward).
-- Phaser's `lerp` drives this. Store `targetX/Y` and lerp the spike toward it each frame.
+- Store password server-side only. NEVER include it in the `Lobby` type sent to clients.
+- Add a `hasPassword: boolean` field to the client-facing lobby type. Password validation happens server-side on `lobby:join`.
+- Use separate server-side and client-facing lobby types (already a good practice since `types.ts` is shared).
 
-**Phase to Address:** Combat sync phase (player movement sync).
+**Phase to address:** Lobby password feature.
 
 ---
 
-### P3.5 — Spell Event Flood with 8 Players
+## Minor Pitfalls
 
-**Risk Level:** MEDIUM
+### Pitfall 15: Lobby Browser Shows Stale Data After Tab Backgrounding
 
-**What goes wrong:** In 4v4, all 8 players cast spells simultaneously. Each spell has position updates and hit checks. Naive broadcast sends every spell event to every client, every tick.
+**What goes wrong:** Browser tabs in the background have throttled timers and may miss socket.io events. When the player returns to the lobby browser tab, they see stale lobbies and try to join ones that no longer exist or are in-progress.
 
-**Why it happens:** Per-event broadcasting instead of batched tick updates.
+**Prevention:** On `document.visibilitychange`, re-request `lobby:list` from the server. Show a "refreshing..." indicator. Treat `lobby:error` on join as "lobby no longer available" and auto-refresh.
+
+**Phase to address:** Lobby browser polish.
+
+---
+
+### Pitfall 16: Camera Zoom-In Animation Conflicts with Existing Camera System
+
+**What goes wrong:** The pre-game countdown includes a camera zoom-in effect. If implemented as a Phaser camera tween, it conflicts with the existing room-transition camera tween system. If the match starts or a player disconnects mid-tween, the camera gets stuck at intermediate zoom.
+
+**Prevention:** Use a dedicated camera controller that takes exclusive ownership during countdown. After countdown, hand control back to gameplay camera. Always reset zoom on any interruption.
+
+**Phase to address:** Match countdown / pre-game phase.
+
+---
+
+### Pitfall 17: `io.emit('lobby:list-updated')` Broadcasts to ALL Connected Clients
+
+**What goes wrong:** The current `server.ts` calls `io.emit('lobby:list-updated', { lobbies })` on EVERY lobby mutation (create, join, leave, mode change). This broadcasts the full lobby list to EVERY connected client, including those already in matches who don't need it. With 20 concurrent clients and frequent lobby activity, this creates unnecessary traffic.
 
 **Prevention:**
-- Batch all updates per tick: instead of individual `SPELL_MOVE` events, send one `TICK_UPDATE { spells: [...], players: [...] }` array per tick per client.
-- At 20Hz with 8 players and ~40 active spells, a batched tick payload is ~2-4KB per client per second. Wholly manageable.
-- More critical than optimization: **test with 8 simultaneous clients** before the event. 2-player testing hides concurrency bugs that appear at 8.
+- Only broadcast `lobby:list-updated` to clients who are in the "browsing" phase (not in a lobby or match). Use a socket.io room like `lobby-browsers` that clients join when viewing the lobby list and leave when they join a lobby.
+- Alternatively, rate-limit the broadcast to once per 500ms with a dirty flag.
 
-**Phase to Address:** Combat sync phase + pre-event load test.
-
----
-
-### P3.6 — Existing GameScene God-Object Gets Worse
-
-**Risk Level:** HIGH
-
-**What goes wrong:** Networking code is added inline into `GameScene` (already 1311 lines). The result is a 2000-line scene that nobody can debug when something breaks live at the event.
-
-**Why it happens:** `GameScene` already handles everything. It's the path of least resistance.
-
-**Prevention:**
-- Create `NetworkManager` as a standalone singleton before any networking code is written.
-- Create `MatchStateManager` to hold authoritative match state (alive players, scores, match phase).
-- `GameScene` calls managers; managers contain the logic. `GameScene` adds no more than ~100 lines of networking glue.
-- This is a prerequisite — do it before Phase 1 networking code.
-
-**Phase to Address:** Architecture cleanup phase (before networking starts).
+**Phase to address:** Lobby browser optimization.
 
 ---
 
-### P3.7 — Singleton Managers Don't Reset Between Matches
+## Phase-Specific Warnings
 
-**Risk Level:** HIGH
-
-**What goes wrong:** Match 1 ends. Player returns to lobby. Match 2 starts. `DataManager`, `ElementManager`, and `InventoryManager` still hold state from Match 1 (HP, mana, selected element). Player starts Match 2 with 1 HP.
-
-**Why it happens:** These singletons have no `reset()` method. Designed for a single-playthrough game.
-
-**Prevention:**
-- Add `reset()` methods to `DataManager`, `ElementManager`, `InventoryManager` before multiplayer is added.
-- Call all three on match start, with values populated from server-fetched account data (not hardcoded defaults).
-- Add a `SceneReset` utility that calls all resets in the correct order.
-
-**Phase to Address:** Architecture cleanup phase (before any match logic is built).
-
----
-
-## Section 4 — Ranking System
-
-### P4.1 — Rank Inflation or Deflation in Battle Royale
-
-**Risk Level:** HIGH
-
-**What goes wrong:** A Battle Royale formula that gives +100 to the winner and 0 to losers inflates total rank points by 100 every match. A formula that gives winner +100 and all 7 losers -100 deflates catastrophically. The leaderboard becomes meaningless after 10 matches.
-
-**Why it happens:** Rank point formulas aren't stress-tested across simulated matches before launch.
-
-**Prevention:**
-- Use a **zero-sum formula**: total points won must equal total points lost per match.
-- Simple formula: each eliminated player loses `base_loss`. Winner gains `base_loss * (players - 1)`.
-- For Battle Royale placement: `loss = base * (1 - placement_fraction)`. 1st gains; 2nd loses a little; 8th loses most.
-- **Simulate before launch:** Run a script that simulates 50 matches and plots ranking distribution. Visual sanity check required.
-- ELO with K=32 is well-understood and works for small populations (20-30 players).
-
-**Phase to Address:** Ranking phase — formula must be simulated before enabling live ranking.
+| Phase Topic | Likely Pitfall | Mitigation |
+|-------------|---------------|------------|
+| Lobby refactoring | Event listener leaks (#1), host migration broken (#4) | Strict bind/unbind pattern, reactive isHost |
+| Lobby creation/browsing | State divergence (#3), password leak (#14), stale data (#15), broadcast spam (#17) | Server as authority, separate server/client types, visibility refresh |
+| Game mode selection | No player count validation (#13) | Server-side validation before match start |
+| Team management | Host migration breaks controls (#4) | Derive host status reactively |
+| Ready-up system | Race condition at start (#6), AFK false positives (#10) | Atomic server check, phase-aware AFK |
+| Pre-game loading | Deadlock on slow loader (#9), singleton state leak (#12) | Loading timeout + kick, mandatory reset() methods |
+| Spawn point system | Missing/invalid map data (#5), mode-spawn mismatch | Validate at load time, mode-aware spawn logic |
+| Match countdown | Camera conflict (#16), event listener leaks (#1) | Exclusive camera controller, shutdown cleanup |
+| Kill feed | Ordering in P2P (#11) | Sequence numbers from host, client-side buffer |
+| Spectator mode | Full mesh overhead (#7), AFK false positives (#10) | Relay-only via socket.io, phase-aware AFK |
+| Lobby chat | Channel flooding (#8) | Route via socket.io, not WebRTC reliable channel |
+| In-game chat | Head-of-line blocking (#8) | Separate data channel or socket.io relay |
+| AFK detection | False positives in non-interactive phases (#10) | Phase-aware activation |
+| Quick rematch | Singleton state leak (#12), mesh not torn down (#2) | reset() methods, explicit teardownMesh() |
+| WebRTC mesh lifecycle | Stale connections on rematch (#2) | Separate socket and mesh lifetimes in NetworkManager |
 
 ---
 
-### P4.2 — Server Reset Wipes the Leaderboard Mid-Event
+## Codebase-Specific Risks (Existing Debt Amplified by v1.2)
 
-**Risk Level:** CRITICAL
+These are existing technical debt items from CONCERNS.md that v1.2 features will make significantly worse if not addressed.
 
-**What goes wrong:** The server crashes or is redeployed 2 hours into the event. All ranking data is gone. Players who played 10 matches see 0 on the leaderboard.
-
-**Why it happens:** No backup strategy. Everything is in a runtime database without persistence guarantees.
-
-**Prevention:**
-- **Automated backups**: PostgreSQL `pg_dump` via cron every 30 minutes, written to disk.
-- Add a `/admin/export` HTTP endpoint (auth-protected) that dumps current rankings to JSON. Run it manually every few match cycles.
-- Use a **VOLUME** for the database container (if using Docker) so data survives container restarts.
-- Test the restore process locally before the event. An untested backup is not a backup.
-
-**Phase to Address:** Ranking phase + deployment/ops checklist.
+| Existing Debt | v1.2 Feature That Amplifies It | Risk | Recommendation |
+|---------------|-------------------------------|------|----------------|
+| God-scene GameScene (1311 lines) | Adding spawn system, kill feed, spectator, countdown logic | HIGH -- will exceed 2000+ lines | Extract spawn, kill feed, and countdown into separate managers/systems before building features |
+| No automated tests | 15+ new features with complex state interactions (lobby state machine, ready-up, AFK, host migration) | HIGH -- regressions guaranteed on every change | Add integration tests for lobby state machine at minimum |
+| Singletons without reset() | Quick rematch flow | HIGH -- rematch impossible without fix | Add reset() to DataManager, InventoryManager, ElementManager first |
+| Component access via string keys | Spectator mode (read-only component interaction) | MEDIUM -- spectator objects need different component config | Consider a `readonly` flag on components |
+| EVENT_BUS has no typed contract | 10+ new event types for lobby, chat, kill feed, spectator, AFK, ready-up | MEDIUM -- typos in event names cause silent failures | Add all new events to CUSTOM_EVENTS enum with typed payloads |
+| `LobbyScene.#isHost` as local boolean | Host-only controls for kick, mode, team, auto-balance, start | HIGH -- host migration silently fails | Replace with reactive derivation from lobby state |
 
 ---
 
-### P4.3 — "Played 1 Match" vs "Played 30 Matches" Leaderboard Distortion
-
-**Risk Level:** MEDIUM
-
-**What goes wrong:** The top-ranked player won their first match and played nothing else. They sit at rank 1 while players who played 20 matches hover lower due to normal wins/losses.
-
-**Why it happens:** Rank score alone doesn't capture sample size.
-
-**Prevention:**
-- Show `matches_played` alongside rank score on the leaderboard.
-- Consider a minimum matches threshold (3 matches) before a player's rank is "official" for event awards.
-- Players with fewer than 3 matches show a provisional indicator.
-
-**Phase to Address:** Ranking phase (leaderboard UI).
-
----
-
-### P4.4 — Players Ragequit to Avoid Rank Loss
-
-**Risk Level:** LOW
-
-**What goes wrong:** Players figure out that disconnecting mid-match avoids the rank penalty. At a competitive college event, this will happen.
-
-**Why it happens:** Match result is only submitted when the match completes normally. Disconnection path has no result submission.
-
-**Prevention:**
-- On disconnect during match: after the reconnection window (P2.2) expires, server marks the disconnected player as `placement: last` and submits their rank update immediately.
-- Disconnect penalty should equal or slightly exceed normal last-place loss.
-
-**Phase to Address:** Ranking phase + disconnection handling (tied to P2.2).
-
----
-
-## Section 5 — Spell Progression / Leveling in Competitive Play
-
-### P5.1 — Level Advantage Creates Unwinnable Matches
-
-**Risk Level:** CRITICAL
-
-**What goes wrong:** Players who arrived 2 hours early played 10 matches. They have level 5 upgrades (+50% HP, -30% cooldown). New arrivals are level 1. Every match is decided by level, not skill. Event attendees stop playing after one loss.
-
-**Why it happens:** Progression designed for long-term engagement, not a single-day event. The power curve that takes 2 months in a live service game is compressed into 4 hours.
-
-**Prevention:**
-- **Cap stat variance at ±15-20% max** across all upgrade levels. A level 10 player feels slightly stronger — not dominant.
-- XP calibrated so that after ~5 matches, a player has seen meaningful progression but the gap to a 20-match player is small.
-- **Consider normalized competitive play**: all players fight at equal base stats; progression is cosmetic only. This eliminates P5.1 entirely.
-- If stats must scale: use diminishing returns. First upgrade: +10% HP. Second: +5%. Third: +2%.
-- **Required:** One developer creates a max-level account and fights a fresh account. If they win 9/10 matches, the formula is wrong.
-
-**Phase to Address:** Progression phase — must be balanced before ranking goes live.
-
----
-
-### P5.2 — Stat Overflow from Uncapped Modifiers
-
-**Risk Level:** HIGH
-
-**What goes wrong:** Upgrading cooldown by -10% per level means at level 10 cooldown is 0ms. Or negative. Spells fire every frame.
-
-**Why it happens:** No floor/ceiling on cumulative stat modifiers.
-
-**Prevention:**
-- All derived stats have a floor and ceiling defined on the server: `MIN_COOLDOWN = 500ms`, `MAX_HP_MULTIPLIER = 1.5x`.
-- Calculate final stats on the server when match starts. Server sends actual values: `{ hp: 120, manaPool: 110, cooldownMultiplier: 0.85 }`.
-- Client receives final stat values only — never raw upgrade points.
-- Add server-side assertion: if any computed stat is outside the valid range, log and clamp. Catches formula bugs before they affect live matches.
-
-**Phase to Address:** Progression phase + match initialization.
-
----
-
-### P5.3 — Progression Gating Access to Fun
-
-**Risk Level:** MEDIUM
-
-**What goes wrong:** New elements (Ice, Wind, Thunder) are locked until level 3. A new player at the event can only cast Fire. They lose to advanced players with full spell libraries. They leave.
-
-**Why it happens:** Single-player "unlock" patterns applied to a competitive context without thinking about asymmetric experience.
-
-**Prevention:**
-- **All 6 elements available to all players from match 1** — stated in `PRG-04`. Do not gate ANY element behind progression.
-- Progression affects only: cooldown multiplier, mana pool, HP.
-- Explicitly verify in the data model that no element unlock flag exists.
-
-**Phase to Address:** Progression design — verify in data schema before implementation.
-
----
-
-### P5.4 — HP-Only Builds Collapse Gameplay Diversity
-
-**Risk Level:** MEDIUM
-
-**What goes wrong:** Players dump all points into HP because "more life is obviously good." Everyone builds tank. Cooldown and mana upgrades are ignored. Spell diversity collapses.
-
-**Why it happens:** HP is the most legible stat. "More life is better" is always true in the player's mental model.
-
-**Prevention:**
-- Ensure cooldown reduction has a **visible, immediate gameplay effect**. Mana pool upgrades enable longer spell chains — show this clearly in the UI.
-- Consider per-category spending limits: can't allocate more than 50% of points into a single stat.
-- Alternatively: lean into archetypes. "Tank (HP) vs Burst mage (cooldown + mana)" is interesting asymmetry — but only works if burst can reliably beat tank. Playtest this.
-
-**Phase to Address:** Progression phase (UX and balance tuning).
-
----
-
-## Section 6 — Event-Day Failure Modes
-
-### P6.1 — HTTPS Required for Google OAuth but Server Runs HTTP
-
-**Risk Level:** CRITICAL
-
-**What goes wrong:** Google OAuth production credentials only accept HTTPS redirect URIs. If the game is served over HTTP at the event, Google Login fails for 100% of players. Event starts. Nothing works.
-
-**Why it happens:** `localhost` with development credentials works over HTTP. Production credentials do not.
-
-**Prevention:**
-- Set up TLS for the production server (Let's Encrypt via Certbot is free — 30 minutes if you own a domain).
-- Platforms with automatic TLS: Render.com, Railway.app, Fly.io — all have free or near-free tiers.
-- Test Google Login from the production URL, with production credentials, **at least 1 week before the event**.
-- Register the production domain in Google Cloud Console during the auth phase (not the day of the event).
-- Socket.io over WSS (port 443) also avoids most campus firewall issues.
-
-**Phase to Address:** Deployment + pre-event testing. Domain registration during auth phase.
-
----
-
-### P6.2 — Campus WiFi Blocks Non-Standard Ports
-
-**Risk Level:** HIGH
-
-**What goes wrong:** The Node.js server runs on port 3001. Campus network firewall blocks everything except 80 and 443. Socket.io connections fail silently. Players stuck at "Connecting..."
-
-**Why it happens:** Development on localhost — firewalls don't apply locally.
-
-**Prevention:**
-- Run the production server on port 443 (HTTPS/WSS) only.
-- If using a cloud platform (Render, Railway): handled automatically.
-- If self-hosting: use nginx as a reverse proxy. Nginx listens on 443, Node.js on internal port.
-- **Test from real campus WiFi** at least 3 days before the event.
-
-**Phase to Address:** Deployment.
-
----
-
-### P6.3 — "It Works on My Machine" — Deployed Game Never Tested
-
-**Risk Level:** CRITICAL
-
-**What goes wrong:** Game developed and tested exclusively on `localhost`. At the event, the deployed version has CORS errors, OAuth redirect mismatches, socket.io connection failures, missing environment variables. Broken for the first 30 minutes.
-
-**Why it happens:** Deployment treated as the final task, not an ongoing infrastructure concern.
-
-**Prevention:**
-- **Deploy early**: working deployment from week 2 of development. Every feature is tested on the production URL.
-- Maintain a `DEPLOYMENT_CHECKLIST.md`: CORS origins set, Google OAuth URIs registered, DB connection string, environment variables set, SSL certificate valid.
-- Reserve the final week before the event for: full dry run, 8-player concurrent test, and bug fixes only (no new features in the final week).
-
-**Phase to Address:** Deployment phase must be the FIRST infrastructure phase, not the last.
-
----
-
-### P6.4 — Server Crashes on Unhandled Edge Cases
-
-**Risk Level:** HIGH
-
-**What goes wrong:** An untested edge case (player disconnects exactly when a match is ending, malformed socket event, join a lobby that just started) throws an unhandled exception. Node.js crashes. All active matches lost. Server needs manual restart at peak event time.
-
-**Why it happens:** Happy-path testing only. Error paths in socket handlers are skipped.
-
-**Prevention:**
-- Global crash reporter: `process.on('uncaughtException', ...)` + `process.on('unhandledRejection', ...)` that log and keep the process alive.
-- `try/catch` in all socket event handlers. A single player's malformed event should never kill the server.
-- Use PM2 in cluster mode or platform restart policy: auto-restarts in <5 seconds if it does crash.
-- **At the event**: have SSH access ready on the organizer's phone. Know the restart command before the event starts.
-
-**Phase to Address:** Networking foundation phase + deployment.
-
----
-
-### P6.5 — No Spectator Mode Leaves 12 People Watching a Black Screen
-
-**Risk Level:** MEDIUM
-
-**What goes wrong:** A 4v4 supports 8 players. 15 people are at the event. The 7 waiting players have nothing to do or watch.
-
-**Why it happens:** Spectator mode is considered a nice-to-have and cut for time.
-
-**Prevention:**
-- Minimum viable spectator: a "live view" URL renders all match events on a shared projector without player controls. One implementation, not individual spectator clients.
-- At a college demo event, having the match on the projector for crowd watching is more valuable than any individual feature except the match itself.
-
-**Phase to Address:** Match UI phase. Prioritize immediately after core PvP is stable.
-
----
-
-### P6.6 — Phaser Autoplay Policy Silences Audio on First Load
-
-**Risk Level:** LOW
-
-**What goes wrong:** Browsers require a user gesture before allowing audio. If Phaser tries to play sounds before the first click, it fails silently. Spell sounds, hit feedback, and music are absent until the player clicks.
-
-**Why it happens:** Browsers enforce the autoplay policy. Common on Chromium-based campus kiosk browsers.
-
-**Prevention:**
-- Add a "Click to Start" splash screen before the game initializes audio. Standard practice. Resolves the autoplay policy and doubles as a loading screen.
-- Test audio specifically on the event machines (campus browsers may have stricter policies).
-
-**Phase to Address:** Game launch / pre-lobby UI phase.
-
----
-
-### P6.7 — Stale Session on Shared Machines
-
-**Risk Level:** MEDIUM
-
-**What goes wrong:** Student A logs in on Machine 5. Plays a match. Leaves. Student B sits down and the game still shows Student A's account. Student B plays matches that go to Student A's rank score.
-
-**Why it happens:** JWT stored in `localStorage` persists between browser sessions until expiry.
-
-**Prevention:**
-- Prominent "Log Out" button on main menu / lobby screen.
-- On match completion, return to the **login screen** (not main menu) — forces the next user to log in.
-- JWT expiry: 8-12 hour max for single-day events.
-- On page load: if a stored session exists, show "Continue as [Name] or Switch Account?" prompt.
-
-**Phase to Address:** Auth phase (session flow).
-
----
-
-### P6.8 — Load Test Never Done
-
-**Risk Level:** HIGH
-
-**What goes wrong:** Game works fine with 2 browser tabs. The event starts with 20 players simultaneously logging in, joining lobbies, and starting matches. Server slows down. Lobby list returns stale data. Matches lag. Team is debugging live.
-
-**Why it happens:** Load testing seems optional until it isn't. 2-developer teams skip it.
-
-**Prevention:**
-- Before the event: run a structured test with 8 real browsers simultaneously (different machines or browser profiles) in the same arena.
-- Test specifically: 2 concurrent lobbies, each with 4 players in a match. That is the peak load scenario.
-- Log server CPU and memory during this test. If either exceeds 70%, investigate.
-- Note: 4v4 spell combat at 20Hz is ~160 position events/second. This is not heavy load — it should work fine. The test confirms there are no concurrency bugs.
-
-**Phase to Address:** Pre-event final sprint (dedicated test session, not squeezed into development hours).
-
----
-
-## Summary: Phase Assignment Quick Reference
-
-| Pitfall | Phase |
-|---------|-------|
-| P1.1 Client secret exposure | Auth — first |
-| P1.2 Redirect breaks game state | Auth |
-| P1.3 JWT storage | Auth |
-| P1.4 CORS + OAuth URIs not for production | Auth |
-| P1.5 Socket auth not validated | Auth + Networking foundation |
-| P2.1 Orphaned lobbies | Lobby |
-| P2.2 Reconnection window | Lobby + Networking |
-| P2.3 Owner disconnect pre-start | Lobby |
-| P2.4 Join/start race condition | Lobby |
-| P2.5 Lobby code collision | Lobby |
-| P3.1 Physics authority across clients | Networking architecture (first) |
-| P3.2 Clients self-reporting damage | Networking architecture (first) |
-| P3.3 Internet latency hit feel | Combat sync |
-| P3.4 Player jitter / no interpolation | Combat sync |
-| P3.5 Event flood with 8 players | Combat sync + load test |
-| P3.6 God-scene gets worse | Architecture cleanup (before networking) |
-| P3.7 Singletons don't reset | Architecture cleanup (before match logic) |
-| P4.1 Rank inflation | Ranking |
-| P4.2 Server reset wipes leaderboard | Ranking + deployment |
-| P4.3 One-game ranking distortion | Ranking UI |
-| P4.4 Disconnect = free escape from rank loss | Ranking + disconnection handling |
-| P5.1 Level advantage unwinnable matches | Progression — balance |
-| P5.2 Stat overflow | Progression |
-| P5.3 Progression gates elements | Progression design |
-| P5.4 HP-only builds collapse diversity | Progression UX |
-| P6.1 HTTP server breaks OAuth | Deployment (early) |
-| P6.2 Campus firewall blocks ports | Deployment |
-| P6.3 Never tested on production URL | Deployment (ongoing from phase 1) |
-| P6.4 Server crash on edge cases | Networking foundation |
-| P6.5 No spectator mode | Match UI |
-| P6.6 Autoplay policy | Game launch UI |
-| P6.7 Stale session on shared machines | Auth |
-| P6.8 Load test never done | Pre-event sprint |
-
----
-
-## Phase-Specific Warning Flags
-
-| Phase Topic | Likely Pitfall | Required Mitigation |
-|-------------|---------------|---------------------|
-| First networking commit | P3.1 + P3.2 without architecture | Define authority model in writing before any code |
-| Auth implementation | P1.1 + P6.1 combo | Test with prod credentials + HTTPS from day 1 |
-| Lobby logic | P2.1 + P2.2 together | Implement cleanup and reconnection in same phase |
-| First full match end-to-end | P3.7 | Singleton reset must work before match 2 |
-| Ranking formula | P4.1 | Run simulation script, see it on a graph |
-| Progression stats | P5.1 + P5.2 | Playtest max-level vs level-1, no exceptions |
-| Final week | P6.3 + P6.8 | Full 8-player dry run on production URL from campus WiFi |
+## Sources
+
+- Direct analysis of `src/networking/network-manager.ts` (440 lines, WebRTC mesh lifecycle)
+- Direct analysis of `src/scenes/lobby-scene.ts` (313 lines, event binding patterns, #isHost boolean)
+- Direct analysis of `game-server/src/lobby-manager.ts` (97 lines, host migration, no validation)
+- Direct analysis of `game-server/src/server.ts` (145 lines, broadcast patterns, no start validation)
+- Direct analysis of `src/networking/types.ts` (client-server type definitions)
+- `.planning/codebase/CONCERNS.md` (existing technical debt)
+- `.planning/codebase/ARCHITECTURE.md` (Phaser scene lifecycle, event bus, singleton patterns)
+- `.planning/WebRTC Game Networking Architecture Analysis.md` (O(N^2) mesh scaling, bandwidth analysis)
+- Domain expertise on WebRTC P2P networking, Phaser 3 scene lifecycle, socket.io multiplayer patterns (training data)
