@@ -172,40 +172,40 @@ Deferred to future milestones. Tracked but not in current roadmap.
 | SPL-04 | Phase 3 (v1.1) | Complete |
 | SPL-05 | Phase 3 (v1.1) | Complete |
 | PVP-01 | Phase 3 (v1.1) | Complete |
-| FND-01 | TBD (v1.2) | Pending |
-| FND-02 | TBD (v1.2) | Pending |
-| FND-03 | TBD (v1.2) | Pending |
-| FND-04 | TBD (v1.2) | Pending |
-| LBY-01 | TBD (v1.2) | Pending |
-| LBY-02 | TBD (v1.2) | Pending |
-| LBY-03 | TBD (v1.2) | Pending |
-| LBY-04 | TBD (v1.2) | Pending |
-| LBY-05 | TBD (v1.2) | Pending |
-| LBY-06 | TBD (v1.2) | Pending |
-| LBY-07 | TBD (v1.2) | Pending |
-| LBY-08 | TBD (v1.2) | Pending |
-| LBY-09 | TBD (v1.2) | Pending |
-| LBY-10 | TBD (v1.2) | Pending |
-| COM-01 | TBD (v1.2) | Pending |
-| COM-02 | TBD (v1.2) | Pending |
-| PGF-01 | TBD (v1.2) | Pending |
-| PGF-02 | TBD (v1.2) | Pending |
-| PGF-03 | TBD (v1.2) | Pending |
-| PGF-04 | TBD (v1.2) | Pending |
-| PGF-05 | TBD (v1.2) | Pending |
-| QOL-01 | TBD (v1.2) | Pending |
-| QOL-02 | TBD (v1.2) | Pending |
-| QOL-03 | TBD (v1.2) | Pending |
-| QOL-04 | TBD (v1.2) | Pending |
-| PMT-01 | TBD (v1.2) | Pending |
-| PMT-02 | TBD (v1.2) | Pending |
-| PMT-03 | TBD (v1.2) | Pending |
+| FND-01 | Phase 6 (v1.2) | Pending |
+| FND-02 | Phase 6 (v1.2) | Pending |
+| FND-03 | Phase 6 (v1.2) | Pending |
+| FND-04 | Phase 6 (v1.2) | Pending |
+| LBY-01 | Phase 7 (v1.2) | Pending |
+| LBY-02 | Phase 7 (v1.2) | Pending |
+| LBY-03 | Phase 7 (v1.2) | Pending |
+| LBY-04 | Phase 7 (v1.2) | Pending |
+| LBY-05 | Phase 7 (v1.2) | Pending |
+| LBY-06 | Phase 7 (v1.2) | Pending |
+| LBY-07 | Phase 7 (v1.2) | Pending |
+| LBY-08 | Phase 7 (v1.2) | Pending |
+| LBY-09 | Phase 7 (v1.2) | Pending |
+| LBY-10 | Phase 7 (v1.2) | Pending |
+| COM-01 | Phase 7 (v1.2) | Pending |
+| COM-02 | Phase 7 (v1.2) | Pending |
+| PGF-01 | Phase 8 (v1.2) | Pending |
+| PGF-02 | Phase 8 (v1.2) | Pending |
+| PGF-03 | Phase 8 (v1.2) | Pending |
+| PGF-04 | Phase 8 (v1.2) | Pending |
+| PGF-05 | Phase 8 (v1.2) | Pending |
+| QOL-01 | Phase 9 (v1.2) | Pending |
+| QOL-02 | Phase 9 (v1.2) | Pending |
+| QOL-03 | Phase 9 (v1.2) | Pending |
+| QOL-04 | Phase 9 (v1.2) | Pending |
+| PMT-01 | Phase 10 (v1.2) | Pending |
+| PMT-02 | Phase 10 (v1.2) | Pending |
+| PMT-03 | Phase 10 (v1.2) | Pending |
 
 **Coverage:**
 - v1.2 requirements: 28 total
-- Mapped to phases: 0
-- Unmapped: 28
+- Mapped to phases: 28
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-04-21*
-*Last updated: 2026-04-21 after v1.2 milestone definition*
+*Last updated: 2026-04-21 after v1.2 roadmap creation*
