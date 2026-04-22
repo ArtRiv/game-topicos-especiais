@@ -378,7 +378,12 @@ export class NetworkManager {
 
     ch.onmessage = (e: MessageEvent<string>) => {
       this.#msgRecvCount++;
-      const msg = JSON.parse(e.data) as DcMessage;
+      let msg: DcMessage;
+      try {
+        msg = JSON.parse(e.data) as DcMessage;
+      } catch {
+        return; // Drop malformed messages silently
+      }
       const playerId = this.#socketToPlayerId.get(fromSocketId) ?? fromSocketId;
 
       switch (msg.type) {
