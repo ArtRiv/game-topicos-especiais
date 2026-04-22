@@ -46,10 +46,22 @@ io.on('connection', (socket) => {
   });
 
   socket.on('lobby:leave', () => {
+    // Check if leaver is host before removing
+    const lobbyBefore = lobbyManager.getLobbyBySocketId(socket.id);
+    const wasHost = lobbyBefore
+      ? lobbyBefore.players.find(p => p.socketId === socket.id)?.id === lobbyBefore.hostPlayerId
+      : false;
+
     const lobby = lobbyManager.leaveLobby(socket.id);
     if (lobby) {
       socket.leave(`lobby:${lobby.id}`);
       io.to(`lobby:${lobby.id}`).emit('lobby:updated', { lobby });
+      // Broadcast host change if the host left voluntarily
+      if (wasHost) {
+        io.to(`lobby:${lobby.id}`).emit('host:changed', {
+          newHostPlayerId: lobby.hostPlayerId,
+        });
+      }
     }
     // Lobby may have been removed (empty) or player count changed — update all browsing clients
     io.emit('lobby:list-updated', { lobbies: lobbyManager.listLobbies() });
@@ -119,13 +131,33 @@ io.on('connection', (socket) => {
     console.log(`[SERVER] Client disconnected: ${socket.id}`);
     const lobbyId = findLobbyIdBySocket(socket.id);
     const room = gameRooms.get(lobbyId ?? '');
+
+    // Check if this player was the host BEFORE removing them
+    const lobbyBeforeLeave = lobbyId ? lobbyManager.getLobbyBySocketId(socket.id) : undefined;
+    const wasHost = lobbyBeforeLeave
+      ? lobbyBeforeLeave.players.find(p => p.socketId === socket.id)?.id === lobbyBeforeLeave.hostPlayerId
+      : false;
+
     if (room) {
       const playerId = room.removePlayer(socket.id);
       if (playerId && lobbyId) {
         io.to(`lobby:${lobbyId}`).emit('game:player-disconnected', { playerId });
       }
     }
-    lobbyManager.leaveLobby(socket.id);
+
+    const lobbyAfterLeave = lobbyManager.leaveLobby(socket.id);
+
+    // If the host left and lobby still exists, broadcast new host to all remaining players (FND-02)
+    if (wasHost && lobbyAfterLeave && lobbyAfterLeave.players.length > 0) {
+      io.to(`lobby:${lobbyAfterLeave.id}`).emit('host:changed', {
+        newHostPlayerId: lobbyAfterLeave.hostPlayerId,
+      });
+    }
+
+    // Update lobby list for browsing clients
+    if (lobbyId) {
+      io.emit('lobby:list-updated', { lobbies: lobbyManager.listLobbies() });
+    }
   });
 });
 
