@@ -1,36 +1,34 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.1
-milestone_name: milestone
-status: executing
-stopped_at: Phase 6 context gathered
-last_updated: "2026-04-22T02:03:18.708Z"
-last_activity: 2026-04-22
+milestone: v1.2
+milestone_name: Match Lifecycle & Event Polish
+status: defining_requirements
+stopped_at: New milestone — defining requirements
+last_updated: "2026-04-24T00:00:00.000Z"
+last_activity: 2026-04-24
 progress:
-  total_phases: 6
+  total_phases: 8
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
-  percent: 50
+  percent: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-21)
+See: .planning/PROJECT.md (updated 2026-04-24)
 
 **Core value:** The "I outplayed everyone" moment -- landing a perfectly timed spell combo that eliminates an opponent in front of a crowd.
-**Current focus:** Phase 06 — foundation-cleanup
+**Current focus:** v1.2 — Phase 7 ready to start (LOADING State + Match FSM)
 
 ## Current Position
 
-Phase: 06
-Plan: Not started
-Status: Executing Phase 06
-Last activity: 2026-04-22
-
-Progress: [##########..........] 50% (5 of 10 phases complete)
+Phase: 07 (planned, not started)
+Plan: —
+Status: Roadmap created — awaiting `/gsd-discuss-phase 7` or `/gsd-plan-phase 7`
+Last activity: 2026-04-24 — Milestone v1.2 roadmap created (8 phases)
 
 ## Performance Metrics
 
@@ -50,7 +48,7 @@ Progress: [##########..........] 50% (5 of 10 phases complete)
 
 **Recent Trend:**
 
-- Trend: Starting new milestone
+- Trend: v1.1 shipped (Phases 1–6 complete); starting v1.2 milestone
 
 *Updated after each plan completion*
 
@@ -79,9 +77,9 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-22T00:55:36.000Z
-Stopped at: Phase 6 context gathered
-Resume file: .planning/phases/06-foundation-cleanup/06-CONTEXT.md
+Last session: 2026-04-24T00:00:00.000Z
+Stopped at: v1.2 milestone started — defining requirements
+Resume file: —
 
 ## GSD Workflow Config
 
