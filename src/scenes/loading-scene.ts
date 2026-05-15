@@ -11,7 +11,10 @@ const TINTS = [0xffffff, 0x00aaff, 0xff4444, 0x44ff44, 0xff44ff];
 
 // LFC-04 requires the player list + map preview to be perceivable. On localhost the
 // server stub can complete the sync barrier within a single frame, making the scene
-// effectively invisible. Hold for at least this long so the user always sees it.
+// effectively invisible. Hold for at least this long after the local ack fires so the
+// user always sees it. We anchor the minimum to ack-send time (not scene-create) so
+// background-tab throttling — which pauses Phaser's clock — doesn't burn through it
+// before the user even sees the scene.
 const MIN_DISPLAY_MS = 1500;
 
 type LoadingSceneData = { matchConfig: MatchConfig };
@@ -32,7 +35,7 @@ export class LoadingScene extends Phaser.Scene {
   #matchConfig!: MatchConfig;
   #ackSent: boolean = false;
   #statusText!: Phaser.GameObjects.Text;
-  #enteredAt: number = 0;
+  #ackSentAt: number = -1;
   #pendingTransition: boolean = false;
 
   constructor() {
@@ -42,11 +45,11 @@ export class LoadingScene extends Phaser.Scene {
   init(data: LoadingSceneData): void {
     this.#matchConfig = data.matchConfig;
     this.#ackSent = false;
+    this.#ackSentAt = -1;
     this.#pendingTransition = false;
   }
 
   create(): void {
-    this.#enteredAt = this.time.now;
     this.#renderUI();
 
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_MATCH_STATE_CHANGED, this.#onMatchStateChanged, this);
@@ -92,8 +95,12 @@ export class LoadingScene extends Phaser.Scene {
   #sendLoadedAck(): void {
     if (this.#ackSent) return;
     this.#ackSent = true;
+    this.#ackSentAt = this.time.now;
     NetworkManager.getInstance().sendMatchLoaded(this.#matchConfig.lobbyId);
     if (this.#statusText) this.#statusText.setText('Waiting for other players...');
+    // If the COUNTDOWN broadcast already arrived (rare: server transitioned before our ack
+    // delayedCall fired), schedule the transition now that we have an ack-send anchor.
+    if (this.#pendingTransition) this.#scheduleTransition();
   }
 
   #onMatchStateChanged = (payload: MatchStateChangedPayload): void => {
@@ -101,16 +108,22 @@ export class LoadingScene extends Phaser.Scene {
     if (payload.state !== 'COUNTDOWN' && payload.state !== 'ACTIVE') return;
     if (this.#pendingTransition) return;
     this.#pendingTransition = true;
+    this.#scheduleTransition();
+  };
 
-    // Either COUNTDOWN or ACTIVE means every client has loaded — chain to PreloadScene.
-    // (The Phase 7 stub auto-advances COUNTDOWN->ACTIVE in 50 ms, so either may arrive first.)
-    // Enforce MIN_DISPLAY_MS so the player list + map name are perceivable to the user.
-    const elapsed = this.time.now - this.#enteredAt;
+  // Either COUNTDOWN or ACTIVE means every client has loaded — chain to PreloadScene.
+  // (The Phase 7 stub auto-advances COUNTDOWN->ACTIVE in 50 ms, so either may arrive first.)
+  // Enforce MIN_DISPLAY_MS measured from when our local ack fired, so background-tab
+  // throttling (which pauses Phaser's clock) doesn't burn the budget before the user sees us.
+  // If the broadcast somehow arrived before the ack, this is called again from #sendLoadedAck.
+  #scheduleTransition(): void {
+    if (this.#ackSentAt < 0) return; // wait for ack to fire so the anchor is real
+    const elapsed = this.time.now - this.#ackSentAt;
     const remaining = Math.max(0, MIN_DISPLAY_MS - elapsed);
     this.time.delayedCall(remaining, () => {
       if (this.#statusText) this.#statusText.setText('Starting match...');
       this.scene.stop(SCENE_KEYS.LOADING_SCENE);
       this.scene.start(SCENE_KEYS.PRELOAD_SCENE);
     });
-  };
+  }
 }
