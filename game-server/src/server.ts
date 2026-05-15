@@ -3,7 +3,7 @@ import express from 'express';
 import { Server } from 'socket.io';
 import { LobbyManager } from './lobby-manager.js';
 import { GameRoom } from './game-room.js';
-import type { RoomTransitionPayload } from './types.js';
+import type { RoomTransitionPayload, MatchState, MatchStateChangedPayload, MatchLoadedPayload } from './types.js';
 import { decode as msgpackDecode } from '@msgpack/msgpack';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
@@ -16,6 +16,15 @@ const io = new Server(httpServer, {
 
 const lobbyManager = new LobbyManager();
 const gameRooms = new Map<string, GameRoom>(); // lobbyId → GameRoom
+
+function broadcastMatchState(lobbyId: string, room: GameRoom): void {
+  const payload: MatchStateChangedPayload = {
+    lobbyId,
+    state: room.state,
+    serverTs: Date.now(),
+  };
+  io.to(`lobby:${lobbyId}`).emit('match:state-changed', payload);
+}
 
 io.on('connection', (socket) => {
   console.log(`[SERVER] Client connected: ${socket.id}`);
@@ -83,8 +92,43 @@ io.on('connection', (socket) => {
     const room = new GameRoom();
     lobby.players.forEach((p) => room.addPlayer(p.id, p.socketId));
     gameRooms.set(lobby.id, room);
+
+    // Transition LOBBY → LOADING and broadcast (LFC-03). Order matters: state must change BEFORE
+    // lobby:started fires so any client handler can rely on `match:state-changed` already being in flight.
+    room.transitionTo('LOADING');
+    broadcastMatchState(lobby.id, room);
+
     const matchConfig = { lobbyId: lobby.id, players: lobby.players, mode: lobby.mode ?? 'team-deathmatch' };
     io.to(`lobby:${lobby.id}`).emit('lobby:started', { matchConfig });
+  });
+
+  socket.on('match:loaded', ({ lobbyId }: MatchLoadedPayload) => {
+    const room = gameRooms.get(lobbyId);
+    if (!room) return;
+    const allLoaded = room.markLoaded(socket.id);
+    if (!allLoaded) return;
+
+    // Sync barrier complete (LFC-05): every match member reported loaded → LOADING → COUNTDOWN.
+    try {
+      room.transitionTo('COUNTDOWN');
+    } catch {
+      return; // already past LOADING (e.g., everyone reconnected after ENDED) — ignore
+    }
+    broadcastMatchState(lobbyId, room);
+
+    // Phase 7 STUB: auto-advance COUNTDOWN → ACTIVE after a short delay so existing GameScene flow
+    // continues to work end-to-end. Phase 8 will REPLACE this stub with the real countdown timing.
+    setTimeout(() => {
+      if (!gameRooms.has(lobbyId)) return;
+      const r = gameRooms.get(lobbyId)!;
+      if (r.state !== 'COUNTDOWN') return;
+      try {
+        r.transitionTo('ACTIVE');
+      } catch {
+        return;
+      }
+      broadcastMatchState(lobbyId, r);
+    }, 50);
   });
 
   // --- Game phase (WebRTC handles player-update and spell-cast P2P; only room transitions use server) ---
@@ -140,6 +184,7 @@ io.on('connection', (socket) => {
 
     if (room) {
       const playerId = room.removePlayer(socket.id);
+      // note: removePlayer also drops any pending match:loaded ack for this socket (handled inside GameRoom)
       if (playerId && lobbyId) {
         io.to(`lobby:${lobbyId}`).emit('game:player-disconnected', { playerId });
       }
