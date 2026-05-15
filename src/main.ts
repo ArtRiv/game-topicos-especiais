@@ -1,6 +1,7 @@
 import * as Phaser from 'phaser';
 import { SCENE_KEYS } from './scenes/scene-keys';
 import { LobbyScene } from './scenes/lobby-scene';
+import { LoadingScene } from './scenes/loading-scene';
 import { PreloadScene } from './scenes/preload-scene';
 import { GameScene } from './scenes/game-scene';
 import { UiScene } from './scenes/ui-scene';
@@ -35,6 +36,7 @@ const gameConfig: Phaser.Types.Core.GameConfig = {
 const game = new Phaser.Game(gameConfig);
 
 game.scene.add(SCENE_KEYS.LOBBY_SCENE, LobbyScene);
+game.scene.add(SCENE_KEYS.LOADING_SCENE, LoadingScene);
 game.scene.add(SCENE_KEYS.PRELOAD_SCENE, PreloadScene);
 game.scene.add(SCENE_KEYS.GAME_SCENE, GameScene);
 game.scene.add(SCENE_KEYS.UI_SCENE, UiScene);

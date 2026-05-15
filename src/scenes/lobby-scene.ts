@@ -2,7 +2,7 @@ import * as Phaser from 'phaser';
 import { SCENE_KEYS } from './scene-keys.js';
 import { NetworkManager } from '../networking/network-manager.js';
 import { EVENT_BUS, CUSTOM_EVENTS } from '../common/event-bus.js';
-import type { Lobby, PlayerInfo } from '../networking/types.js';
+import type { Lobby, MatchConfig, PlayerInfo } from '../networking/types.js';
 
 const FONT = { fontFamily: '"Press Start 2P"', fontSize: '10px', color: '#ffffff' };
 const FONT_TITLE = { fontFamily: '"Press Start 2P"', fontSize: '14px', color: '#ffdd55' };
@@ -225,13 +225,13 @@ export class LobbyScene extends Phaser.Scene {
     }
   };
 
-  #onLobbyStarted = (): void => {
+  #onLobbyStarted = (data: { matchConfig: MatchConfig }): void => {
     EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_LOBBY_UPDATED, this.#onWaitingRoomUpdate, this);
     EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_LOBBY_STARTED, this.#onLobbyStarted, this);
     EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_HOST_CHANGED, this.#onHostChanged, this);
     this.#currentLobby = null;
     this.scene.stop(SCENE_KEYS.LOBBY_SCENE);
-    this.scene.start(SCENE_KEYS.PRELOAD_SCENE);
+    this.scene.start(SCENE_KEYS.LOADING_SCENE, { matchConfig: data.matchConfig });
   };
 
   #playerListObjects: Phaser.GameObjects.GameObject[] = [];
