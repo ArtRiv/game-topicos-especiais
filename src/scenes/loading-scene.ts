@@ -9,6 +9,11 @@ const FONT_SMALL = { fontFamily: '"Press Start 2P"', fontSize: '8px', color: '#c
 const FONT_SMALL_WHITE = { fontFamily: '"Press Start 2P"', fontSize: '8px', color: '#ffffff' };
 const TINTS = [0xffffff, 0x00aaff, 0xff4444, 0x44ff44, 0xff44ff];
 
+// LFC-04 requires the player list + map preview to be perceivable. On localhost the
+// server stub can complete the sync barrier within a single frame, making the scene
+// effectively invisible. Hold for at least this long so the user always sees it.
+const MIN_DISPLAY_MS = 1500;
+
 type LoadingSceneData = { matchConfig: MatchConfig };
 
 /**
@@ -27,6 +32,8 @@ export class LoadingScene extends Phaser.Scene {
   #matchConfig!: MatchConfig;
   #ackSent: boolean = false;
   #statusText!: Phaser.GameObjects.Text;
+  #enteredAt: number = 0;
+  #pendingTransition: boolean = false;
 
   constructor() {
     super({ key: SCENE_KEYS.LOADING_SCENE });
@@ -35,9 +42,11 @@ export class LoadingScene extends Phaser.Scene {
   init(data: LoadingSceneData): void {
     this.#matchConfig = data.matchConfig;
     this.#ackSent = false;
+    this.#pendingTransition = false;
   }
 
   create(): void {
+    this.#enteredAt = this.time.now;
     this.#renderUI();
 
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_MATCH_STATE_CHANGED, this.#onMatchStateChanged, this);
@@ -90,10 +99,18 @@ export class LoadingScene extends Phaser.Scene {
   #onMatchStateChanged = (payload: MatchStateChangedPayload): void => {
     if (payload.lobbyId !== this.#matchConfig.lobbyId) return;
     if (payload.state !== 'COUNTDOWN' && payload.state !== 'ACTIVE') return;
+    if (this.#pendingTransition) return;
+    this.#pendingTransition = true;
 
     // Either COUNTDOWN or ACTIVE means every client has loaded — chain to PreloadScene.
     // (The Phase 7 stub auto-advances COUNTDOWN->ACTIVE in 50 ms, so either may arrive first.)
-    this.scene.stop(SCENE_KEYS.LOADING_SCENE);
-    this.scene.start(SCENE_KEYS.PRELOAD_SCENE);
+    // Enforce MIN_DISPLAY_MS so the player list + map name are perceivable to the user.
+    const elapsed = this.time.now - this.#enteredAt;
+    const remaining = Math.max(0, MIN_DISPLAY_MS - elapsed);
+    this.time.delayedCall(remaining, () => {
+      if (this.#statusText) this.#statusText.setText('Starting match...');
+      this.scene.stop(SCENE_KEYS.LOADING_SCENE);
+      this.scene.start(SCENE_KEYS.PRELOAD_SCENE);
+    });
   };
 }
