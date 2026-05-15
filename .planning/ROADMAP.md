@@ -28,7 +28,7 @@ Turn the working PvP foundation into a tournament-grade experience for the colle
 
 | # | Phase | Goal | Requirements | Success Criteria |
 |---|-------|------|--------------|------------------|
-| 7 | LOADING State + Match FSM | Synchronized loading with player list + map preview; all clients enter together | LFC-01..05 (5) | 4 |
+| 7 | LOADING State + Match FSM | 1/2 | In Progress|  |
 | 8 | COUNTDOWN State | Spawn-locked zoom-in cinematic with countdown; combat unlocks simultaneously on FIGHT | LFC-06..09 (4) | 4 |
 | 9 | Lobby Format & Map Config | Host configures match format/map via single extensible config broadcast to all | LBC-01..07 (7) | 4 |
 | 10 | Ready-Up & AFK Detection | Lobby gates start on all-ready + min count; AFK detection + kick | LBC-08..11 (4) | 3 |
