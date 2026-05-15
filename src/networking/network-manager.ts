@@ -19,6 +19,8 @@ import type {
   EarthWallPillarDestroyBroadcast,
   Lobby,
   MatchConfig,
+  MatchStateChangedPayload,
+  MatchLoadedPayload,
   PlayerInfo,
 } from './types.js';
 
@@ -132,6 +134,11 @@ export class NetworkManager {
   sendLobbySetMode(gameMode: string): void { this.#socket.emit('lobby:set-mode', { gameMode }); }
   sendLobbyStart(): void { this.#socket.emit('lobby:start'); }
   sendLobbyAssignTeam(targetPlayerId: string, team: number): void { this.#socket.emit('lobby:assign-team', { targetPlayerId, team }); }
+
+  /** Client ack for the LOADING sync barrier (LFC-05). Sent exactly once when the local LoadingScene finishes preparation. */
+  sendMatchLoaded(lobbyId: string): void {
+    this.#socket.emit('match:loaded', { lobbyId } satisfies MatchLoadedPayload);
+  }
 
   // --- Game methods (WebRTC data channels — low latency, P2P) ---
 
@@ -248,6 +255,12 @@ export class NetworkManager {
       }
       EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_LOBBY_STARTED, { matchConfig });
       this.#initWebRTCMesh(matchConfig.players);
+    });
+
+    // Match FSM transitions (LFC-02). The LoadingScene listens for COUNTDOWN/ACTIVE
+    // to gate its scene-switch to PreloadScene -> GameScene.
+    this.#socket.on('match:state-changed', (payload: MatchStateChangedPayload) => {
+      EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_MATCH_STATE_CHANGED, payload);
     });
 
     // WebRTC signaling — server forwards offer/answer/ice between peers
