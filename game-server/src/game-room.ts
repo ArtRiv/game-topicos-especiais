@@ -62,12 +62,20 @@ export class GameRoom {
    * Mark a socket as having reported `match:loaded`. Returns true exactly once per LOADING cycle:
    * the call that completes the set (every player loaded) returns true so the caller can transition.
    * All other calls return false. Invalid-state calls (not LOADING) return false silently.
+   *
+   * Note: duplicate acks (Set semantics) and acks AFTER the set is already complete both return
+   * false. Only the transition from "incomplete set" → "complete set" returns true.
    */
   markLoaded(socketId: string): boolean {
     if (this.#state !== 'LOADING') return false;
     if (!this.#players.has(socketId)) return false;
+    const sizeBefore = this.#loadedSocketIds.size;
     this.#loadedSocketIds.add(socketId);
-    return this.#loadedSocketIds.size === this.#players.size;
+    const sizeAfter = this.#loadedSocketIds.size;
+    // Only the call that *completes* the set returns true. Duplicate acks (size unchanged) and
+    // acks after the set is already full both return false so the caller transitions exactly once.
+    if (sizeAfter === sizeBefore) return false;
+    return sizeAfter === this.#players.size;
   }
 
   /** Test/observability accessor — count of acks received in the current LOADING cycle. */
