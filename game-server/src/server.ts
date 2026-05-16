@@ -3,7 +3,8 @@ import express from 'express';
 import { Server } from 'socket.io';
 import { LobbyManager } from './lobby-manager.js';
 import { GameRoom } from './game-room.js';
-import type { RoomTransitionPayload, MatchState, MatchStateChangedPayload, MatchLoadedPayload } from './types.js';
+import type { RoomTransitionPayload, MatchState, MatchStateChangedPayload, MatchLoadedPayload, MatchCountdownTickPayload } from './types.js';
+import { COUNTDOWN_DURATION_MS, FIGHT_HOLD_MS } from './types.js';
 import { decode as msgpackDecode } from '@msgpack/msgpack';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
@@ -24,6 +25,55 @@ function broadcastMatchState(lobbyId: string, room: GameRoom): void {
     serverTs: Date.now(),
   };
   io.to(`lobby:${lobbyId}`).emit('match:state-changed', payload);
+}
+
+/**
+ * Schedule the 4 countdown-tick broadcasts (3, 2, 1, FIGHT) + the final LOADING→ACTIVE transition.
+ * Replaces the Phase 7 50ms auto-advance stub. (LFC-08, LFC-09)
+ *
+ * Identity-bound safety: every callback verifies `gameRooms.get(lobbyId) === room` AND
+ * `room.state === 'COUNTDOWN'` before emitting, so a destroyed/replaced room cannot leak ticks.
+ * (T-08-02 mitigation)
+ *
+ * Handle storage: every scheduled handle is pushed onto room.pushCountdownHandle so the room
+ * itself can cancel them on COUNTDOWN→* transitions or when the room becomes empty. (WR-07)
+ */
+function startCountdown(lobbyId: string, room: GameRoom): void {
+  const TICKS: readonly { atMs: number; remaining: number; label: string }[] = [
+    { atMs: 0,    remaining: 3, label: '3' },
+    { atMs: 1000, remaining: 2, label: '2' },
+    { atMs: 2000, remaining: 1, label: '1' },
+    { atMs: 3000, remaining: 0, label: 'FIGHT' },
+  ];
+
+  for (const tick of TICKS) {
+    const handle = setTimeout(() => {
+      // Identity check: the room must still be the same object we captured AND still in COUNTDOWN.
+      if (gameRooms.get(lobbyId) !== room) return;
+      if (room.state !== 'COUNTDOWN') return;
+      const payload: MatchCountdownTickPayload = {
+        lobbyId,
+        remaining: tick.remaining,
+        label: tick.label,
+        serverTs: Date.now(),
+      };
+      io.to(`lobby:${lobbyId}`).emit('match:countdown-tick', payload);
+    }, tick.atMs);
+    room.pushCountdownHandle(handle);
+  }
+
+  // Final transition: COUNTDOWN → ACTIVE at t+3500 ms (3000 ms of ticks + 500 ms FIGHT hold).
+  const transitionHandle = setTimeout(() => {
+    if (gameRooms.get(lobbyId) !== room) return;
+    if (room.state !== 'COUNTDOWN') return;
+    try {
+      room.transitionTo('ACTIVE');
+    } catch {
+      return;
+    }
+    broadcastMatchState(lobbyId, room);
+  }, COUNTDOWN_DURATION_MS + FIGHT_HOLD_MS);
+  room.pushCountdownHandle(transitionHandle);
 }
 
 io.on('connection', (socket) => {
@@ -89,6 +139,8 @@ io.on('connection', (socket) => {
   socket.on('lobby:start', () => {
     const lobby = lobbyManager.startLobby(socket.id);
     if (!lobby) return;
+    // CR-02 defense-in-depth: never overwrite an existing GameRoom
+    if (gameRooms.has(lobby.id)) return;
     const room = new GameRoom();
     lobby.players.forEach((p) => room.addPlayer(p.id, p.socketId));
     gameRooms.set(lobby.id, room);
@@ -116,19 +168,7 @@ io.on('connection', (socket) => {
     }
     broadcastMatchState(lobbyId, room);
 
-    // Phase 7 STUB: auto-advance COUNTDOWN → ACTIVE after a short delay so existing GameScene flow
-    // continues to work end-to-end. Phase 8 will REPLACE this stub with the real countdown timing.
-    setTimeout(() => {
-      if (!gameRooms.has(lobbyId)) return;
-      const r = gameRooms.get(lobbyId)!;
-      if (r.state !== 'COUNTDOWN') return;
-      try {
-        r.transitionTo('ACTIVE');
-      } catch {
-        return;
-      }
-      broadcastMatchState(lobbyId, r);
-    }, 50);
+    startCountdown(lobbyId, room);
   });
 
   // --- Game phase (WebRTC handles player-update and spell-cast P2P; only room transitions use server) ---
@@ -183,6 +223,7 @@ io.on('connection', (socket) => {
       : false;
 
     if (room) {
+      // Phase 8: removePlayer also calls clearCountdownTimers() when the room becomes empty (WR-07 fix).
       const playerId = room.removePlayer(socket.id);
       // note: removePlayer also drops any pending match:loaded ack for this socket (handled inside GameRoom)
       if (playerId && lobbyId) {
