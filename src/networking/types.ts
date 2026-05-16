@@ -97,19 +97,3 @@ export type RoomTransitionPayload = {
 export type PlayerDisconnectedPayload = {
   playerId: string;
 };
-
-/** Match-lifecycle FSM states (LFC-01). Mirrors game-server/src/types.ts MatchState. */
-export type MatchState = 'LOBBY' | 'LOADING' | 'COUNTDOWN' | 'ACTIVE' | 'ENDED';
-
-/** Inbound broadcast: server informs all clients of a match-state transition (LFC-02). */
-export type MatchStateChangedPayload = {
-  lobbyId: string;
-  state: MatchState;
-  /** Server epoch ms when the transition was performed; useful for COUNTDOWN sync in Phase 8. */
-  serverTs: number;
-};
-
-/** Outbound: client tells server it has finished loading and is ready to enter COUNTDOWN (LFC-05). */
-export type MatchLoadedPayload = {
-  lobbyId: string;
-};

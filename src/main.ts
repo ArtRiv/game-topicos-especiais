@@ -10,7 +10,6 @@ import { OptionsScene } from './scenes/options-scene';
 import { CreditsScene } from './scenes/credits-scene';
 // --- Game scenes ---
 import { LobbyScene } from './scenes/lobby-scene';
-import { LoadingScene } from './scenes/loading-scene';
 import { PreloadScene } from './scenes/preload-scene';
 import { GameScene } from './scenes/game-scene';
 import { UiScene } from './scenes/ui-scene';
@@ -80,7 +79,6 @@ game.scene.add(SCENE_KEYS.OPTIONS_SCENE, OptionsScene);
 game.scene.add(SCENE_KEYS.CREDITS_SCENE, CreditsScene);
 // Network / game layer
 game.scene.add(SCENE_KEYS.LOBBY_SCENE, LobbyScene);
-game.scene.add(SCENE_KEYS.LOADING_SCENE, LoadingScene);
 game.scene.add(SCENE_KEYS.PRELOAD_SCENE, PreloadScene);
 game.scene.add(SCENE_KEYS.GAME_SCENE, GameScene);
 game.scene.add(SCENE_KEYS.UI_SCENE, UiScene);

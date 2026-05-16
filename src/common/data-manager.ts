@@ -106,26 +106,6 @@ export class DataManager {
     this.#data.currentHealth = PLAYER_START_MAX_HEALTH;
   }
 
-  public reset(): void {
-    this.#data = {
-      currentHealth: PLAYER_START_MAX_HEALTH,
-      maxHealth: PLAYER_START_MAX_HEALTH,
-      currentMana: PLAYER_MAX_MANA,
-      maxMana: PLAYER_MAX_MANA,
-      currentArea: {
-        name: LEVEL_NAME.DUNGEON_1,
-        startRoomId: 3,
-        startDoorId: 3,
-      },
-      areaDetails: {
-        DUNGEON_1: {
-          bossDefeated: false,
-        },
-        WORLD: {},
-      },
-    };
-  }
-
   public updatePlayerCurrentHealth(health: number): void {
     if (health === this.#data.currentHealth) {
       return;

@@ -91,12 +91,4 @@ export class InventoryManager {
       this.#areaInventory[area].keys -= 1;
     }
   }
-
-  public reset(): void {
-    this.#generalInventory = { sword: true };
-    this.#areaInventory = {
-      DUNGEON_1: { map: false, bossKey: false, compass: false, keys: 0 },
-      WORLD: { map: false, bossKey: false, compass: false, keys: 0 },
-    };
-  }
 }

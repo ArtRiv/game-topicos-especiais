@@ -83,66 +83,6 @@
 
 ---
 
-## v1.2 Requirements (Match Lifecycle & Event Polish)
-
-### Match Lifecycle FSM (LFC)
-
-- [ ] **LFC-01**: Server tracks match state machine — `LOBBY → LOADING → COUNTDOWN → ACTIVE → ENDED` — with explicit transitions on `GameRoom`
-- [ ] **LFC-02**: All clients receive match-state transitions via socket.io broadcast and update their local state
-- [ ] **LFC-03**: Host pressing Start in lobby transitions room to `LOADING` for all clients
-- [ ] **LFC-04**: Pre-match loading screen displays match player list (names + team colors) and selected map preview
-- [ ] **LFC-05**: Server waits for every client to report `match:loaded` before transitioning to `COUNTDOWN` (sync barrier)
-- [ ] **LFC-06**: During `COUNTDOWN`, players are locked at spawn — movement and spell casting disabled on all clients
-- [ ] **LFC-07**: Camera animates from zoomed-out to normal play zoom over ~3–4 seconds during countdown
-- [ ] **LFC-08**: A visible `3 → 2 → 1 → FIGHT!` overlay is shown on all clients during countdown
-- [ ] **LFC-09**: Movement and spell casting unlock simultaneously on all clients at `COUNTDOWN → ACTIVE` transition
-
-### Lobby Configuration (LBC)
-
-- [ ] **LBC-01**: Host can select match format from `1v1, 2v2, 3v3, 4v4, 5v5, …, 10v10`
-- [ ] **LBC-02**: Lobby capacity equals `format × 2`; min-players-to-start enforces the selected format
-- [ ] **LBC-03**: Host can select a map from the available map pool
-- [ ] **LBC-04**: Selected map name (and any preview metadata) is reflected in the lobby UI on all clients
-- [ ] **LBC-05**: Server stores all lobby config on a single `GameRoom.config` object (no scattered fields)
-- [ ] **LBC-06**: Config changes broadcast via a single socket.io event to every lobby member on every change
-- [ ] **LBC-07**: Config schema is extensible — adding `timeLimit`, `friendlyFire`, `spellModifiers` later requires no protocol/event renaming
-- [ ] **LBC-08**: Each player has a "ready" toggle visible to the lobby
-- [ ] **LBC-09**: Host's Start button is disabled unless all players are ready AND the format-min count is met
-- [ ] **LBC-10**: Server marks players as AFK after a configurable lobby-idle timeout
-- [ ] **LBC-11**: Host has a one-click kick action for AFK-flagged players
-
-### In-Match Feedback (FBK)
-
-- [ ] **FBK-01**: Kill feed renders scrolling `X eliminated Y` entries in a screen corner during `ACTIVE`
-- [ ] **FBK-02**: Floating damage numbers spawn at the hit point on every confirmed spell hit, animating upward and fading
-- [ ] **FBK-03**: Each player's sprite has a name tag and HP bar rendered above it during combat
-- [ ] **FBK-04**: HUD displays elapsed match time during `ACTIVE`
-- [ ] **FBK-05**: HUD displays a per-client ping/latency indicator visible in lobby and during match
-
-### Match End & Resilience (MER)
-
-- [ ] **MER-01**: Server transitions to `ENDED` on win condition (last team/player standing) and broadcasts to all clients
-- [ ] **MER-02**: Post-match results screen displays winner/team, per-player kills, per-player damage dealt, and an MVP highlight
-- [ ] **MER-03**: Eliminated players enter spectator mode (free camera or follow a surviving player) — no black screen
-- [ ] **MER-04**: Spectator can switch the followed player or toggle to free camera
-- [ ] **MER-05**: If a player disconnects mid-match, server holds their slot for 15 seconds before eliminating them
-- [ ] **MER-06**: Reconnecting within the 15-second grace window restores the player to active play with their last-known state
-- [ ] **MER-07**: Existing `teardownMesh()` + `reset()` rematch flow remains intact after the results screen
-
----
-
-## Out of Scope (v1.2)
-
-- Server-authoritative game loop — WebRTC P2P architecture preserved by explicit constraint
-- New maps beyond the existing pool — host selects from already-built maps; map authoring is a separate effort
-- Replay/recording system — not needed for the live event
-- Persistence (DB-backed stats, ranking, accounts) — match results live in memory only; deferred to a later milestone
-- New spells or new elements — v1.1 element/spell set is frozen for v1.2
-- Mobile/controller support — keyboard only, unchanged from v1.0/v1.1
-- Time-limit / friendly-fire / spell-modifier configs — `LBC-07` makes the schema future-proof but the modes themselves are deferred
-
----
-
 ## Traceability
 
 | Req ID | Phase | Status |
@@ -180,38 +120,6 @@
 | SCL-01 | Phase 5 | Pending |
 | SCL-02 | Phase 5 | Pending |
 | SCL-03 | Phase 5 | Pending |
-| LFC-01 | Phase 7 | Pending |
-| LFC-02 | Phase 7 | Pending |
-| LFC-03 | Phase 7 | Pending |
-| LFC-04 | Phase 7 | Pending |
-| LFC-05 | Phase 7 | Pending |
-| LFC-06 | Phase 8 | Pending |
-| LFC-07 | Phase 8 | Pending |
-| LFC-08 | Phase 8 | Pending |
-| LFC-09 | Phase 8 | Pending |
-| LBC-01 | Phase 9 | Pending |
-| LBC-02 | Phase 9 | Pending |
-| LBC-03 | Phase 9 | Pending |
-| LBC-04 | Phase 9 | Pending |
-| LBC-05 | Phase 9 | Pending |
-| LBC-06 | Phase 9 | Pending |
-| LBC-07 | Phase 9 | Pending |
-| LBC-08 | Phase 10 | Pending |
-| LBC-09 | Phase 10 | Pending |
-| LBC-10 | Phase 10 | Pending |
-| LBC-11 | Phase 10 | Pending |
-| MER-01 | Phase 11 | Pending |
-| MER-02 | Phase 11 | Pending |
-| MER-07 | Phase 11 | Pending |
-| MER-05 | Phase 12 | Pending |
-| MER-06 | Phase 12 | Pending |
-| FBK-01 | Phase 13 | Pending |
-| FBK-02 | Phase 13 | Pending |
-| FBK-03 | Phase 13 | Pending |
-| FBK-04 | Phase 13 | Pending |
-| FBK-05 | Phase 13 | Pending |
-| MER-03 | Phase 14 | Pending |
-| MER-04 | Phase 14 | Pending |
 
 
 ### Second Player (P2)

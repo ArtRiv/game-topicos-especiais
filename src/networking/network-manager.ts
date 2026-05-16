@@ -19,8 +19,6 @@ import type {
   EarthWallPillarDestroyBroadcast,
   Lobby,
   MatchConfig,
-  MatchStateChangedPayload,
-  MatchLoadedPayload,
   PlayerInfo,
 } from './types.js';
 
@@ -98,10 +96,6 @@ export class NetworkManager {
     return this.#matchPlayers;
   }
 
-  get socketId(): string {
-    return this.#socket.id ?? '';
-  }
-
   connect(): void {
     this.#socket.connect();
   }
@@ -113,19 +107,6 @@ export class NetworkManager {
     this.#socket.disconnect();
   }
 
-  /**
-   * Tears down the WebRTC mesh (all peer connections and data channels) while
-   * keeping the socket.io signaling connection alive. Used when returning to
-   * lobby after a match -- enables rematch without full reconnect (FND-04).
-   */
-  teardownMesh(): void {
-    this.stopGameTick();
-    this.#closeAllPeerConnections();
-    this.#lastSentSnapshot = null;
-    this.#matchPlayers = [];
-    // DO NOT call this.#socket.disconnect() -- keep signaling alive for lobby
-  }
-
   // --- Lobby methods (socket.io — reliable, low-frequency) ---
   sendLobbyCreate(playerName: string): void { this.#socket.emit('lobby:create', { playerName }); }
   sendLobbyList(): void { this.#socket.emit('lobby:list'); }
@@ -134,11 +115,6 @@ export class NetworkManager {
   sendLobbySetMode(gameMode: string): void { this.#socket.emit('lobby:set-mode', { gameMode }); }
   sendLobbyStart(): void { this.#socket.emit('lobby:start'); }
   sendLobbyAssignTeam(targetPlayerId: string, team: number): void { this.#socket.emit('lobby:assign-team', { targetPlayerId, team }); }
-
-  /** Client ack for the LOADING sync barrier (LFC-05). Sent exactly once when the local LoadingScene finishes preparation. */
-  sendMatchLoaded(lobbyId: string): void {
-    this.#socket.emit('match:loaded', { lobbyId } satisfies MatchLoadedPayload);
-  }
 
   // --- Game methods (WebRTC data channels — low latency, P2P) ---
 
@@ -257,12 +233,6 @@ export class NetworkManager {
       this.#initWebRTCMesh(matchConfig.players);
     });
 
-    // Match FSM transitions (LFC-02). The LoadingScene listens for COUNTDOWN/ACTIVE
-    // to gate its scene-switch to PreloadScene -> GameScene.
-    this.#socket.on('match:state-changed', (payload: MatchStateChangedPayload) => {
-      EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_MATCH_STATE_CHANGED, payload);
-    });
-
     // WebRTC signaling — server forwards offer/answer/ice between peers
     this.#socket.on('webrtc:offer', ({ fromSocketId, offer }: { fromSocketId: string; offer: RTCSessionDescriptionInit }) => {
       void this.#handleOffer(fromSocketId, offer);
@@ -290,11 +260,6 @@ export class NetworkManager {
       }
       EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_PLAYER_DISCONNECTED, { playerId } as PlayerDisconnectedPayload);
     });
-
-    // Host migration — server reassigned host after a disconnect
-    this.#socket.on('host:changed', ({ newHostPlayerId }: { newHostPlayerId: string }) => {
-      EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_HOST_CHANGED, { newHostPlayerId });
-    });
   }
 
   // ---- WebRTC N-to-N mesh ----
@@ -303,11 +268,7 @@ export class NetworkManager {
     // RTCPeerConnection is browser-only; guard for Node.js / test environments
     if (typeof RTCPeerConnection === 'undefined') return;
 
-    const mySocketId = this.#socket.id;
-    if (!mySocketId) {
-      console.error('[NET] Cannot init WebRTC mesh: socket has no ID');
-      return;
-    }
+    const mySocketId = this.#socket.id!;
     const myIndex = players.findIndex((p) => p.socketId === mySocketId);
 
     players.forEach((peer, peerIndex) => {
@@ -395,12 +356,7 @@ export class NetworkManager {
 
     ch.onmessage = (e: MessageEvent<string>) => {
       this.#msgRecvCount++;
-      let msg: DcMessage;
-      try {
-        msg = JSON.parse(e.data) as DcMessage;
-      } catch {
-        return; // Drop malformed messages silently
-      }
+      const msg = JSON.parse(e.data) as DcMessage;
       const playerId = this.#socketToPlayerId.get(fromSocketId) ?? fromSocketId;
 
       switch (msg.type) {
@@ -453,10 +409,8 @@ export class NetworkManager {
         try {
           ch.send(msg);
           this.#msgSentCount++;
-        } catch (err) {
-          if (NETWORK_DEBUG) {
-            console.warn('[NET] Failed to send reliable message:', err);
-          }
+        } catch {
+          // Send queue full — drop the message rather than crashing
         }
       }
     }
