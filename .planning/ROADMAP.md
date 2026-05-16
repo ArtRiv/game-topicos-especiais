@@ -1,145 +1,156 @@
-# Roadmap — Mages PvP v1.1 (PvP Team Deathmatch)
+# Roadmap — Mages PvP v1.2 (Match Lifecycle & Event Polish)
 
 ## Milestone
 
-**v1.1 — PvP Team Deathmatch**
+**v1.2 — Match Lifecycle & Event Polish**
 
-Turn the completed WebRTC P2P networking foundation into a playable multi-player PvP game with fully controllable mages, new spells, direct player-vs-player combat, and a working match loop (start → fight → win/lose → lobby).
+Turn the working PvP foundation into a tournament-grade experience for the college event — a synchronized match lifecycle (LOBBY → LOADING → COUNTDOWN → ACTIVE → ENDED), a host-configurable lobby (formats, maps, ready-up, AFK), the in-match feedback loop crowds expect (kill feed, damage numbers, name tags, timer, ping), a real post-match results screen, and resilient reconnect/spectator paths.
+
+## Previous Milestones (Archived)
+
+- **v1.0** — Phase 1: WebRTC P2P signaling, lobby, remote sync, spell relay (NET-01..06)
+- **v1.1** — Phases 2–6: multi-player control, asymmetric elements, Ice/Wind/Thunder spells, host-authoritative damage, full match loop, foundation cleanup
+
+## Phases
+
+- [x] **Phase 7: LOADING State + Match FSM Foundation** — Server-side match state machine with LOADING transition; clients see a loading screen with match player list + map preview before everyone enters together (completed 2026-05-16)
+- [ ] **Phase 8: COUNTDOWN State** — Players locked at spawn during a 3–4s zoom-in cinematic with 3-2-1-FIGHT! overlay; combat unlocks simultaneously
+- [ ] **Phase 9: Lobby Format & Map Configuration** — Host selects 1v1→10v10 and a map; lobby capacity adjusts; single extensible `GameRoom.config` object broadcast on every change
+- [ ] **Phase 10: Ready-Up & AFK Detection** — Per-player ready toggle gates host's Start; idle players flagged AFK with one-click host kick
+- [ ] **Phase 11: Match End & Results Screen** — Server transitions to ENDED on win condition; full-screen results show winner/kills/damage/MVP; rematch flow remains intact
+- [ ] **Phase 12: Reconnect Grace Window** — 15-second slot hold on disconnect; reconnects within window restore active play
+- [ ] **Phase 13: In-Match Feedback HUD** — Kill feed, floating damage numbers, name tags + HP bars overhead, match timer, ping indicator
+- [ ] **Phase 14: Spectator Mode** — Eliminated players watch the remainder of the match (free cam or follow surviving player)
 
 ## Overview
 
-**5 phases** | **33 requirements** | All v1.0 + v1.1 requirements covered ✓
+**8 phases** | **32 requirements** | All v1.2 requirements covered ✓
 
 | # | Phase | Goal | Requirements | Success Criteria |
-|---|-------|------|-------------|-----------------|
-| 1 | LAN Foundation | WebRTC P2P networking, lobby, remote player sync, spell relay *(COMPLETE)* | NET-01–06 | 5 |
-| 2 | Multi-Player Control | 4/4 | Complete   | 2026-03-31 |
-| 3 | New Spells | Ice, Wind, Thunder spells; config-driven extensible system; all spells open to all players | SPL-01–05, PVP-01 | 4 |
-| 4 | PvP Combat | Cross-player hit detection; host-authoritative damage; client-side prediction; elimination | PVP-02–06, MTH-02, HUD-02, SCL-04 | 5 |
-| 5 | Match Loop & Scalability | Synchronized match start; win condition; match-end screen; return to lobby; 5v5 minimum stable baseline; scale beyond for stress testing | MTH-01, MTH-03–06, SCL-01–03 | 5 |
+|---|-------|------|--------------|------------------|
+| 7 | LOADING State + Match FSM | 2/2 | Complete   | 2026-05-16 |
+| 8 | COUNTDOWN State | Spawn-locked zoom-in cinematic with countdown; combat unlocks simultaneously on FIGHT | LFC-06..09 (4) | 4 |
+| 9 | Lobby Format & Map Config | Host configures match format/map via single extensible config broadcast to all | LBC-01..07 (7) | 4 |
+| 10 | Ready-Up & AFK Detection | Lobby gates start on all-ready + min count; AFK detection + kick | LBC-08..11 (4) | 3 |
+| 11 | Match End & Results Screen | Win condition fires ENDED state; full-screen results breakdown; rematch intact | MER-01, MER-02, MER-07 (3) | 3 |
+| 12 | Reconnect Grace Window | 15s slot hold on disconnect; reconnect restores state | MER-05, MER-06 (2) | 2 |
+| 13 | In-Match Feedback HUD | Kill feed, damage numbers, name tags+HP, timer, ping | FBK-01..05 (5) | 4 |
+| 14 | Spectator Mode | Eliminated players watch rest of match instead of black screen | MER-03, MER-04 (2) | 2 |
 
 ---
 
 ## Phase Details
 
-### Phase 1: Auth + Server Scaffold
-**Goal**: Players can authenticate with Google and have a persistent account; Phaser boots only after auth
-**Depends on**: Nothing (first phase)
-**Requirements**: AUTH-01, AUTH-02, AUTH-03
+### Phase 7: LOADING State + Match FSM Foundation
+
+**Goal**: Players see a synchronized loading screen showing match composition (player names + team colors) and the selected map preview before the game scene starts, and no one enters until everyone has loaded.
+**Depends on**: Phase 6 (foundation cleanup complete)
+**Requirements**: LFC-01, LFC-02, LFC-03, LFC-04, LFC-05
 **Success Criteria** (what must be TRUE):
-  1. Player visits the game URL, sees a login page, and can authenticate with their Google account
-  2. After login, player's display name, rank score, level, and upgrade points are stored in the DB
-  3. Phaser client boots only after a valid JWT is confirmed — unauthenticated users cannot enter game
-  4. Player can log out from the main menu and return cleanly to the login screen
-**Plans**: TBD
-**UI hint**: yes
-
-### Phase 2: Lobby & Networking Foundation
-**Goal**: Players can form lobbies with invite codes and have synchronized real-time game sessions
-**Depends on**: Phase 1
-**Requirements**: LBY-01, LBY-02, LBY-03, LBY-04, LBY-05, LBY-06, NET-01, NET-02, NET-03, NET-04
-**Success Criteria** (what must be TRUE):
-  1. A player can create a lobby and share a 6-character invite code with others
-  2. Another player can join using the code and see all lobby members with their ready status in real time
-  3. Lobby owner can select the game mode; match cannot start without minimum player count
-  4. If the host disconnects, lobby ownership transfers automatically to another player
-  5. A 15-second reconnection grace window prevents immediate elimination on brief disconnect
-**Plans**: TBD
-**UI hint**: yes
-
-**Goal**: WebRTC P2P networking is working — players can connect, form a lobby, and see each other move and cast spells in real time
-**Depends on**: Nothing
-**Status**: ✓ COMPLETE
-**Requirements**: NET-01, NET-02, NET-03, NET-04, NET-05, NET-06
-**Success Criteria** (what must be TRUE):
-  1. Player opens browser, enters server URL, and joins a lobby waiting room
-  2. Remote player's position and direction update in real time on all clients at 20 Hz
-  3. Spells cast by any player appear on all other clients at the correct position
-  4. Room transitions are synchronized — all clients enter the new room at the same time
-  5. Disconnecting one client notifies all remaining clients immediately without freezing
-**Plans**: 5 plans — all complete
-
----
-
-### Phase 2: Multi-Player Control
-
-**Goal**: Every player controls their own mage on their own machine simultaneously; all remote players render correctly for every connected client; the lobby supports team assignment for N players
-**Depends on**: Phase 1
-**Requirements**: PLR-01, PLR-02, PLR-03, PLR-04, HUD-01
-**Success Criteria** (what must be TRUE):
-  1. Each player connects, joins a lobby, and controls their own mage via keyboard — no fixed role assignments hardcoded in the client
-  2. Every other player's mage moves in real time on all connected clients, driven by `RemoteInputComponent` position snapshots
-  3. Each player has independent HP and mana; taking damage on one client does not affect another player's stats
-  4. Each player sees their own HP bar on their screen at all times during play
-  5. The lobby displays all connected players and supports N players with no hard cap enforced in code; teams are configurable before match start
-**Plans**: 4 plans
-Plans:
-- [x] 02-01-PLAN.md — Type system + server team protocol (`PlayerInfo.team`, `lobby:assign-team` socket event)
-- [x] 02-02-PLAN.md — LobbyScene host detection fix + team assignment UI (host toggle buttons, read-only badges)
-- [x] 02-03-PLAN.md — GameScene deterministic tinting via `matchPlayers` getter (team-based color assignment)
-- [x] 02-04-PLAN.md — Phase 2 verification checklist (all 5 success criteria, 3-client smoke test)
- (completed 2026-03-31)
-
----
-
-### Phase 02.1: Network Stability & Performance (INSERTED)
-
-**Goal**: Multiplayer networking is stable, responsive, and performs well with 3+ clients — latency is sub-second on all connected tabs, remote player movement is smooth, and the architecture scales toward 5v5 without degradation
-**Depends on**: Phase 2
-**Requirements**: NETPERF-01, NETPERF-02, NETPERF-03, NETPERF-04, NETPERF-05
-**Success Criteria** (what must be TRUE):
-  1. Position tick rate is 20 Hz (not 60 Hz) — reducing per-client bandwidth by ~66%
-  2. No position messages sent when player state is unchanged (dirty-checking)
-  3. Remote players move smoothly via delta-time interpolation — no teleporting or jitter
-  4. 3-tab test shows all clients responsive with sub-second latency
-  5. Movement, animation, and spell sync remain correct at the optimized tick rate
-**Plans**: 2 plans
-Plans:
-- [x] 02.1-01-PLAN.md — Network message path optimization (tick rate, dirty-check, serialization, Map lookup)
-- [x] 02.1-02-PLAN.md — Remote player interpolation & multi-client validation
-
-### Phase 3: New Spells
-
-**Goal**: Ice, Wind, and Thunder spells are fully playable; the spell system is extended without touching core casting logic; all spells are accessible to all players
-**Depends on**: Phase 2
-**Requirements**: SPL-01, SPL-02, SPL-03, SPL-04, SPL-05, PVP-01
-**Success Criteria** (what must be TRUE):
-  1. Player can cast at least one Ice spell, one Wind spell, and one Thunder spell — each with a distinct visual projectile or area effect
-  2. Every new spell has its damage, mana cost, and cooldown defined exclusively in `config.ts` — no magic numbers in spell class bodies
-  3. Adding a fourth new element requires only a new spell class and a config entry; no modifications to `SpellCastingComponent`, `ElementManager`, or core casting pipeline
-  4. All spells (new and existing) are available to every player — no per-player loadout restrictions enforced in v1.1
-**Plans**: TBD
-
----
-
-### Phase 4: PvP Combat
-
-**Goal**: Players can deal damage to each other; hit detection and damage are validated by the host and applied on all clients; players are eliminated at 0 HP
-**Depends on**: Phase 3
-**Requirements**: PVP-02, PVP-03, PVP-04, PVP-05, PVP-06, MTH-02, HUD-02, SCL-04
-**Success Criteria** (what must be TRUE):
-  1. A spell cast by one player immediately appears on that player's screen (client-side prediction) without waiting for host acknowledgment
-  2. The host validates the hit event, broadcasts `game:damage-confirmed`, and all clients apply damage to the correct target only after receiving it
-  3. Friendly fire is OFF by default; toggling the `friendlyFire` flag on `GameRoom` enables it without any code changes beyond the flag
-  4. A player reaching 0 HP enters the death animation on all clients simultaneously, triggered by `game:player-eliminated` broadcast from the host
-  5. Dead players are removed from active play on every client; combat logic produces consistent results under 5+ simultaneous players
+  1. The host pressing Start in the lobby transitions every connected client to a loading screen simultaneously
+  2. The loading screen lists every match participant with their name and team color, plus a preview of the selected map
+  3. The game scene does not start for any client until every client has reported "loaded" to the server
+  4. The match-state machine on the server has explicit `LOBBY → LOADING → COUNTDOWN → ACTIVE → ENDED` transitions and broadcasts every change to all clients
 **Plans**: TBD
 **UI hint**: yes
 
 ---
 
-### Phase 5: Match Loop & Scalability
+### Phase 8: COUNTDOWN State
 
-**Goal**: A full match runs from lobby through combat to match-end and back to lobby; 5v5 is the minimum stable baseline (not a cap); the system scales beyond that for stress testing; the match state machine supports future modes without refactoring
-**Depends on**: Phase 4
-**Requirements**: MTH-01, MTH-03, MTH-04, MTH-05, MTH-06, SCL-01, SCL-02, SCL-03
+**Goal**: After everyone loads, players see a zoom-in cinematic and a 3-2-1-FIGHT! countdown while locked at their spawn points, then combat unlocks for everyone at the same instant.
+**Depends on**: Phase 7
+**Requirements**: LFC-06, LFC-07, LFC-08, LFC-09
 **Success Criteria** (what must be TRUE):
-  1. All players finish loading into the same game scene before combat is enabled; no player can cast or move until the synchronized `match:start` signal is received
-  2. When the last opponent is eliminated, every client simultaneously receives `game:match-end` and displays the correct win or lose result screen
-  3. Players can press a rematch button from the match-end screen and return to the lobby for a new session
-  4. A 10-player (5v5) match is the minimum stable baseline — runs for at least 5 minutes with no desyncs, crashes, or freezes; the system allows scaling beyond 10 players with no code changes; any degradation above that is observable and documented
-  5. The match flow is structured as a state machine (Lobby → Match Start → Combat → Win Condition → Match End → Lobby) so future modes (FFA, battle royale) can extend it without refactoring the base loop; mid-match disconnects do not freeze remaining clients
+  1. During COUNTDOWN, no client accepts movement input or spell-cast input — players are visually locked at spawn
+  2. The camera animates from a zoomed-out position to the normal play zoom over ~3–4 seconds when COUNTDOWN begins
+  3. A `3 → 2 → 1 → FIGHT!` overlay is visible on every client and ticks in sync with the server-driven countdown
+  4. Movement and spell casting unlock simultaneously on every client at the COUNTDOWN → ACTIVE transition
 **Plans**: TBD
+**UI hint**: yes
+
+---
+
+### Phase 9: Lobby Format & Map Configuration
+
+**Goal**: The host can choose the match format and the map from the lobby; both selections are reflected on every client, and the underlying config is a single object that future fields (time limit, friendly fire, spell modifiers) can extend without protocol changes.
+**Depends on**: Phase 7 (server FSM in place; LOADING needs the configured map)
+**Requirements**: LBC-01, LBC-02, LBC-03, LBC-04, LBC-05, LBC-06, LBC-07
+**Success Criteria** (what must be TRUE):
+  1. Host can select a match format from `1v1` through `10v10` and the lobby capacity updates to `format × 2` immediately
+  2. Host can select a map from the available pool, and the selected map name is shown to every client in the lobby UI
+  3. Every config change (format or map) is broadcast as a single socket.io event to every lobby member
+  4. The `GameRoom.config` object holds all lobby config in one place, and adding a new field (e.g., `timeLimit`) requires no new socket.io events or schema renames
+**Plans**: TBD
+**UI hint**: yes
+
+---
+
+### Phase 10: Ready-Up & AFK Detection
+
+**Goal**: The lobby prevents accidental starts and surfaces idle players to the host.
+**Depends on**: Phase 9 (config object exists; min-count comes from format)
+**Requirements**: LBC-08, LBC-09, LBC-10, LBC-11
+**Success Criteria** (what must be TRUE):
+  1. Each player has a visible "Ready" toggle, and the host's Start button is disabled until every player is ready AND the format-required minimum is met
+  2. A player who has been idle in the lobby past the configured timeout is visibly flagged as AFK on every client
+  3. The host has a one-click action to kick any AFK-flagged player from the lobby
+**Plans**: TBD
+**UI hint**: yes
+
+---
+
+### Phase 11: Match End & Results Screen
+
+**Goal**: When the match ends, every player sees the same full-screen results breakdown (winner, per-player kills, per-player damage, MVP), and the existing rematch flow still returns everyone to the lobby cleanly.
+**Depends on**: Phase 8 (ACTIVE state is reachable; needed for ENDED transition)
+**Requirements**: MER-01, MER-02, MER-07
+**Success Criteria** (what must be TRUE):
+  1. When the win condition triggers (last player/team standing), the server transitions to ENDED and every client receives the same broadcast simultaneously
+  2. The post-match results screen displays the winner/team, every player's kill count, every player's damage dealt, and an MVP highlight
+  3. Pressing "Rematch" from the results screen still tears down the WebRTC mesh and resets the lobby cleanly via the existing `teardownMesh()` + `reset()` flow
+**Plans**: TBD
+**UI hint**: yes
+
+---
+
+### Phase 12: Reconnect Grace Window
+
+**Goal**: Brief network blips don't eliminate players from a live match.
+**Depends on**: Phase 11 (need ENDED/elimination semantics in place to distinguish "graced" from "truly out")
+**Requirements**: MER-05, MER-06
+**Success Criteria** (what must be TRUE):
+  1. When a player disconnects mid-match, their slot is held for 15 seconds before they are treated as eliminated
+  2. A player who reconnects within the 15-second grace window is restored to active play with their last-known state (HP, position, team)
+**Plans**: TBD
+
+---
+
+### Phase 13: In-Match Feedback HUD
+
+**Goal**: Combat is readable and tournament-ready — the crowd can follow eliminations, players feel hits, and team modes are playable because everyone can see who's who.
+**Depends on**: Phase 11 (results screen needs accurate kills/damage data; this phase produces the same telemetry the results screen consumes)
+**Requirements**: FBK-01, FBK-02, FBK-03, FBK-04, FBK-05
+**Success Criteria** (what must be TRUE):
+  1. A scrolling kill feed in a screen corner displays `X eliminated Y` entries in real time during ACTIVE
+  2. A floating damage number animates upward from the hit point on every confirmed spell hit and fades out
+  3. Every player sprite has a name tag and a small HP bar rendered above it during combat — visible to all clients
+  4. The HUD shows the elapsed match time and a per-client ping/latency indicator throughout lobby and match
+**Plans**: TBD
+**UI hint**: yes
+
+---
+
+### Phase 14: Spectator Mode
+
+**Goal**: Eliminated players stay engaged with the match instead of staring at a black screen.
+**Depends on**: Phase 13 (spectator camera needs name tags + HP bars to be useful when following someone)
+**Requirements**: MER-03, MER-04
+**Success Criteria** (what must be TRUE):
+  1. When a player is eliminated, their view transitions to a spectator camera (free cam or following a surviving player) — never a black screen
+  2. The spectator can switch which surviving player they're following or toggle to free camera
+**Plans**: TBD
+**UI hint**: yes
 
 ---
 
@@ -147,11 +158,14 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. LAN Foundation | 5/5 | ✓ Complete | 2026-03-30 |
-| 2. Multi-Player Control | 0/4 | Planned | — |
-| 3. New Spells | 0/? | Not started | — |
-| 4. PvP Combat | 0/? | Not started | — |
-| 5. Match Loop & Scalability | 0/? | Not started | — |
+| 7. LOADING State + Match FSM | 0/? | Not started | — |
+| 8. COUNTDOWN State | 0/? | Not started | — |
+| 9. Lobby Format & Map Config | 0/? | Not started | — |
+| 10. Ready-Up & AFK Detection | 0/? | Not started | — |
+| 11. Match End & Results Screen | 0/? | Not started | — |
+| 12. Reconnect Grace Window | 0/? | Not started | — |
+| 13. In-Match Feedback HUD | 0/? | Not started | — |
+| 14. Spectator Mode | 0/? | Not started | — |
 
 ---
 
@@ -159,94 +173,48 @@ Plans:
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| NET-01 | 1 | ✓ Complete |
-| NET-02 | 1 | ✓ Complete |
-| NET-03 | 1 | ✓ Complete |
-| NET-04 | 1 | ✓ Complete |
-| NET-05 | 1 | ✓ Complete |
-| NET-06 | 1 | ✓ Complete |
-| PLR-01 | 2 | Pending |
-| PLR-02 | 2 | Pending |
-| PLR-03 | 2 | Pending |
-| PLR-04 | 2 | Pending |
-| HUD-01 | 2 | Pending |
-| SPL-01 | 3 | Pending |
-| SPL-02 | 3 | Pending |
-| SPL-03 | 3 | Pending |
-| SPL-04 | 3 | Pending |
-| SPL-05 | 3 | Pending |
-| PVP-01 | 3 | Pending |
-| PVP-02 | 4 | Pending |
-| PVP-03 | 4 | Pending |
-| PVP-04 | 4 | Pending |
-| PVP-05 | 4 | Pending |
-| PVP-06 | 4 | Pending |
-| MTH-02 | 4 | Pending |
-| HUD-02 | 4 | Pending |
-| SCL-04 | 4 | Pending |
-| MTH-01 | 5 | Pending |
-| MTH-03 | 5 | Pending |
-| MTH-04 | 5 | Pending |
-| MTH-05 | 5 | Pending |
-| MTH-06 | 5 | Pending |
-| SCL-01 | 5 | Pending |
-| SCL-02 | 5 | Pending |
-| SCL-03 | 5 | Pending |
+| LFC-01 | 7 | Pending |
+| LFC-02 | 7 | Pending |
+| LFC-03 | 7 | Pending |
+| LFC-04 | 7 | Pending |
+| LFC-05 | 7 | Pending |
+| LFC-06 | 8 | Pending |
+| LFC-07 | 8 | Pending |
+| LFC-08 | 8 | Pending |
+| LFC-09 | 8 | Pending |
+| LBC-01 | 9 | Pending |
+| LBC-02 | 9 | Pending |
+| LBC-03 | 9 | Pending |
+| LBC-04 | 9 | Pending |
+| LBC-05 | 9 | Pending |
+| LBC-06 | 9 | Pending |
+| LBC-07 | 9 | Pending |
+| LBC-08 | 10 | Pending |
+| LBC-09 | 10 | Pending |
+| LBC-10 | 10 | Pending |
+| LBC-11 | 10 | Pending |
+| MER-01 | 11 | Pending |
+| MER-02 | 11 | Pending |
+| MER-07 | 11 | Pending |
+| MER-05 | 12 | Pending |
+| MER-06 | 12 | Pending |
+| FBK-01 | 13 | Pending |
+| FBK-02 | 13 | Pending |
+| FBK-03 | 13 | Pending |
+| FBK-04 | 13 | Pending |
+| FBK-05 | 13 | Pending |
+| MER-03 | 14 | Pending |
+| MER-04 | 14 | Pending |
 
-**33/33 v1.0 + v1.1 requirements mapped ✓ (6 Phase 1 complete + 27 Phases 2–5 pending)**
-
-## Milestone: College Event Build (v1.0)
-
-All 5 phases complete = event-ready.
-
-**Definition of Done:**
-- Both players can sit at separate LAN machines and complete a full ~15-minute session
-- At least 6 cross-player combos work and appear in the combo journal
-
-### Phase 6: UI Flow & Screen Design — Splash to Lobby
-
-**Goal:** Every screen from splash to lobby is fully designed and pixel-perfect: correct centering on any viewport/browser config, custom pixel-art fonts, screen-responsive layout, and cinematic intro animations timed to the menu song's drop.
-**Depends on**: Phase 5
-**Requirements**: UI-01, UI-02, UI-03, UI-04, UI-05, UI-06, UI-07
-**Success Criteria** (what must be TRUE):
-  1. Splash screen shows a black background with "Press anything to get high in the fantasy" — pressing any key/button transitions to main menu
-  2. Main menu appears with a cinematic animation timed to the menu song's drop (fade-in, impact text moment — osu!-style)
-  3. All screens are perfectly centered regardless of viewport size, browser devtools being open, or window configuration — no off-center black padding
-  4. Custom pixel-art font family is applied consistently across all UI text
-  5. Every screen is fully documented: which scene handles it, what music plays, all text content, background art, and any animation
-  6. Navigation flow is fully mapped: Splash → Main Menu → (Create Lobby | Join Lobby | Options | Credits) → Lobby → Game
-  7. Screen transitions have defined animation (fade, slide, etc.) and are tied to music cues where applicable
-**Plans**: TBD
-**UI hint**: yes
-
-**Screens to design:**
-- Splash / press-to-start (black bg, single line text, any-key trigger)
-- Main Menu (song drop animation, logo, navigation buttons)
-- Create Lobby (room code display, settings, start button)
-- Join Lobby (code input, player list, ready status)
-- Options (audio, controls, display)
-- Credits
-- Loading / transition screens
-
-**Design constraints:**
-- Pixel-perfect centering via CSS/canvas — no black bars shifting on resize or devtools open
-- Font research needed: search terms → "pixel art fonts free commercial use", "retro RPG bitmap fonts", "Press Start 2P alternatives Google Fonts", "fantasy pixel fonts itch.io"
-- Animations should be driven by music timing (BPM-sync or manual delay matched to song drop)
-
-**Plans:** 3 plans
-
-Plans:
-- [x] 06-01-PLAN.md — SplashScene + boot wiring (SPLASH_SCENE, any-key → MainMenu)
-- [x] 06-02-PLAN.md — Cinematic main menu intro + fade transitions (all scene switches)
-- [x] 06-03-PLAN.md — Font-resolution audit (LobbyScene) + SCREENS.md documentation
+**32/32 v1.2 requirements mapped ✓ — no orphans, no duplicates**
 
 ---
 
-## Phase Schedule (Rough, 3-Month Window)
+## Phase Ordering Rationale
 
-```
-Month 1:  Phase 1 (LAN Foundation) + Phase 2 (Two Players)
-Month 2:  Phase 3 (Spell Sync & Combos)
-Month 3:  Phase 4 (Puzzles) + Phase 5 (Bosses & NPCs)
-Buffer:   Last 2 weeks — playtest, polish, bug fixes
-```
+Phases are ordered to honor the event-deadline constraint: match-critical features (loading screen, countdown, results) ship before quality-of-life (damage numbers, spectator). If the timeline tightens, Phases 13 and 14 are the safest to defer — combat is still playable without them.
+
+- **7 → 8 → 11**: Core lifecycle (LOADING → COUNTDOWN → ENDED). The match cannot run end-to-end without these.
+- **9 → 10**: Tournament hosting must-haves (format/map config, ready-up). Can run after lifecycle but before the event.
+- **12**: Resilience — already partially designed in Phase 6, low risk. Slots in after the FSM stabilizes.
+- **13 → 14**: Polish. The kill feed and damage numbers are the highest-energy crowd features; spectator is heaviest scope.

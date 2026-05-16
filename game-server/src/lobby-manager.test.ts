@@ -112,6 +112,34 @@ describe('LobbyManager', () => {
     });
   });
 
+  describe('host migration', () => {
+    it('reassigns host to next player when host leaves', () => {
+      const lobby = manager.createLobby('s1', 'Alice');
+      manager.joinLobby(lobby.id, 's2', 'Bob');
+      const bobId = lobby.players.find(p => p.name === 'Bob')!.id;
+
+      const updatedLobby = manager.leaveLobby('s1');
+      expect(updatedLobby).not.toBeNull();
+      expect(updatedLobby!.hostPlayerId).toBe(bobId);
+    });
+
+    it('does not change host when non-host leaves', () => {
+      const lobby = manager.createLobby('s1', 'Alice');
+      manager.joinLobby(lobby.id, 's2', 'Bob');
+      const hostBefore = lobby.hostPlayerId;
+
+      const updatedLobby = manager.leaveLobby('s2');
+      expect(updatedLobby).not.toBeNull();
+      expect(updatedLobby!.hostPlayerId).toBe(hostBefore);
+    });
+
+    it('returns null when last player leaves (lobby destroyed)', () => {
+      manager.createLobby('s1', 'Alice');
+      const result = manager.leaveLobby('s1');
+      expect(result).toBeNull();
+    });
+  });
+
   describe('setPlayerTeam', () => {
     it('allows host to assign team to a player', () => {
       const lobby = manager.createLobby('s1', 'Alice');
