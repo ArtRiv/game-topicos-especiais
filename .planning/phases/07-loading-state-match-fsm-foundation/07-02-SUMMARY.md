@@ -62,7 +62,7 @@ completed: 2026-05-15
 - **Duration:** ~4 min
 - **Started:** 2026-05-15T22:51:39Z
 - **Completed:** 2026-05-15T22:55:44Z
-- **Tasks:** 2 of 3 complete (Task 3 is a manual two-tab smoke test — see Checkpoint Status below)
+- **Tasks:** 3 of 3 complete (Task 3 manual smoke test passed after gap-closure fixes — see Checkpoint Status below)
 - **Files created:** 1
 - **Files modified:** 6
 
@@ -82,7 +82,7 @@ completed: 2026-05-15
 |---|------|------|--------|
 | 1 | Add client-side match-state types, event constant, and NetworkManager wiring | feat | `fbde457` |
 | 2 | Implement LoadingScene + register it in main.ts; route lobby:started through it | feat | `b270101` |
-| 3 | Two-tab smoke test (manual checkpoint) | checkpoint:human-verify | (deferred — see Checkpoint Status) |
+| 3 | Two-tab smoke test (manual checkpoint) | checkpoint:human-verify | passed after gap-closure fixes `d4d8e9e` + `4f2b07d` |
 
 ## Files Created/Modified
 
@@ -119,9 +119,19 @@ None — plan executed exactly as written. No auto-fixes were needed; types comp
 |------|------|---------|--------|
 | `src/scenes/loading-scene.ts` | 60 | "Map preview placeholder — Phase 9 will replace this rectangle with a real preview asset." | Intentional. The plan authorizes this; `matchConfig.mode` is the only map identifier in Phase 7. Phase 9 (Lobby Format & Map Configuration) will introduce a real preview-asset registry. |
 
-## Checkpoint Status
+## Checkpoint Status — RESOLVED
 
-**Task 3 is a `checkpoint:human-verify` manual two-tab smoke test.** It cannot be executed by an autonomous agent — it requires a human at a browser running two tabs against a live dev server and observing the WS message log. Auto-mode is **off** (`workflow.auto_advance=false`), so this checkpoint must be performed by the user before the plan can be declared fully complete.
+**Task 3 (`checkpoint:human-verify`) passed after two gap-closure fixes applied during the manual smoke test:**
+
+1. **`d4d8e9e fix(07-02): enforce 1500ms minimum LoadingScene display for LFC-04 visibility`** — The Phase-7 server stub auto-advances COUNTDOWN→ACTIVE in 50 ms, which combined with `delayedCall(0)` made the LoadingScene visible for less than one frame in foreground-localhost. Added `MIN_DISPLAY_MS = 1500` clamp that schedules the transition for the remaining time if the broadcast arrives sooner. `#pendingTransition` gates duplicate transitions when ACTIVE follows COUNTDOWN.
+
+2. **`4f2b07d fix(07-02): anchor LoadingScene min-display to ack-send time, not scene-create`** — The first fix anchored the clamp to `create()` time, which fails when one tab is backgrounded (Phaser's clock keeps ticking at ~1Hz so elapsed time still passes 1500ms before the user perceives the scene). Re-anchored to `#ackSentAt` (the moment `delayedCall(0)` actually fires `sendMatchLoaded`), which IS the user's first foreground exposure. If COUNTDOWN arrives before the ack delayedCall fires, `#sendLoadedAck` re-invokes `#scheduleTransition`.
+
+**Final test confirmation:** Two-window side-by-side test (so neither window is backgrounded) — both windows showed map name + team-colored player rows for ~1.5 s, then both advanced to GameScene synchronously. ✓
+
+---
+
+**Original checkpoint instructions (preserved for the historical record):**
 
 **To perform the smoke test:**
 
