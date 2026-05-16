@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Match Lifecycle & Event Polish
-status: ready_to_plan
-stopped_at: Phase 07 complete (2/2) — ready to discuss Phase 8
-last_updated: 2026-05-16T00:11:12.395Z
-last_activity: 2026-05-15 -- Phase 07 execution started
+status: executing
+stopped_at: v1.2 milestone started — defining requirements
+last_updated: "2026-05-16T00:57:40.516Z"
+last_activity: 2026-05-16 -- Phase 08 execution started
 progress:
   total_phases: 8
-  completed_phases: 0
-  total_plans: 2
-  completed_plans: 5
-  percent: 0
+  completed_phases: 1
+  total_plans: 4
+  completed_plans: 2
+  percent: 13
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-24)
 
 **Core value:** The "I outplayed everyone" moment -- landing a perfectly timed spell combo that eliminates an opponent in front of a crowd.
-**Current focus:** Phase 8 — countdown state
+**Current focus:** Phase 08 — countdown-state
 
 ## Current Position
 
-Phase: 8
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-05-16
+Phase: 08 (countdown-state) — EXECUTING
+Plan: 1 of 2
+Status: Executing Phase 08
+Last activity: 2026-05-16 -- Phase 08 execution started
 
 ## Performance Metrics
 

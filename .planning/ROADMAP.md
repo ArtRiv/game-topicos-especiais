@@ -29,7 +29,7 @@ Turn the working PvP foundation into a tournament-grade experience for the colle
 | # | Phase | Goal | Requirements | Success Criteria |
 |---|-------|------|--------------|------------------|
 | 7 | LOADING State + Match FSM | 2/2 | Complete   | 2026-05-16 |
-| 8 | COUNTDOWN State | Spawn-locked zoom-in cinematic with countdown; combat unlocks simultaneously on FIGHT | LFC-06..09 (4) | 4 |
+| 8 | COUNTDOWN State | 1/2 | In Progress|  |
 | 9 | Lobby Format & Map Config | Host configures match format/map via single extensible config broadcast to all | LBC-01..07 (7) | 4 |
 | 10 | Ready-Up & AFK Detection | Lobby gates start on all-ready + min count; AFK detection + kick | LBC-08..11 (4) | 3 |
 | 11 | Match End & Results Screen | Win condition fires ENDED state; full-screen results breakdown; rematch intact | MER-01, MER-02, MER-07 (3) | 3 |
@@ -68,7 +68,7 @@ Turn the working PvP foundation into a tournament-grade experience for the colle
   4. Movement and spell casting unlock simultaneously on every client at the COUNTDOWN → ACTIVE transition
 **Plans**: 2 plans
 Plans:
-- [ ] 08-01-PLAN.md — Server-side countdown timer + lobby:start idempotency (CR-02) + GameRoom timer handles (WR-07) + Phase 7 STUB removal
+- [x] 08-01-PLAN.md — Server-side countdown timer + lobby:start idempotency (CR-02) + GameRoom timer handles (WR-07) + Phase 7 STUB removal
 - [ ] 08-02-PLAN.md — Client cinematic: GameScene #combatLocked + FireBreath/EarthWall guards + camera zoomTo + per-tick overlay text + manual two-window UAT
 **UI hint**: yes
 
