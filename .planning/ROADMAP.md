@@ -66,7 +66,10 @@ Turn the working PvP foundation into a tournament-grade experience for the colle
   2. The camera animates from a zoomed-out position to the normal play zoom over ~3–4 seconds when COUNTDOWN begins
   3. A `3 → 2 → 1 → FIGHT!` overlay is visible on every client and ticks in sync with the server-driven countdown
   4. Movement and spell casting unlock simultaneously on every client at the COUNTDOWN → ACTIVE transition
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 08-01-PLAN.md — Server-side countdown timer + lobby:start idempotency (CR-02) + GameRoom timer handles (WR-07) + Phase 7 STUB removal
+- [ ] 08-02-PLAN.md — Client cinematic: GameScene #combatLocked + FireBreath/EarthWall guards + camera zoomTo + per-tick overlay text + manual two-window UAT
 **UI hint**: yes
 
 ---
@@ -159,7 +162,7 @@ Turn the working PvP foundation into a tournament-grade experience for the colle
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 7. LOADING State + Match FSM | 0/? | Not started | — |
-| 8. COUNTDOWN State | 0/? | Not started | — |
+| 8. COUNTDOWN State | 0/2 | Not started | — |
 | 9. Lobby Format & Map Config | 0/? | Not started | — |
 | 10. Ready-Up & AFK Detection | 0/? | Not started | — |
 | 11. Match End & Results Screen | 0/? | Not started | — |
