@@ -13,7 +13,7 @@ Turn the working PvP foundation into a tournament-grade experience for the colle
 
 ## Phases
 
-- [ ] **Phase 7: LOADING State + Match FSM Foundation** — Server-side match state machine with LOADING transition; clients see a loading screen with match player list + map preview before everyone enters together
+- [x] **Phase 7: LOADING State + Match FSM Foundation** — Server-side match state machine with LOADING transition; clients see a loading screen with match player list + map preview before everyone enters together (completed 2026-05-16)
 - [ ] **Phase 8: COUNTDOWN State** — Players locked at spawn during a 3–4s zoom-in cinematic with 3-2-1-FIGHT! overlay; combat unlocks simultaneously
 - [ ] **Phase 9: Lobby Format & Map Configuration** — Host selects 1v1→10v10 and a map; lobby capacity adjusts; single extensible `GameRoom.config` object broadcast on every change
 - [ ] **Phase 10: Ready-Up & AFK Detection** — Per-player ready toggle gates host's Start; idle players flagged AFK with one-click host kick
@@ -28,7 +28,7 @@ Turn the working PvP foundation into a tournament-grade experience for the colle
 
 | # | Phase | Goal | Requirements | Success Criteria |
 |---|-------|------|--------------|------------------|
-| 7 | LOADING State + Match FSM | 1/2 | In Progress|  |
+| 7 | LOADING State + Match FSM | 2/2 | Complete   | 2026-05-16 |
 | 8 | COUNTDOWN State | Spawn-locked zoom-in cinematic with countdown; combat unlocks simultaneously on FIGHT | LFC-06..09 (4) | 4 |
 | 9 | Lobby Format & Map Config | Host configures match format/map via single extensible config broadcast to all | LBC-01..07 (7) | 4 |
 | 10 | Ready-Up & AFK Detection | Lobby gates start on all-ready + min count; AFK detection + kick | LBC-08..11 (4) | 3 |
