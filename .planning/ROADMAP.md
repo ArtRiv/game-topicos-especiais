@@ -14,7 +14,7 @@ Turn the working PvP foundation into a tournament-grade experience for the colle
 ## Phases
 
 - [x] **Phase 7: LOADING State + Match FSM Foundation** — Server-side match state machine with LOADING transition; clients see a loading screen with match player list + map preview before everyone enters together (completed 2026-05-16)
-- [ ] **Phase 8: COUNTDOWN State** — Players locked at spawn during a 3–4s zoom-in cinematic with 3-2-1-FIGHT! overlay; combat unlocks simultaneously
+- [x] **Phase 8: COUNTDOWN State** — Players locked at spawn during a 3–4s zoom-in cinematic with 3-2-1-FIGHT! overlay; combat unlocks simultaneously (completed 2026-05-16)
 - [ ] **Phase 9: Lobby Format & Map Configuration** — Host selects 1v1→10v10 and a map; lobby capacity adjusts; single extensible `GameRoom.config` object broadcast on every change
 - [ ] **Phase 10: Ready-Up & AFK Detection** — Per-player ready toggle gates host's Start; idle players flagged AFK with one-click host kick
 - [ ] **Phase 11: Match End & Results Screen** — Server transitions to ENDED on win condition; full-screen results show winner/kills/damage/MVP; rematch flow remains intact
@@ -29,7 +29,7 @@ Turn the working PvP foundation into a tournament-grade experience for the colle
 | # | Phase | Goal | Requirements | Success Criteria |
 |---|-------|------|--------------|------------------|
 | 7 | LOADING State + Match FSM | 2/2 | Complete   | 2026-05-16 |
-| 8 | COUNTDOWN State | 1/2 | In Progress|  |
+| 8 | COUNTDOWN State | 2/2 | Complete   | 2026-05-16 |
 | 9 | Lobby Format & Map Config | Host configures match format/map via single extensible config broadcast to all | LBC-01..07 (7) | 4 |
 | 10 | Ready-Up & AFK Detection | Lobby gates start on all-ready + min count; AFK detection + kick | LBC-08..11 (4) | 3 |
 | 11 | Match End & Results Screen | Win condition fires ENDED state; full-screen results breakdown; rematch intact | MER-01, MER-02, MER-07 (3) | 3 |
@@ -69,7 +69,7 @@ Turn the working PvP foundation into a tournament-grade experience for the colle
 **Plans**: 2 plans
 Plans:
 - [x] 08-01-PLAN.md — Server-side countdown timer + lobby:start idempotency (CR-02) + GameRoom timer handles (WR-07) + Phase 7 STUB removal
-- [ ] 08-02-PLAN.md — Client cinematic: GameScene #combatLocked + FireBreath/EarthWall guards + camera zoomTo + per-tick overlay text + manual two-window UAT
+- [x] 08-02-PLAN.md — Client cinematic: GameScene #combatLocked + FireBreath/EarthWall guards + camera zoomTo + per-tick overlay text + manual two-window UAT
 **UI hint**: yes
 
 ---
