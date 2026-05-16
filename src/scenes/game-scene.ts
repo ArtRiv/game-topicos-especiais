@@ -66,7 +66,7 @@ import {
 } from '../common/config';
 import { NetworkManager } from '../networking/network-manager';
 import { RemoteInputComponent } from '../components/input/remote-input-component';
-import type { PlayerUpdateBroadcast, RoomTransitionPayload, PlayerDisconnectedPayload, PlayerUpdatePayload, SpellCastBroadcast, PlayerInfo, BreathStartBroadcast, BreathUpdateBroadcast, BreathEndBroadcast, EarthWallPillarBroadcast, EarthWallPillarDestroyBroadcast } from '../networking/types';
+import type { PlayerUpdateBroadcast, RoomTransitionPayload, PlayerDisconnectedPayload, PlayerUpdatePayload, SpellCastBroadcast, PlayerInfo, BreathStartBroadcast, BreathUpdateBroadcast, BreathEndBroadcast, EarthWallPillarBroadcast, EarthWallPillarDestroyBroadcast, MatchStateChangedPayload, MatchCountdownTickPayload } from '../networking/types';
 import type { Direction } from '../common/types';
 
 export class GameScene extends Phaser.Scene {
@@ -114,6 +114,12 @@ export class GameScene extends Phaser.Scene {
   #remotePlayers = new Map<string, Player>();
   #remoteSpellGroup!: Phaser.GameObjects.Group;
   #remoteFireBreaths = new Map<string, FireBreath>();
+  // Countdown cinematic (LFC-06..09): set on COUNTDOWN, cleared on ACTIVE.
+  // #combatLocked is an additive guard that gates spell handlers (#updateFireBreathChanneling,
+  // #updateEarthWallSpell) that bypass #controls.isMovementLocked. Default false — set true
+  // only when match:state-changed COUNTDOWN arrives.
+  #combatLocked: boolean = false;
+  #countdownText: Phaser.GameObjects.Text | null = null;
 
   constructor() {
     super({
@@ -207,6 +213,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   #updateFireBreathChanneling(): void {
+    // LFC-06: hard-gate spell input during COUNTDOWN. This handler ignores
+    // isMovementLocked because the channel itself owns that flag (line ~280),
+    // so #combatLocked is the correct lock here.
+    if (this.#combatLocked) return;
     if (!this.#player?.active) return;
     // When Earth element is active, key 3 casts EarthWall — skip fire breath
     if (ElementManager.instance.activeElement === ELEMENT.EARTH) return;
@@ -504,6 +514,10 @@ export class GameScene extends Phaser.Scene {
    * Pressing 3 again at any phase cancels the spell.
    */
   #updateEarthWallSpell(): void {
+    // LFC-06: hard-gate spell input during COUNTDOWN. EarthWall is a multi-phase
+    // spell (pending-click → drawing) — locking via isMovementLocked alone would
+    // not prevent a pending click from committing, so we gate at the very top.
+    if (this.#combatLocked) return;
     if (!this.#player?.active) return;
     if (ElementManager.instance.activeElement !== ELEMENT.EARTH) return;
 
@@ -888,6 +902,104 @@ export class GameScene extends Phaser.Scene {
     );
   }
 
+  // ============================================================
+  // Countdown cinematic (LFC-06..09) — server-driven match-start.
+  // Triggered by NETWORK_MATCH_STATE_CHANGED + NETWORK_MATCH_COUNTDOWN_TICK.
+  // ============================================================
+
+  /**
+   * LFC-06..09: branch on the match-state transition. We only react to COUNTDOWN
+   * (enter the locked cinematic) and ACTIVE (release locks + hide overlay).
+   * LOADING / LOBBY / ENDED here are no-ops — GameScene only ever runs AFTER
+   * LoadingScene has already bridged through COUNTDOWN; a stray LOADING here
+   * would only be a Phase 12 reconnect scenario, explicitly out of scope.
+   */
+  #onMatchStateChanged = (payload: MatchStateChangedPayload): void => {
+    if (payload.state === 'COUNTDOWN') {
+      this.#enterCountdownMode();
+    } else if (payload.state === 'ACTIVE') {
+      this.#exitCountdownMode();
+    }
+  };
+
+  /**
+   * LFC-06 + LFC-07 + LFC-08: lock movement + combat (combat lock gates the two
+   * scene-driven spell handlers that bypass isMovementLocked — FireBreath and
+   * EarthWall), snap the camera to 0.6x and animate back to the play zoom (1.0x)
+   * over 3 s, lazily create the centered overlay text and clear it until the
+   * first tick arrives.
+   *
+   * IMPORTANT: the zoomed-out value is set ONLY here, never in #setupCamera —
+   * a late-joiner that misses the COUNTDOWN broadcast (Phase 12 scope) must see
+   * the play zoom by default, not a permanent zoom-out.
+   */
+  #enterCountdownMode(): void {
+    this.#controls.isMovementLocked = true;
+    this.#combatLocked = true;
+
+    // Defensive velocity zero — without this, the player would visually keep
+    // gliding for one frame after the lock if they were holding WASD.
+    if (this.#player?.body) {
+      (this.#player.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
+    }
+
+    // LFC-07: snap-out → animate-in. Duration matches COUNTDOWN_DURATION_MS = 3000.
+    this.cameras.main.setZoom(0.6);
+    this.cameras.main.zoomTo(1.0, 3000, 'Sine.easeOut');
+
+    // LFC-08: lazily create the overlay. Single Text with setScrollFactor(0)
+    // anchors it to the viewport (immune to camera pan/zoom) and setDepth(1000)
+    // keeps it above the world. Text starts empty — the first inbound tick fills it.
+    if (this.#countdownText === null) {
+      const cam = this.cameras.main;
+      const centerX = cam.width / 2;
+      const centerY = cam.height / 2;
+      this.#countdownText = this.add
+        .text(centerX, centerY, '', {
+          fontFamily: '"Press Start 2P"',
+          fontSize: '48px',
+          color: '#ffdd55',
+          stroke: '#000000',
+          strokeThickness: 4,
+        })
+        .setOrigin(0.5)
+        .setScrollFactor(0)
+        .setDepth(1000);
+    }
+    this.#countdownText.setVisible(true).setText('');
+  }
+
+  /**
+   * LFC-09: release both locks and hide the overlay at the moment of the
+   * ACTIVE broadcast. The text object is kept (not destroyed) so a future
+   * rematch cycle re-uses it — GameScene's SHUTDOWN flow tears it down with
+   * the rest of the scene anyway.
+   */
+  #exitCountdownMode(): void {
+    this.#controls.isMovementLocked = false;
+    this.#combatLocked = false;
+    this.#countdownText?.setVisible(false);
+  }
+
+  /**
+   * LFC-08: the overlay text is driven 100% by inbound server ticks. NO
+   * client-side setInterval / time.delayedCall — server is authoritative for
+   * the digit progression. Defensive early-return if the text wasn't created
+   * yet (state-changed COUNTDOWN should have created it first, but a coalesced
+   * frame could theoretically deliver the tick before our handler runs).
+   */
+  #onCountdownTick = (payload: MatchCountdownTickPayload): void => {
+    if (this.#countdownText === null) return;
+    this.#countdownText.setText(payload.label);
+    // Juice: one-shot pop-in scale tween — mirrors the room-transition tween shape.
+    this.tweens.add({
+      targets: this.#countdownText,
+      scale: { from: 1.3, to: 1.0 },
+      duration: 250,
+      ease: 'Back.easeOut',
+    });
+  };
+
   #registerCustomEvents(): void {
     EVENT_BUS.on(CUSTOM_EVENTS.OPENED_CHEST, this.#handleOpenChest, this);
     EVENT_BUS.on(CUSTOM_EVENTS.ENEMY_DESTROYED, this.#checkForAllEnemiesAreDefeated, this);
@@ -895,6 +1007,9 @@ export class GameScene extends Phaser.Scene {
     EVENT_BUS.on(CUSTOM_EVENTS.DIALOG_CLOSED, this.#handleDialogClosed, this);
     EVENT_BUS.on(CUSTOM_EVENTS.BOSS_DEFEATED, this.#handleBossDefeated, this);
     EVENT_BUS.on(CUSTOM_EVENTS.DEBUG_SPAWN_FLYING_OBELISK, this.#spawnDebugFlyingObelisk, this);
+    // Match FSM + server-driven countdown ticks (LFC-06..09)
+    EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_MATCH_STATE_CHANGED, this.#onMatchStateChanged, this);
+    EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_MATCH_COUNTDOWN_TICK, this.#onCountdownTick, this);
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       EVENT_BUS.off(CUSTOM_EVENTS.OPENED_CHEST, this.#handleOpenChest, this);
@@ -903,6 +1018,9 @@ export class GameScene extends Phaser.Scene {
       EVENT_BUS.off(CUSTOM_EVENTS.DIALOG_CLOSED, this.#handleDialogClosed, this);
       EVENT_BUS.off(CUSTOM_EVENTS.BOSS_DEFEATED, this.#handleBossDefeated, this);
       EVENT_BUS.off(CUSTOM_EVENTS.DEBUG_SPAWN_FLYING_OBELISK, this.#spawnDebugFlyingObelisk, this);
+      // Match FSM + countdown listener cleanup (LFC-06..09)
+      EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_MATCH_STATE_CHANGED, this.#onMatchStateChanged, this);
+      EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_MATCH_COUNTDOWN_TICK, this.#onCountdownTick, this);
       this.#fireBreathDamageTimer?.destroy();
       this.#activeFireBreath?.destroy();
       // Cleanup network listeners and remote players

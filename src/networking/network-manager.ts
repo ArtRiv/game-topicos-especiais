@@ -20,6 +20,7 @@ import type {
   Lobby,
   MatchConfig,
   MatchStateChangedPayload,
+  MatchCountdownTickPayload,
   MatchLoadedPayload,
   PlayerInfo,
 } from './types.js';
@@ -261,6 +262,12 @@ export class NetworkManager {
     // to gate its scene-switch to PreloadScene -> GameScene.
     this.#socket.on('match:state-changed', (payload: MatchStateChangedPayload) => {
       EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_MATCH_STATE_CHANGED, payload);
+    });
+
+    // Server-driven countdown ticks (LFC-08). GameScene renders the overlay from these;
+    // the client MUST NOT run its own countdown clock — the server is authoritative.
+    this.#socket.on('match:countdown-tick', (payload: MatchCountdownTickPayload) => {
+      EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_MATCH_COUNTDOWN_TICK, payload);
     });
 
     // WebRTC signaling — server forwards offer/answer/ice between peers

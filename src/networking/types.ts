@@ -113,3 +113,11 @@ export type MatchStateChangedPayload = {
 export type MatchLoadedPayload = {
   lobbyId: string;
 };
+
+/** Server-emitted countdown tick (LFC-08). Mirrors game-server/src/types.ts MatchCountdownTickPayload. */
+export type MatchCountdownTickPayload = {
+  lobbyId: string;
+  remaining: number;   // 3, 2, 1, 0
+  label: string;       // '3' | '2' | '1' | 'FIGHT'
+  serverTs: number;
+};
