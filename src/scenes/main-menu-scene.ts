@@ -285,18 +285,20 @@ export class MainMenuScene extends Phaser.Scene {
         .text(cx, y, entry.label, STYLE_MENU)
         .setOrigin(0.5)
         .setResolution(FONT_RESOLUTION)
-        .setInteractive({ useHandCursor: true });
+        .setInteractive();
 
       textObjects.push(text);
 
       text.on('pointerover', () => {
         text.setColor(COLOR_HOVER);
         selectorBox.setY(y).setAlpha(0.25);
+        document.body.style.cursor = "url('/assets/cursor/cursor-hover.png') 16 16, pointer";
       });
 
       text.on('pointerout', () => {
         text.setColor(COLOR_IDLE);
         selectorBox.setAlpha(0);
+        document.body.style.cursor = '';
       });
 
       text.on('pointerdown', () => {

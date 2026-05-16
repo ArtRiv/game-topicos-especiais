@@ -104,7 +104,7 @@ export function buildMenuPlaceholder(scene: Phaser.Scene, opts: MenuPlaceholderO
     const btnBg = scene.add
       .rectangle(cx, primaryY, 200, 22, 0x223388, 1)
       .setOrigin(0.5)
-      .setInteractive({ useHandCursor: true });
+      .setInteractive();
 
     const primaryText = scene.add
       .text(cx, primaryY, opts.primaryLabel, {
@@ -119,10 +119,12 @@ export function buildMenuPlaceholder(scene: Phaser.Scene, opts: MenuPlaceholderO
     btnBg.on('pointerover', () => {
       btnBg.setFillStyle(0x3355bb);
       primaryText.setColor('#ffffff');
+      document.body.style.cursor = "url('/assets/cursor/cursor-hover.png') 16 16, pointer";
     });
     btnBg.on('pointerout', () => {
       btnBg.setFillStyle(0x223388);
       primaryText.setColor('#e0e0ff');
+      document.body.style.cursor = '';
     });
     btnBg.on('pointerup', () => opts.primaryAction!());
   }
@@ -132,7 +134,7 @@ export function buildMenuPlaceholder(scene: Phaser.Scene, opts: MenuPlaceholderO
   const backBg = scene.add
     .rectangle(cx, backY, 140, 20, 0x111133, 1)
     .setOrigin(0.5)
-    .setInteractive({ useHandCursor: true });
+    .setInteractive();
 
   const backText = scene.add
     .text(cx, backY, '< VOLTAR', {
@@ -147,10 +149,12 @@ export function buildMenuPlaceholder(scene: Phaser.Scene, opts: MenuPlaceholderO
   backBg.on('pointerover', () => {
     backBg.setFillStyle(0x1a1a55);
     backText.setColor('#aaaaff');
+    document.body.style.cursor = "url('/assets/cursor/cursor-hover.png') 16 16, pointer";
   });
   backBg.on('pointerout', () => {
     backBg.setFillStyle(0x111133);
     backText.setColor('#8888bb');
+    document.body.style.cursor = '';
   });
   backBg.on('pointerup', () => startScene(scene, opts.backScene));
 }
