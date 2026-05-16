@@ -140,6 +140,27 @@ describe('LobbyManager', () => {
     });
   });
 
+  describe('startLobby — idempotency (CR-02)', () => {
+    it('returns null when called twice in a row by the same host', () => {
+      manager.createLobby('s1', 'Alice');
+      const first = manager.startLobby('s1');
+      expect(first).not.toBeNull();
+      expect(first?.status).toBe('in-progress');
+      const second = manager.startLobby('s1');
+      expect(second).toBeNull();
+    });
+
+    it('returns null when lobby.status is already in-progress', () => {
+      const lobby = manager.createLobby('s1', 'Alice');
+      // Mutate via the same accessor the rest of the suite relies on
+      const fetched = manager.getLobbyBySocketId('s1')!;
+      expect(fetched.id).toBe(lobby.id);
+      fetched.status = 'in-progress';
+      const result = manager.startLobby('s1');
+      expect(result).toBeNull();
+    });
+  });
+
   describe('setPlayerTeam', () => {
     it('allows host to assign team to a player', () => {
       const lobby = manager.createLobby('s1', 'Alice');

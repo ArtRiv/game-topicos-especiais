@@ -89,6 +89,8 @@ io.on('connection', (socket) => {
   socket.on('lobby:start', () => {
     const lobby = lobbyManager.startLobby(socket.id);
     if (!lobby) return;
+    // CR-02 defense-in-depth: never overwrite an existing GameRoom
+    if (gameRooms.has(lobby.id)) return;
     const room = new GameRoom();
     lobby.players.forEach((p) => room.addPlayer(p.id, p.socketId));
     gameRooms.set(lobby.id, room);

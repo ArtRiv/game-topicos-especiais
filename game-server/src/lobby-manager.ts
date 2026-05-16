@@ -78,6 +78,8 @@ export class LobbyManager {
   startLobby(socketId: string): Lobby | null {
     const lobby = this.getLobbyBySocketId(socketId);
     if (!lobby) return null;
+    // CR-02 fix: reject redundant lobby:start while match is already in progress
+    if (lobby.status !== 'waiting') return null;
     const player = lobby.players.find(p => p.socketId === socketId);
     if (!player || player.id !== lobby.hostPlayerId) return null;
     lobby.status = 'in-progress';
