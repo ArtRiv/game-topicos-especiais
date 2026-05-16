@@ -12,6 +12,9 @@ export class GameRoom {
   #players: Map<string, string> = new Map(); // socketId → playerId
   #state: MatchState = 'LOBBY';
   #loadedSocketIds: Set<string> = new Set();
+  /** Pending countdown setTimeout handles owned by this room. Cleared on transition out of
+   * COUNTDOWN or when the room becomes empty. (WR-07 fix from Phase 07-REVIEW.md.) */
+  #countdownHandles: ReturnType<typeof setTimeout>[] = [];
   public transitionLock: boolean = false;
 
   get state(): MatchState { return this.#state; }
@@ -24,6 +27,7 @@ export class GameRoom {
     const playerId = this.#players.get(socketId);
     this.#players.delete(socketId);
     this.#loadedSocketIds.delete(socketId);
+    if (this.#players.size === 0) this.clearCountdownTimers();
     return playerId;
   }
 
@@ -52,10 +56,12 @@ export class GameRoom {
     if (!allowed.includes(next)) {
       throw new Error(`Invalid match transition: ${this.#state} → ${next}`);
     }
+    const prev = this.#state;
     this.#state = next;
     if (next !== 'LOADING') {
       this.#loadedSocketIds.clear();
     }
+    if (prev === 'COUNTDOWN' && next !== 'COUNTDOWN') this.clearCountdownTimers();
   }
 
   /**
@@ -76,6 +82,19 @@ export class GameRoom {
     // acks after the set is already full both return false so the caller transitions exactly once.
     if (sizeAfter === sizeBefore) return false;
     return sizeAfter === this.#players.size;
+  }
+
+  /** Append a pending countdown setTimeout handle so the room can cancel it later (WR-07). */
+  pushCountdownHandle(h: ReturnType<typeof setTimeout>): void {
+    this.#countdownHandles.push(h);
+  }
+
+  /** Cancel every pending countdown handle and reset the store. Idempotent. */
+  clearCountdownTimers(): void {
+    for (const h of this.#countdownHandles) {
+      clearTimeout(h);
+    }
+    this.#countdownHandles = [];
   }
 
   /** Test/observability accessor — count of acks received in the current LOADING cycle. */

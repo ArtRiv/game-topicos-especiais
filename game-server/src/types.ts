@@ -70,3 +70,25 @@ export type MatchStateChangedPayload = {
 export type MatchLoadedPayload = {
   lobbyId: string;
 };
+
+/** Outbound broadcast: per-second countdown tick during COUNTDOWN state (LFC-08).
+ * Server emits exactly 4 of these per cycle: 3 → 2 → 1 → FIGHT, spaced 1000 ms apart. */
+export type MatchCountdownTickPayload = {
+  lobbyId: string;
+  /** Seconds remaining at this tick. 3 | 2 | 1 | 0 at runtime; typed as number so the wire format
+   * stays permissive (a future variable-duration mode could ship 4/5/etc. without a protocol bump). */
+  remaining: number;
+  /** Display label for the tick. '3' | '2' | '1' | 'FIGHT' at runtime; typed as string for the same
+   * reason as `remaining` — gives client cinematics room to add new labels without a protocol bump. */
+  label: string;
+  /** Server epoch ms when the tick was broadcast; mirrors MatchStateChangedPayload.serverTs. */
+  serverTs: number;
+};
+
+/** Total duration of the COUNTDOWN state in milliseconds — 3 ticks at 1000 ms each.
+ * Used by server.ts:startCountdown to schedule the final ACTIVE transition. */
+export const COUNTDOWN_DURATION_MS = 3000;
+
+/** Visible hold time of the final 'FIGHT' tick before the LOADING→ACTIVE transition broadcast.
+ * Total COUNTDOWN-to-ACTIVE span is COUNTDOWN_DURATION_MS + FIGHT_HOLD_MS = 3500 ms. */
+export const FIGHT_HOLD_MS = 500;

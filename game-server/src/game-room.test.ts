@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { GameRoom } from './game-room.js';
 
 describe('GameRoom', () => {
@@ -118,5 +118,95 @@ describe('GameRoom — match state machine (LFC-01, LFC-05)', () => {
     expect(room.loadedCount).toBe(0);
     // p2 alone is now the full set
     expect(room.markLoaded('socket-2')).toBe(true);
+  });
+});
+
+describe('GameRoom — countdown timer handles (LFC-08, WR-07)', () => {
+  // Helper: drive the FSM from LOBBY to COUNTDOWN with the given socket(s).
+  const driveToCountdown = (room: GameRoom, sockets: string[]): void => {
+    sockets.forEach((s, i) => room.addPlayer(`p${i + 1}`, s));
+    room.transitionTo('LOADING');
+    sockets.forEach((s) => room.markLoaded(s));
+    room.transitionTo('COUNTDOWN');
+  };
+
+  it('pushCountdownHandle stores the handle and clearCountdownTimers cancels it', () => {
+    vi.useFakeTimers();
+    try {
+      const room = new GameRoom();
+      const spy = vi.fn();
+      const h = setTimeout(spy, 999_999) as unknown as ReturnType<typeof setTimeout>;
+      room.pushCountdownHandle(h);
+      room.clearCountdownTimers();
+      vi.advanceTimersByTime(999_999);
+      expect(spy).not.toHaveBeenCalled();
+      // Idempotent — calling again is a no-op (no throw, nothing left to cancel).
+      expect(() => room.clearCountdownTimers()).not.toThrow();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('transitionTo(ACTIVE) from COUNTDOWN clears pending handles', () => {
+    vi.useFakeTimers();
+    try {
+      const room = new GameRoom();
+      driveToCountdown(room, ['socket-1']);
+      const spy = vi.fn();
+      const h = setTimeout(spy, 999_999) as unknown as ReturnType<typeof setTimeout>;
+      room.pushCountdownHandle(h);
+      room.transitionTo('ACTIVE');
+      vi.advanceTimersByTime(999_999);
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('transitionTo(ENDED) from COUNTDOWN clears pending handles', () => {
+    vi.useFakeTimers();
+    try {
+      const room = new GameRoom();
+      driveToCountdown(room, ['socket-1']);
+      const spy = vi.fn();
+      const h = setTimeout(spy, 999_999) as unknown as ReturnType<typeof setTimeout>;
+      room.pushCountdownHandle(h);
+      room.transitionTo('ENDED');
+      vi.advanceTimersByTime(999_999);
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('removePlayer clears countdown handles when the room becomes empty', () => {
+    vi.useFakeTimers();
+    try {
+      const room = new GameRoom();
+      driveToCountdown(room, ['socket-1', 'socket-2']);
+
+      // Handle #1: tested after the FIRST removePlayer (room still has 1 player → live).
+      const spyA = vi.fn();
+      const hA = setTimeout(spyA, 1000) as unknown as ReturnType<typeof setTimeout>;
+      room.pushCountdownHandle(hA);
+
+      // First removal — room.playerCount is now 1, so handles must NOT be cancelled yet.
+      room.removePlayer('socket-1');
+      vi.advanceTimersByTime(1000);
+      expect(spyA).toHaveBeenCalledTimes(1);
+
+      // Handle #2: pushed AFTER first removal; tested after the SECOND removePlayer
+      // (room becomes empty → handle cancelled, callback never fires).
+      const spyB = vi.fn();
+      const hB = setTimeout(spyB, 1000) as unknown as ReturnType<typeof setTimeout>;
+      room.pushCountdownHandle(hB);
+
+      // Second removal — room.playerCount goes 1 → 0, clearCountdownTimers MUST fire.
+      room.removePlayer('socket-2');
+      vi.advanceTimersByTime(1000);
+      expect(spyB).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
