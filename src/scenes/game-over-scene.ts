@@ -40,6 +40,11 @@ export class GameOverScene extends Phaser.Scene {
     this.#controls = new KeyboardComponent(this, this.input.keyboard);
     this.#selectedMenuOptionIndex = 0;
     DataManager.instance.resetPlayerHealthToMin();
+
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      // No EVENT_BUS listeners to clean up currently.
+      // Hook exists for future safety as scenes evolve.
+    });
   }
 
   public update(): void {

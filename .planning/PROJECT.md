@@ -1,16 +1,21 @@
 # Mages
 
-## Current Milestone: v2.0 — PvP Event Multiplayer
+## Current Milestone: v1.2 — Match Lifecycle & Event Polish
 
-**Goal:** Rebuild the game as a competitive PvP experience for the college event — players create accounts, form lobbies, pick game modes, and fight each other with elemental spells.
+**Goal:** Turn the working PvP foundation into a tournament-grade experience for the college event — a synchronized match lifecycle (loading → countdown → active), a configurable host-only lobby (formats, maps, ready-up), and the in-match feedback loop (kill feed, damage numbers, name tags, results screen) that crowd-driven competitive play needs.
 
 **Target features:**
-- Google OAuth login (account per player, tied to Google email)
-- Lobby creation & joining (session-based matchmaking)
-- Multiple game modes: Battle Royale, 2v2 / 3v3 / 4v4 team vs team
-- PvP arena gameplay (spell combat, player elimination)
-- Ranking system + global leaderboard
-- Spell progression / leveling (upgrade cooldown, mana, HP per account)
+- Match lifecycle FSM: LOBBY → LOADING → COUNTDOWN → ACTIVE
+- Pre-match loading screen with player list + map preview (all-clients sync barrier)
+- Match intro: spawn lock + camera zoom-in + 3-2-1-FIGHT countdown
+- Host-only lobby configuration: match format selector (1v1 → 10v10) + map selection
+- Extensible single-config-object architecture (future-proof: time limit, friendly fire, spell modifiers)
+- Ready-up system (host start gated on all-ready + min count)
+- AFK detection + one-click host kick
+- In-match feedback: kill feed, floating damage numbers, name tags + HP bars overhead, match timer, ping indicator
+- Post-match results screen (winner, per-player kills/damage, MVP)
+- Spectator mode after elimination (free cam or follow surviving player)
+- Reconnect grace window (15s slot hold)
 
 ## What This Is
 
@@ -77,20 +82,11 @@ When a player lands a perfectly timed spell combo that eliminates an opponent in
 - [ ] PRG-04: Upgradeable stats include: spell cooldown, max mana, max HP
 - [ ] PRG-05: Upgraded stats are applied to the player in every subsequent match
 
-## Current Milestone: v1.1 — PvP Team Deathmatch
+## Past Milestones
 
-**Goal:** Turn the completed WebRTC P2P networking foundation into a playable multi-player PvP game — fully controllable mages, asymmetric elements, direct player-vs-player combat, and a working match loop (start → fight → win/lose) — while stress-testing how many players the WebRTC mesh can handle in practice.
+**v1.0 — College Event Build (LAN Foundation)** — shipped Phase 1 (NET-01..06): WebRTC P2P signaling, lobby, remote player sync, spell relay.
 
-**Target features:**
-- Full P2 (and P3+) player control on separate machines
-- Asymmetric elements: P1 = Fire/Earth/Water; P2 = Ice/Wind/Thunder; P3+ assigned from pool
-- Ice, Wind, and Thunder spells implemented
-- Player-vs-player spell combat (spells can hit opponents)
-- Host-authoritative damage validation
-- Match loop: start → fight → win/lose → rematch
-- PvP HUD: all players' HP bars; team/element indicators
-- Dynamically scalable lobbies — no hard player cap; test P2P mesh limits empirically
- (v1.1)
+**v1.1 — PvP Team Deathmatch** — shipped Phases 2 → 6: multi-player control, asymmetric elements, Ice/Wind/Thunder spells, host-authoritative damage, full match loop (start → fight → win/lose → rematch), foundation cleanup (listener leaks, mesh teardown, singleton resets).
 
 - Cooperative puzzle rooms — deferred
 - Bosses / final boss — deferred
@@ -148,4 +144,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-27 — v2.0 PvP pivot; v1.0 co-op design fully discarded*
+*Last updated: 2026-04-24 — v1.2 milestone started (Match Lifecycle & Event Polish)*

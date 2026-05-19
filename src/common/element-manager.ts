@@ -27,4 +27,8 @@ export class ElementManager {
     const data: ElementChangedData = { element };
     EVENT_BUS.emit(CUSTOM_EVENTS.ELEMENT_CHANGED, data);
   }
+
+  public reset(): void {
+    this.#activeElement = ELEMENT.FIRE;
+  }
 }

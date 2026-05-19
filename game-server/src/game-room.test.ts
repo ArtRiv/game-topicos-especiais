@@ -58,3 +58,65 @@ describe('GameRoom', () => {
     });
   });
 });
+
+describe('GameRoom — match state machine (LFC-01, LFC-05)', () => {
+  it('starts in LOBBY', () => {
+    const room = new GameRoom();
+    expect(room.state).toBe('LOBBY');
+  });
+
+  it('allows LOBBY → LOADING → COUNTDOWN → ACTIVE → ENDED', () => {
+    const room = new GameRoom();
+    room.addPlayer('p1', 'socket-1');
+    room.transitionTo('LOADING');
+    expect(room.state).toBe('LOADING');
+    room.markLoaded('socket-1');
+    room.transitionTo('COUNTDOWN');
+    expect(room.state).toBe('COUNTDOWN');
+    room.transitionTo('ACTIVE');
+    expect(room.state).toBe('ACTIVE');
+    room.transitionTo('ENDED');
+    expect(room.state).toBe('ENDED');
+  });
+
+  it('throws on invalid transitions', () => {
+    const room = new GameRoom();
+    expect(() => room.transitionTo('ACTIVE')).toThrow(/Invalid match transition/);
+    expect(() => room.transitionTo('COUNTDOWN')).toThrow(/Invalid match transition/);
+  });
+
+  it('markLoaded returns false until every player has acked, then true exactly once', () => {
+    const room = new GameRoom();
+    room.addPlayer('p1', 'socket-1');
+    room.addPlayer('p2', 'socket-2');
+    room.transitionTo('LOADING');
+    expect(room.markLoaded('socket-1')).toBe(false);
+    expect(room.loadedCount).toBe(1);
+    expect(room.markLoaded('socket-2')).toBe(true);
+    expect(room.loadedCount).toBe(2);
+    // duplicate ack does NOT re-trigger (Set semantics)
+    expect(room.markLoaded('socket-1')).toBe(false);
+  });
+
+  it('markLoaded ignores acks from non-members and from non-LOADING states', () => {
+    const room = new GameRoom();
+    room.addPlayer('p1', 'socket-1');
+    expect(room.markLoaded('socket-1')).toBe(false); // still in LOBBY
+    expect(room.markLoaded('ghost-socket')).toBe(false);
+    room.transitionTo('LOADING');
+    expect(room.markLoaded('ghost-socket')).toBe(false);
+  });
+
+  it('removing a player drops their pending loaded ack', () => {
+    const room = new GameRoom();
+    room.addPlayer('p1', 'socket-1');
+    room.addPlayer('p2', 'socket-2');
+    room.transitionTo('LOADING');
+    room.markLoaded('socket-1');
+    expect(room.loadedCount).toBe(1);
+    room.removePlayer('socket-1');
+    expect(room.loadedCount).toBe(0);
+    // p2 alone is now the full set
+    expect(room.markLoaded('socket-2')).toBe(true);
+  });
+});

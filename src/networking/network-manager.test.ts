@@ -152,6 +152,36 @@ describe('NetworkManager', () => {
     });
   });
 
+  describe('teardownMesh()', () => {
+    it('keeps socket connected after mesh teardown', async () => {
+      const nm = NetworkManager.init(`http://localhost:${testPort}`);
+      nm.connect();
+
+      await new Promise<void>((resolve) => {
+        EVENT_BUS.once(CUSTOM_EVENTS.NETWORK_CONNECTED, () => resolve());
+      });
+
+      expect(nm.isConnected).toBe(true);
+      nm.teardownMesh();
+      // Socket should still be connected
+      expect(nm.isConnected).toBe(true);
+      nm.disconnect();
+    });
+
+    it('clears match players after teardown', async () => {
+      const nm = NetworkManager.init(`http://localhost:${testPort}`);
+      nm.connect();
+
+      await new Promise<void>((resolve) => {
+        EVENT_BUS.once(CUSTOM_EVENTS.NETWORK_CONNECTED, () => resolve());
+      });
+
+      nm.teardownMesh();
+      expect(nm.matchPlayers).toEqual([]);
+      nm.disconnect();
+    });
+  });
+
   describe('startGameTick / stopGameTick', () => {
     it('stopGameTick stops the interval', () => {
       return new Promise<void>((resolve) => {
