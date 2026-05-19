@@ -66,6 +66,15 @@ const gameConfig: Phaser.Types.Core.GameConfig = {
   },
 };
 
+// Phaser rasterises Text glyphs onto a 2D canvas the moment a Text object is
+// created. If the TTF isn't fully loaded yet, the canvas falls back to a system
+// font and Phaser caches that (wrong) texture — producing the "blurry on first
+// load, crisp after refresh" symptom. Awaiting the font here guarantees the
+// glyphs are available before any scene runs. We load the largest size we use
+// so every smaller render is satisfied by the same font face.
+await document.fonts.load('20px "Press Start 2P"');
+await document.fonts.load('20px "FONT_PRESS_START_2P"');
+
 const game = new Phaser.Game(gameConfig);
 
 // --- Register all scenes ---
