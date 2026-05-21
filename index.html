@@ -1,23 +1,100 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
-	<head>
-		<meta name="viewport" content="width=device-width, initial-scale=1.0">
-		<title>High Fantasy</title>
-		<style>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>High Fantasy</title>
+    <style>
+      /*
+       * FONT PRE-LOADING
+       * ----------------
+       * Register the pixel font under BOTH family names:
+       *   'Press Start 2P'      — the TTF's actual family name (used by LobbyScene)
+       *   'FONT_PRESS_START_2P' — the Phaser asset-key name (used by all other scenes)
+       *
+       * font-display: block ensures the font is fully loaded before any text
+       * renders, eliminating flash-of-unstyled-text and fallback-font blur on
+       * the very first Phaser frame.  Phaser's own font loader (assets.json) will
+       * also run later and be silently ignored since the font is already cached.
+       */
+      @font-face {
+        font-family: 'Press Start 2P';
+        src: url('/assets/fonts/Press_Start_2P/PressStart2P-Regular.ttf') format('truetype');
+        font-display: block;
+      }
+      @font-face {
+        font-family: 'FONT_PRESS_START_2P';
+        src: url('/assets/fonts/Press_Start_2P/PressStart2P-Regular.ttf') format('truetype');
+        font-display: block;
+      }
+
+      /*
+       * LAYOUT STRATEGY
+       * ---------------
+       * The Phaser canvas is rendered inside #game-container at the game's
+       * native 480×320 resolution and then CSS-upscaled by ScaleManager (FIT
+       * mode).  On wide viewports, FIT produces thin letterbox bars between
+       * the canvas edge and the viewport edge.
+       *
+       * To prevent those bars from appearing as jarring white/gray strips, the
+       * entire page background is set to #000000 (pure black) — matching the
+       * Phaser backgroundColor and the scene backgrounds.  The effect is that
+       * the letterbox merges invisibly with the game.
+       *
+       * image-rendering: pixelated  →  prevents the browser from applying its
+       *                                own bilinear anti-aliasing when upscaling
+       *                                the canvas element, guaranteeing crisp
+       *                                pixel-art even at non-integer zoom levels.
+       */
+      *,
+      *::before,
+      *::after {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
       html,
-      body,
-      .container {
-        margin: 0px;
-        height: 100vh;
-        width: 100vw;
+      body {
+        width: 100%;
+        height: 100%;
         overflow: hidden;
-        background: #d7d7d7;
-        cursor: url('/assets/cursor/cursor.png') 16 16, crosshair;
+        /* Black background: letterbox bars are invisible against the game. */
+        background: #000000;
+        cursor:
+          url('/assets/cursor/cursor.png') 16 16,
+          crosshair;
+      }
+
+      #game-container {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      /*
+       * Force nearest-neighbour scaling on the Phaser canvas at the browser
+       * level. Phaser's pixelArt:true sets the WebGL texture filter, but the
+       * browser can still blur the <canvas> element itself during CSS scaling.
+       * These two properties lock it to crisp pixel rendering.
+       */
+      #game-container canvas {
+        image-rendering: -moz-crisp-edges; /* Firefox */
+        image-rendering: -webkit-optimize-contrast; /* Safari (legacy) */
+        image-rendering: pixelated; /* Chrome / modern standard */
+        image-rendering: crisp-edges; /* spec fallback */
+        /* Prevent touch-drag from triggering browser default behaviours */
+        touch-action: none;
+        padding: 0;
+        margin: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
       }
     </style>
-	</head>
-	<body>
-		<div class="container" id="game-container"></div>
-		<script type="module" src="/src/main.ts"></script>
-	</body>
+  </head>
+  <body>
+    <div id="game-container"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
 </html>

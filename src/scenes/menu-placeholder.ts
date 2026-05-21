@@ -33,6 +33,16 @@ export type MenuPlaceholderOptions = {
   title: string;
   /** Scene key to transition to when ESC or the back hint is interacted with. */
   backScene: string;
+  // The following fields are accepted-but-unused so CreateLobbyScene /
+  // JoinLobbyScene (ported from main) still type-check while they remain
+  // dormant under the Phase 9.x boot flow. Wire them into the BitmapText
+  // layout when those scenes become reachable from the main menu.
+  /** Small descriptive line under the title (accepted, currently unused). */
+  hint?: string;
+  /** Label for an optional primary action button (accepted, currently unused). */
+  primaryLabel?: string;
+  /** Callback for the primary action button (accepted, currently unused). */
+  primaryAction?: () => void;
 };
 
 export function buildMenuPlaceholder(scene: Phaser.Scene, opts: MenuPlaceholderOptions): void {

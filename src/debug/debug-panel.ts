@@ -91,7 +91,7 @@ const PANEL_CSS = `
   #game-debug-panel .param-row input[type=range] {
     flex: 1;
     height: 4px;
-    cursor: pointer;
+    cursor: url('/assets/cursor/cursor-hover.png') 16 16, pointer;
     accent-color: #ffcc00;
   }
   #game-debug-panel .param-value {
@@ -108,7 +108,7 @@ const PANEL_CSS = `
     border: 1px solid #555;
     border-radius: 3px;
     padding: 4px 0;
-    cursor: pointer;
+    cursor: url('/assets/cursor/cursor-hover.png') 16 16, pointer;
     font-family: inherit;
     font-size: 10px;
     letter-spacing: 1px;
@@ -122,7 +122,7 @@ const PANEL_CSS = `
     border: 1px solid #4b6b7a;
     border-radius: 3px;
     padding: 6px 0;
-    cursor: pointer;
+    cursor: url('/assets/cursor/cursor-hover.png') 16 16, pointer;
     font-family: inherit;
     font-size: 10px;
     letter-spacing: 1px;

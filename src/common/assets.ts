@@ -49,7 +49,7 @@ export const ASSET_KEYS = {
   WIND_BOLT_HIT: 'WIND_BOLT_HIT',
   THUNDER_STRIKE: 'THUNDER_STRIKE',
   THUNDER_SPLASH: 'THUNDER_SPLASH',
-  // Ported from UI branch (Phase 9.2):
+  // --- UI / Menu (Phase 9.2 port) ---
   MENU_BG: 'MENU_BG',
   MENU_BG_VIDEO: 'MENU_BG_VIDEO',
   MENU_MUSIC: 'MENU_MUSIC',
