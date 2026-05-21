@@ -12,6 +12,18 @@ export class PreloadScene extends Phaser.Scene {
   }
 
   public preload(): void {
+    // BitmapText atlas (Phase 9.1-04 standard). SplashScene/MainMenuScene
+    // also self-load this since they boot before PreloadScene; the cache
+    // guard makes subsequent loads safe no-ops.
+    const BMFONT_KEY = 'press_start_2p';
+    if (!this.cache.bitmapFont.has(BMFONT_KEY)) {
+      this.load.bitmapFont(
+        BMFONT_KEY,
+        'assets/fonts/Press_Start_2P/press_start_white-2.png',
+        'assets/fonts/Press_Start_2P/press_start_white-2.xml',
+      );
+    }
+
     // load asset pack that has assets for the rest of the game
     this.load.pack(ASSET_PACK_KEYS.MAIN, 'assets/data/assets.json');
 
