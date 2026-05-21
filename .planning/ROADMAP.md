@@ -17,6 +17,8 @@ Turn the working PvP foundation into a tournament-grade experience for the colle
 - [x] **Phase 8: COUNTDOWN State** — Players locked at spawn during a 3–4s zoom-in cinematic with 3-2-1-FIGHT! overlay; combat unlocks simultaneously (completed 2026-05-16)
 - [ ] **Phase 9: Lobby Format & Map Configuration** — Host selects 1v1→10v10 and a map; lobby capacity adjusts; single extensible `GameRoom.config` object broadcast on every change
 - [x] **Phase 9.2: UI Motion & Lobby Polish** *(INSERTED)* — Cinematic menu→lobby→match transitions tied to music; final map thumbnail art replaces placeholders (completed 2026-05-21)
+- [ ] **Phase 9.3: Cross-Player Combat & Input Polish** *(INSERTED)* — Build the missing v1.1 host-authoritative damage pipeline (PVP-02/04/05/06), add dash on Shift, rebind spell-cycle from Ctrl to hold-Spacebar (Ctrl+W closes browser), fix earth-wall-vs-fireball desync and phantom-2nd-fireball bug
+- [ ] **Phase 9.4: Combo System & Spell Roster Expansion** *(INSERTED)* — Audit & fix existing combos that aren't firing; add Dark element (Dark Bolt + 1–2 follow-up spells once assets are sourced); add Water Ball; expand roster to 5+ new spells total
 - [ ] **Phase 10: Match End & Results Screen** — Server transitions to ENDED on win condition; full-screen results show winner/kills/damage/MVP; rematch flow remains intact
 - [ ] **Phase 11: Reconnect Grace Window** — 15-second slot hold on disconnect; reconnects within window restore active play
 - [ ] **Phase 12: In-Match Feedback HUD** — Kill feed, floating damage numbers, name tags + HP bars overhead, match timer, ping indicator
@@ -135,6 +137,45 @@ Plans:
 
 ---
 
+### Phase 9.3: Cross-Player Combat & Input Polish
+
+**Goal**: Make the game actually playable in multiplayer so the project can be tested with real players. Build the cross-player damage pipeline that v1.1 was supposed to ship but never did (REQUIREMENTS.md still has PVP-02 / PVP-04 / PVP-05 / PVP-06 marked Pending), rebind controls so the browser stops hijacking inputs, add a dash, and fix the two known multiplayer desync bugs surfaced during testing.
+**Depends on**: Phase 8 (ACTIVE state is reachable; needed for damage to actually fire during combat). Independent of Phase 9.x lobby work — combat code paths don't intersect with lobby UI.
+**Requirements**: PVP-02, PVP-04, PVP-05, PVP-06
+**Type**: inserted (decimal phase — unblocks playtesting that should have been possible since v1.1)
+**Success Criteria** (what must be TRUE):
+  1. A spell cast by Player A that visually overlaps Player B's sprite deducts HP from Player B on every connected client (host-authoritative; clients apply damage only after `damage:confirmed` broadcast from the server)
+  2. When a player's HP reaches 0, every client sees the elimination at the same instant via an `elimination:broadcast` server message (no client-side guessing)
+  3. A friendly-fire toggle in the lobby config (default OFF) is respected by the host's damage validator — same-team hits do not deduct HP when OFF
+  4. Pressing `Shift` triggers a short dash in the player's current facing/move direction (cooldown TBD during planning); dash position is broadcast to other clients via the existing position-update channel (no new message type required)
+  5. Holding `Spacebar` opens the radial spell-selection menu; releasing `Spacebar` confirms the highlighted spell — `Ctrl` is no longer bound to spell-cycle (eliminates the Ctrl+W browser-close conflict)
+  6. The "earth wall stops fireball" outcome is identical for the caster and every observing client — wall-vs-projectile resolution is host-authoritative or deterministic
+  7. Casting a fireball never spawns a second phantom projectile — the cause of the ghost-projectile bug is identified via `/gsd-debug` and the root cause is removed (not papered over with a destroy-after call)
+**Plans**: TBD (planning will likely split this into 4–5 plans: damage net protocol, server damage validator, client damage application + elimination, input rebinds + dash, bug-fix plans for the two desync bugs)
+**UI hint**: minor (dash visual; spell-select rebind doesn't change radial menu visuals — only the key that opens it)
+**Source**: post-Phase-9.2 playtest discovery; PROJECT.md PVP-02 explicitly unchecked
+
+---
+
+### Phase 9.4: Combo System & Spell Roster Expansion
+
+**Goal**: Combos behave as advertised (every spell pair the design says should combo actually triggers the combo effect on every connected client), and the spell roster grows to support deeper play during the event — Dark element introduced (Dark Bolt + 1–2 follow-up spells once assets are sourced), Water Ball added, plus other pickups discussed during planning. Target ≥5 new spells.
+**Depends on**: Phase 9.3 (cross-player damage must work — combo damage is impossible to verify if base damage is broken)
+**Requirements**: SPL-05 (extended), plus net-new requirements that will be drafted during discuss-phase for the Dark element and combo correctness rules
+**Type**: inserted (decimal phase — combat depth needed for tournament feel; scope grew during 9.3 playtest discovery)
+**Success Criteria** (what must be TRUE):
+  1. An audit document lists every spell pair the design intends to combo and records whether each one currently triggers; every "should combo" pair that wasn't triggering now triggers in multiplayer (verified on at least 2 connected clients)
+  2. A new Dark element is registered in `element-manager.ts` with at least one playable spell (Dark Bolt) that has a registered asset, damage value, projectile behavior, and host-authoritative damage path consistent with Phase 9.3
+  3. Water Ball is registered as a new Water-element spell with projectile behavior and damage path consistent with Phase 9.3
+  4. Total net-new spells added in this phase: ≥5 (exact list locked during discuss-phase based on asset availability)
+  5. Combo registry is documented (file lives in repo, single source of truth for "spell A + spell B = effect C") so future spell additions plug into it explicitly rather than being silently dropped
+**Plans**: TBD (planning will likely split: combo audit + fixes, Dark element scaffolding + Dark Bolt, additional Dark spells, Water Ball, registry documentation)
+**UI hint**: minor (new spells need icons in the radial menu; no new layouts)
+**Source**: post-Phase-9.2 playtest discovery (user reported combos missing, wanted Dark element + Water Ball + others)
+**Asset prerequisites**: Dark element spell sprites need to be sourced before plans 02+ can execute (Plan 01 = combo audit only, can start anytime)
+
+---
+
 ### Phase 10: Match End & Results Screen
 
 **Goal**: When the match ends, every player sees the same full-screen results breakdown (winner, per-player kills, per-player damage, MVP), and the existing rematch flow still returns everyone to the lobby cleanly.
@@ -197,6 +238,8 @@ Plans:
 | 8. COUNTDOWN State | 0/2 | Not started | — |
 | 9. Lobby Format & Map Config | 3/3 | Plans complete (pending verify) | — |
 | 9.2. UI Motion & Lobby Polish | 5/5 | Complete | 2026-05-21 |
+| 9.3. Cross-Player Combat & Input Polish | 0/? | Not started | — |
+| 9.4. Combo System & Spell Roster | 0/? | Not started | — |
 | 10. Match End & Results Screen | 0/? | Not started | — |
 | 11. Reconnect Grace Window | 0/? | Not started | — |
 | 12. In-Match Feedback HUD | 0/? | Not started | — |

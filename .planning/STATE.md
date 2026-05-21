@@ -59,6 +59,8 @@ Last activity: 2026-05-21 -- Phase 09.2 complete
 
 - Phase 10 (Ready-Up & AFK Detection) removed 2026-05-21 — dropped to focus available time on higher-priority UI polish; LBC-08..LBC-11 dropped with it. Subsequent phases renumbered 11→10, 12→11, 13→12, 14→13.
 - Phase 9.2 (UI Motion & Lobby Polish) inserted 2026-05-21 after Phase 9.1 — promotes the menu/lobby-motion-transitions and map-thumbnail-placeholder todos into a real phase before Match End.
+- Phase 9.3 (Cross-Player Combat & Input Polish) inserted 2026-05-21 after Phase 9.2 (URGENT) — surfaced when first playtest after 9.2 merge revealed spells do not damage opponents (PVP-02/04/05/06 still Pending despite v1.1 claim); also folds in the Ctrl+W browser-hijack rebind, dash on Shift, and two known multiplayer desync bugs (earth-wall-vs-fireball, phantom 2nd fireball).
+- Phase 9.4 (Combo System & Spell Roster Expansion) inserted 2026-05-21 after Phase 9.3 — audit + fix combos that aren't firing, add Dark element (Dark Bolt + 1–2 more once assets are sourced), add Water Ball, target ≥5 new spells total. Depends on 9.3 because combo damage cannot be verified until base damage works.
 
 ### Decisions
 

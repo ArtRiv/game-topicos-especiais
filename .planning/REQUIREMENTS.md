@@ -164,11 +164,11 @@
 | SPL-04 | Phase 3 | Pending |
 | SPL-05 | Phase 3 | Pending |
 | PVP-01 | Phase 3 | Pending |
-| PVP-02 | Phase 4 | Pending |
+| PVP-02 | Phase 9.3 | Pending |
 | PVP-03 | Phase 4 | Pending |
-| PVP-04 | Phase 4 | Pending |
-| PVP-05 | Phase 4 | Pending |
-| PVP-06 | Phase 4 | Pending |
+| PVP-04 | Phase 9.3 | Pending |
+| PVP-05 | Phase 9.3 | Pending |
+| PVP-06 | Phase 9.3 | Pending |
 | MTH-02 | Phase 4 | Pending |
 | HUD-02 | Phase 4 | Pending |
 | SCL-04 | Phase 4 | Pending |
