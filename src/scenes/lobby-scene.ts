@@ -374,9 +374,24 @@ export class LobbyScene extends Phaser.Scene {
     //    objects; the array assignments to [] make a second pass cheap).
     this.#clearView();
 
-    // 3. Now safe to swap scenes — the DOM tree is clean.
-    this.scene.stop(SCENE_KEYS.LOBBY_SCENE);
-    this.scene.start(SCENE_KEYS.LOADING_SCENE, { matchConfig: data.matchConfig });
+    // 3. Phase 9.2: 400ms fade-to-black + parallel menu-music duck to 0,
+    //    then hard-stop the track and start LoadingScene. Per-client (D-08) —
+    //    no server protocol event; LoadingScene's MIN_DISPLAY_MS floor
+    //    absorbs cross-client jitter. The eager #clearView() above runs
+    //    synchronously FIRST so the host's DOM-detach unsticks the
+    //    black-screen stall before this overlay polish begins.
+    // 400ms — chosen so the menu duck fits inside one perceived UI beat;
+    // both calls use the literal so the value is greppable from a single spot.
+    this.cameras.main.fadeOut(400, 0, 0, 0);
+    MusicManager.instance.tweenMenuVolume(this, 0, 400);
+
+    this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
+      // D-09: hard stop (not crossfade) — gameplay music starts later inside
+      // LoadingScene with a computed delay so the drop hits at COUNTDOWN-end.
+      MusicManager.instance.stopMenu();
+      this.scene.stop(SCENE_KEYS.LOBBY_SCENE);
+      this.scene.start(SCENE_KEYS.LOADING_SCENE, { matchConfig: data.matchConfig });
+    });
   };
 
   #playerListObjects: Phaser.GameObjects.GameObject[] = [];
