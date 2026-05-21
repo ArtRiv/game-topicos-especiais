@@ -121,6 +121,12 @@ export abstract class CharacterGameObject extends Phaser.Physics.Arcade.Sprite i
     return this._stateMachine;
   }
 
+  // Phase 9.3 (Plan 03): exposed so the host-authoritative damage pipeline can apply
+  // confirmed damage / full restore to both local + remote players without subclassing.
+  get lifeComponent(): LifeComponent {
+    return this._lifeComponent;
+  }
+
   public update(): void {
     this._stateMachine.update();
     // Keep depth in sync with Y so entities lower on screen render in front

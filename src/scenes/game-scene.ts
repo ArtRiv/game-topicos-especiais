@@ -67,7 +67,8 @@ import {
 import { NetworkManager } from '../networking/network-manager';
 import { RemoteInputComponent } from '../components/input/remote-input-component';
 import { MusicManager } from '../common/music-manager';
-import type { PlayerUpdateBroadcast, RoomTransitionPayload, PlayerDisconnectedPayload, PlayerUpdatePayload, SpellCastBroadcast, PlayerInfo, BreathStartBroadcast, BreathUpdateBroadcast, BreathEndBroadcast, EarthWallPillarBroadcast, EarthWallPillarDestroyBroadcast, MatchStateChangedPayload, MatchCountdownTickPayload } from '../networking/types';
+import type { PlayerUpdateBroadcast, RoomTransitionPayload, PlayerDisconnectedPayload, PlayerUpdatePayload, SpellCastBroadcast, PlayerInfo, BreathStartBroadcast, BreathUpdateBroadcast, BreathEndBroadcast, EarthWallPillarBroadcast, EarthWallPillarDestroyBroadcast, MatchStateChangedPayload, MatchCountdownTickPayload, DamageConfirmedPayload, SpellDestroyedPayload, EliminationPayload, RespawnPayload } from '../networking/types';
+import { RUNTIME_CONFIG } from '../common/runtime-config';
 import type { Direction } from '../common/types';
 
 export class GameScene extends Phaser.Scene {
@@ -912,6 +913,10 @@ export class GameScene extends Phaser.Scene {
         if (spellObj instanceof FireBolt) {
           pillar.takeDamage(spellObj.baseDamage);
           spellObj.explode();
+          // Phase 9.3 (Plan 03) D-04 hardening: broadcast environment-hit so observers
+          // remove the same spell from #remoteSpellGroup via NETWORK_SPELL_DESTROYED.
+          const sid = spellObj.getData('spellId') as string | undefined;
+          if (sid) this.#safeNetworkManager()?.sendSpellHitEnvironment({ spellId: sid, hitX: spellObj.x, hitY: spellObj.y });
           // Splash: also damage adjacent pillars within EARTH_WALL_FIREBOLT_SPLASH_RADIUS
           const splashRadiusSq = EARTH_WALL_FIREBOLT_SPLASH_RADIUS * EARTH_WALL_FIREBOLT_SPLASH_RADIUS;
           this.#earthWallGroup.getChildren().forEach((child) => {
@@ -927,6 +932,8 @@ export class GameScene extends Phaser.Scene {
         } else if (spellObj instanceof EarthBolt) {
           pillar.takeDamage(spellObj.baseDamage);
           spellObj.explode();
+          const sid = spellObj.getData('spellId') as string | undefined;
+          if (sid) this.#safeNetworkManager()?.sendSpellHitEnvironment({ spellId: sid, hitX: spellObj.x, hitY: spellObj.y });
         }
       },
     );
@@ -961,7 +968,147 @@ export class GameScene extends Phaser.Scene {
         }
       },
     );
+
+    // ────────────────────────────────────────────────────────────────
+    // Phase 9.3 (Plan 03): cross-player damage overlaps (PVP-02, D-01..D-05).
+    // Damage is NEVER applied here — these callbacks only EMIT spell:hit. The host
+    // server validates (FF/plausibility/dedupe) and broadcasts damage:confirmed,
+    // which #onDamageConfirmed actually applies to LifeComponent (PVP-05).
+    // ────────────────────────────────────────────────────────────────
+
+    // Overlap A: local player vs remote spells.
+    this.physics.add.overlap(this.#player, this.#remoteSpellGroup, (_playerObj, spellObj) => {
+      const spell = spellObj as Phaser.GameObjects.GameObject & {
+        active: boolean;
+        x?: number;
+        y?: number;
+        baseDamage?: number;
+        explode?: () => void;
+      };
+      if (!spell.active) return;
+      const nm = this.#safeNetworkManager();
+      if (!nm) return;
+      const spellId = spell.getData('spellId') as string | undefined;
+      const casterId = spell.getData('casterId') as string | undefined;
+      const spellType = (spell.getData('spellType') as string | undefined) ?? (spell.constructor as { name: string }).name;
+      if (!spellId || !casterId) return;
+      // FF pre-check (D-05) — server re-checks, this just saves a round-trip + visual.
+      if (this.#areSameTeam(casterId, nm.localPlayerId)) return;
+      nm.sendSpellHit({
+        spellId,
+        spellType,
+        casterId,
+        targetId: nm.localPlayerId,
+        hitX: this.#player.x,
+        hitY: this.#player.y,
+        damage: spell.baseDamage ?? 0,
+      });
+      // Local visual feedback only — actual damage still gates on damage:confirmed (PVP-05, D-01).
+      spell.explode?.();
+    });
+
+    // Overlap B: local spellGroup vs remote players.
+    this.physics.add.overlap(
+      this.#player.spellCastingComponent.spellGroup,
+      this.#remotePlayerGroup,
+      (spellObj, remoteObj) => {
+        const spell = spellObj as Phaser.GameObjects.GameObject & {
+          active: boolean;
+          x?: number;
+          y?: number;
+          baseDamage?: number;
+          explode?: () => void;
+        };
+        const remote = remoteObj as Player;
+        if (!spell.active || !remote.active) return;
+        const nm = this.#safeNetworkManager();
+        if (!nm) return;
+        const spellId = spell.getData('spellId') as string | undefined;
+        const targetId = remote.getData('playerId') as string | undefined;
+        const spellType = (spell.getData('spellType') as string | undefined) ?? (spell.constructor as { name: string }).name;
+        if (!spellId || !targetId) return;
+        if (this.#areSameTeam(nm.localPlayerId, targetId)) return;
+        nm.sendSpellHit({
+          spellId,
+          spellType,
+          casterId: nm.localPlayerId,
+          targetId,
+          hitX: remote.x,
+          hitY: remote.y,
+          damage: spell.baseDamage ?? 0,
+        });
+        spell.explode?.();
+      },
+    );
   }
+
+  // ============================================================
+  // Phase 9.3 (Plan 03): cross-player damage helpers + listeners.
+  // ============================================================
+
+  #safeNetworkManager(): NetworkManager | null {
+    try { return NetworkManager.getInstance(); } catch { return null; }
+  }
+
+  #areSameTeam(playerIdA: string, playerIdB: string): boolean {
+    const nm = this.#safeNetworkManager();
+    if (!nm) return false;
+    const a = nm.matchPlayers.find((p) => p.id === playerIdA);
+    const b = nm.matchPlayers.find((p) => p.id === playerIdB);
+    if (!a || !b) return false;
+    if (a.team === undefined || b.team === undefined) return false;
+    return a.team === b.team;
+  }
+
+  // Damage application — i-frame guarded (Plan 04 contract) + spellId-deduped.
+  #onDamageConfirmed = (payload: DamageConfirmedPayload): void => {
+    if (this.#appliedDamageSpellIds.has(payload.spellId)) return;
+    this.#appliedDamageSpellIds.add(payload.spellId);
+
+    const nm = this.#safeNetworkManager();
+    const isLocalTarget = nm != null && payload.targetId === nm.localPlayerId;
+
+    if (isLocalTarget) {
+      // Plan 04 i-frame contract: drop confirmed damage during dash invulnerability window.
+      // Player.iFrameUntil is initialized to 0 by Plan 04, so this is a no-op when DASH_IFRAMES_ENABLED=false.
+      if (this.time.now < this.#player.iFrameUntil) {
+        return;
+      }
+      this.#player.lifeComponent.takeDamage(payload.amount);
+      return;
+    }
+
+    const remote = this.#remotePlayers.get(payload.targetId);
+    if (remote) {
+      remote.lifeComponent.takeDamage(payload.amount);
+    }
+  };
+
+  // Stubs filled in by Task 3 (elimination overlay + respawn restore).
+  // Declared here so #registerCustomEvents subscriptions + SHUTDOWN cleanup compile clean
+  // with the Task 2 commit landing first.
+  #onElimination = (_payload: EliminationPayload): void => { /* Task 3 */ };
+  #onRespawn = (_payload: RespawnPayload): void => { /* Task 3 */ };
+  #clearLocalDeath(): void { /* Task 3 */ }
+
+  // D-04 wall-desync close: remove matching spell from BOTH groups on server broadcast.
+  #onSpellDestroyed = (payload: SpellDestroyedPayload): void => {
+    const scan = (group: Phaser.GameObjects.Group | undefined): void => {
+      if (!group) return;
+      group.getChildren().forEach((child) => {
+        const sid = (child as Phaser.GameObjects.GameObject).getData('spellId') as string | undefined;
+        if (sid !== payload.spellId) return;
+        const spell = child as Phaser.GameObjects.GameObject & { explode?: () => void };
+        if (typeof spell.explode === 'function') {
+          spell.explode();
+        } else {
+          (child as Phaser.GameObjects.GameObject).destroy();
+        }
+      });
+    };
+    scan(this.#remoteSpellGroup);
+    scan(this.#player?.spellCastingComponent?.spellGroup);
+  };
 
   // ============================================================
   // Countdown cinematic (LFC-06..09) — server-driven match-start.
@@ -1071,6 +1218,11 @@ export class GameScene extends Phaser.Scene {
     // Match FSM + server-driven countdown ticks (LFC-06..09)
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_MATCH_STATE_CHANGED, this.#onMatchStateChanged, this);
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_MATCH_COUNTDOWN_TICK, this.#onCountdownTick, this);
+    // Phase 9.3 (Plan 03) — host-authoritative damage + elimination + respawn + spell-destroy.
+    EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_DAMAGE_CONFIRMED, this.#onDamageConfirmed, this);
+    EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_SPELL_DESTROYED, this.#onSpellDestroyed, this);
+    EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_ELIMINATION, this.#onElimination, this);
+    EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_RESPAWN, this.#onRespawn, this);
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       EVENT_BUS.off(CUSTOM_EVENTS.OPENED_CHEST, this.#handleOpenChest, this);
@@ -1082,6 +1234,13 @@ export class GameScene extends Phaser.Scene {
       // Match FSM + countdown listener cleanup (LFC-06..09)
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_MATCH_STATE_CHANGED, this.#onMatchStateChanged, this);
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_MATCH_COUNTDOWN_TICK, this.#onCountdownTick, this);
+      // Phase 9.3 (Plan 03) — damage / elimination / respawn / spell-destroy cleanup.
+      EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_DAMAGE_CONFIRMED, this.#onDamageConfirmed, this);
+      EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_SPELL_DESTROYED, this.#onSpellDestroyed, this);
+      EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_ELIMINATION, this.#onElimination, this);
+      EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_RESPAWN, this.#onRespawn, this);
+      this.#appliedDamageSpellIds.clear();
+      this.#clearLocalDeath();
       this.#fireBreathDamageTimer?.destroy();
       this.#activeFireBreath?.destroy();
       // Cleanup network listeners and remote players
