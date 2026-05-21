@@ -3,7 +3,7 @@ import express from 'express';
 import { Server } from 'socket.io';
 import { LobbyManager } from './lobby-manager.js';
 import { GameRoom } from './game-room.js';
-import type { RoomTransitionPayload, MatchState, MatchStateChangedPayload, MatchLoadedPayload, MatchCountdownTickPayload } from './types.js';
+import type { RoomTransitionPayload, MatchState, MatchStateChangedPayload, MatchLoadedPayload, MatchCountdownTickPayload, LobbyConfig } from './types.js';
 import { COUNTDOWN_DURATION_MS, FIGHT_HOLD_MS } from './types.js';
 import { decode as msgpackDecode } from '@msgpack/msgpack';
 
@@ -136,6 +136,16 @@ io.on('connection', (socket) => {
     if (lobby) io.to(`lobby:${lobby.id}`).emit('lobby:updated', { lobby });
   });
 
+  socket.on('lobby:set-config', ({ config }: { config: Partial<LobbyConfig> }) => {
+    const result = lobbyManager.setConfig(socket.id, config);
+    if (!result.ok) {
+      socket.emit('lobby:error', { message: result.reason });
+      return;
+    }
+    io.to(`lobby:${result.lobby.id}`).emit('lobby:updated', { lobby: result.lobby });
+    io.emit('lobby:list-updated', { lobbies: lobbyManager.listLobbies() });
+  });
+
   socket.on('lobby:start', () => {
     const lobby = lobbyManager.startLobby(socket.id);
     if (!lobby) return;
@@ -150,7 +160,12 @@ io.on('connection', (socket) => {
     room.transitionTo('LOADING');
     broadcastMatchState(lobby.id, room);
 
-    const matchConfig = { lobbyId: lobby.id, players: lobby.players, mode: lobby.mode ?? 'team-deathmatch' };
+    const matchConfig = {
+      lobbyId: lobby.id,
+      players: lobby.players,
+      mode: lobby.mode ?? 'team-deathmatch',
+      config: { ...lobby.config },   // snapshot — protect in-flight match from later lobby edits
+    };
     io.to(`lobby:${lobby.id}`).emit('lobby:started', { matchConfig });
   });
 
