@@ -245,12 +245,12 @@ export class LobbyScene extends Phaser.Scene {
 
     if (this.#isHost) {
       // Host: Format <select> at y=116
-      const formatLabel = this.add.text(cx - 150, 116, 'Format:', FONT_SMALL_WHITE).setOrigin(0, 0);
+      const formatLabel = this.add.text(cx - 150, 127, 'Format:', FONT_SMALL_WHITE).setOrigin(0, 0.5);
       const formats: LobbyFormat[] = ['1v1', '2v2', '3v3', '4v4', '5v5', '6v6', '7v7', '8v8', '9v9', '10v10'];
       const optionsHtml = formats.map((f) => `<option value="${f}">${f}</option>`).join('');
-      const formatDom = this.add.dom(cx + 30, 116).createFromHTML(
+      const formatDom = this.add.dom(cx + 30, 127).createFromHTML(
         `<select style="background:#111;color:#fff;border:1px solid #555;padding:4px;font-size:10px;font-family:monospace">${optionsHtml}</select>`,
-      ).setOrigin(0, 0);
+      ).setOrigin(0, 0.5);
       const selectEl = (formatDom.node as HTMLElement).querySelector('select') as HTMLSelectElement;
       selectEl.value = cfg.format;
       selectEl.addEventListener('change', () => {
