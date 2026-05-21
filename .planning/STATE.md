@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: milestone
 status: executing
-stopped_at: "Phase 09.2 plan 4 of 5 complete — LoadingScene cinematic (typewriter + map preview + tip card) + gameplay-music drop sync; Wave 2 of 09.2 done"
-last_updated: "2026-05-21T13:30:00.000Z"
-last_activity: 2026-05-21 -- Phase 09.2 plan 4 of 5 complete (Wave 2 closed)
+stopped_at: "Phase 09.2 plan 4 of 5 complete — Plan 02 (Splash/MainMenu cinematic) signed off by human-verify checkpoint; only Plan 05 (map thumbnail downscale) remains"
+last_updated: "2026-05-21T14:00:00.000Z"
+last_activity: 2026-05-21 -- Phase 09.2 Plan 02 closed via human-verify approval (no source drift)
 progress:
   total_phases: 9
   completed_phases: 4
   total_plans: 21
-  completed_plans: 14
-  percent: 67
+  completed_plans: 15
+  percent: 71
 ---
 
 # Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-24)
 
 ## Current Position
 
-Phase: 09.2 (ui-motion-lobby-polish) — Plan 4 of 5 complete (Wave 2 closed)
-Plan: 4 of 5 done (LoadingScene cinematic + gameplay-music drop sync)
-Status: Wave 2 closed. Plan 02 (Splash/MainMenu cinematic human-verify checkpoint) and Plan 05 (map thumbnail downscale) remain.
-Last activity: 2026-05-21 -- Phase 09.2 plan 4 of 5 complete
+Phase: 09.2 (ui-motion-lobby-polish) — Plan 4 of 5 complete; Plan 05 (thumbnail downscale) remains
+Plan: 4 of 5 done (Plans 01, 02, 03, 04). Plan 02 closed via human-verify approval — zero source drift from Plan 01's cinematic vs UI-SPEC.
+Status: Phase 09.2 plan 4 of 5 complete — Plan 05 (thumbnail downscale) remains
+Last activity: 2026-05-21 -- Phase 09.2 Plan 02 closed (human-approved)
 
 ## Performance Metrics
 
@@ -83,9 +83,9 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-21T13:30:00.000Z
-Stopped at: Phase 09.2 plan 4 of 5 complete — LoadingScene cinematic (commits 65ed54a, 78c92d4); src/common/typewriter.ts (~40 lines, dep-free, BitmapText typewriter via scene.time.addEvent); public/content/loading-tips.txt (8 starter tips); src/scenes/loading-scene.ts rewritten as 8s cinematic (map name typewriter -> preview fade-in -> 2-line map info typewriter -> tip card -> fade out) with gameplay-music kickoff at delay=7500ms so GAMEPLAY_MUSIC_DROP_MS lands at COUNTDOWN-end; Phase 7 match:loaded ack + #onMatchStateChanged + #scheduleTransition preserved verbatim with cinematic floor folded into wait calc
-Resume file: .planning/phases/09.2-ui-motion-lobby-polish/09.2-02-PLAN.md
+Last session: 2026-05-21T14:00:00.000Z
+Stopped at: Phase 09.2 plan 4 of 5 complete — Plan 02 (Splash/MainMenu cinematic verification) signed off via human-verify checkpoint with zero source drift; audit confirmed MUSIC_DROP_MS=2_000, Back.Out title slam, Quad.Out subtitle/menu-item tweens, 0xffc857 hover tint, scale 1.05 hover, cinematicPlayed gate, FADE_OUT_COMPLETE splash dismiss, Sine.InOut blink — all matched UI-SPEC beats exactly. No source patches required. Only Plan 05 (ImageMagick downscale of map backgrounds to 96x64 thumbnails) remains in Phase 09.2.
+Resume file: .planning/phases/09.2-ui-motion-lobby-polish/09.2-05-PLAN.md
 
 ## GSD Workflow Config
 
