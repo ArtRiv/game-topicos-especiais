@@ -905,6 +905,37 @@ export class GameScene extends Phaser.Scene {
         }
       },
     );
+
+    // Remote-cast spell projectiles also crack Earth Wall pillars (mirrors local-spell handler
+    // above; closes D-21 — earth-wall blocked fireball for caster only because remote-spell
+    // group had no overlap registered with #earthWallGroup).
+    // NOTE: pillar damage is client-local for v1; if pillar desync becomes observable, route through host validator like player damage (Plan 02).
+    this.physics.add.overlap(
+      this.#remoteSpellGroup,
+      this.#earthWallGroup,
+      (spellObj, wallObj) => {
+        const pillar = wallObj as EarthWallPillar;
+        if (!pillar.active || pillar.isBeingDestroyed) return;
+        if (spellObj instanceof FireBolt) {
+          pillar.takeDamage(spellObj.baseDamage);
+          spellObj.explode();
+          const splashRadiusSq = EARTH_WALL_FIREBOLT_SPLASH_RADIUS * EARTH_WALL_FIREBOLT_SPLASH_RADIUS;
+          this.#earthWallGroup.getChildren().forEach((child) => {
+            if (child === wallObj || !child.active) return;
+            const adjacent = child as EarthWallPillar;
+            if (adjacent.isBeingDestroyed) return;
+            const adx = adjacent.x - pillar.x;
+            const ady = adjacent.y - pillar.y;
+            if (adx * adx + ady * ady <= splashRadiusSq) {
+              adjacent.takeDamage(spellObj.baseDamage);
+            }
+          });
+        } else if (spellObj instanceof EarthBolt) {
+          pillar.takeDamage(spellObj.baseDamage);
+          spellObj.explode();
+        }
+      },
+    );
   }
 
   // ============================================================
