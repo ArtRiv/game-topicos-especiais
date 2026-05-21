@@ -14,6 +14,20 @@ export class PreloadScene extends Phaser.Scene {
   public preload(): void {
     // load asset pack that has assets for the rest of the game
     this.load.pack(ASSET_PACK_KEYS.MAIN, 'assets/data/assets.json');
+
+    // Explicit lobby thumbnail loads. The MAP_THUMB_* entries inside the
+    // levels/world and levels/dungeon_1 sub-packs in assets.json are not
+    // resolved by the MAIN-keyed pack load (Phaser only fetches entries
+    // whose pack key matches), so they would never reach the texture cache
+    // before LobbyScene renders. Loading them here guarantees presence.
+    this.load.image(
+      ASSET_KEYS.MAP_THUMB_WORLD,
+      'assets/images/levels/world/thumbnail.png',
+    );
+    this.load.image(
+      ASSET_KEYS.MAP_THUMB_DUNGEON_1,
+      'assets/images/levels/dungeon_1/thumbnail.png',
+    );
   }
 
   public create(): void {
