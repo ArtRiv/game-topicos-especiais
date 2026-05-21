@@ -1753,12 +1753,28 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
+    // Defense-in-depth self-filter (mirrors #onRemotePlayerUpdate). The WebRTC mesh currently
+    // prevents self-echo, but if mesh wiring changes a loopback would otherwise spawn a ghost
+    // remote-spell on the caster's own client.
+    let nm: NetworkManager | null = null;
+    try { nm = NetworkManager.getInstance(); } catch { /* offline */ }
+    if (nm && payload.playerId === nm.localPlayerId) return;
+
+    // Strict-drop guard: the wire contract requires targetX/targetY. A nullish receipt is a
+    // real producer/transport bug — warn loudly and drop rather than papering over it with a
+    // straight-right fallback (root cause of the phantom-fireball bug; see
+    // .planning/debug/phantom-fireball.md D-20).
+    if (payload.targetX == null || payload.targetY == null) {
+      console.warn('[GameScene] #onRemoteSpellCast: dropping spell with nullish target', { playerId: payload.playerId, spellId: payload.spellId, x: payload.x, y: payload.y });
+      return;
+    }
+
     const spell = factory(
       this,
       payload.x,
       payload.y,
-      payload.targetX ?? payload.x + 1,
-      payload.targetY ?? payload.y,
+      payload.targetX,
+      payload.targetY,
       payload.direction as import('../common/types').Direction,
     );
 
