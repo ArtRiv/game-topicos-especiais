@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: milestone
 status: executing
-stopped_at: "Phase 09.3 plan 2 of 4 complete — host-authoritative damage net protocol + server validator + position mirror shipped"
-last_updated: "2026-05-21T21:30:00.000Z"
-last_activity: 2026-05-21 -- Phase 09.3 plan 02 complete
+stopped_at: "Phase 09.3 plan 4 of 4 complete (out of order — plan 03 still pending) — Shift dash + CTRL->SPACE rebind shipped"
+last_updated: "2026-05-21T22:30:00.000Z"
+last_activity: 2026-05-21 -- Phase 09.3 plan 04 complete
 progress:
   total_phases: 9
   completed_phases: 5
   total_plans: 25
-  completed_plans: 18
-  percent: 72
+  completed_plans: 19
+  percent: 76
 ---
 
 # Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-24)
 
 ## Current Position
 
-Phase: 09.3 (cross-player-combat-input-polish) — IN PROGRESS (2 of 4 plans shipped 2026-05-21). Plan 02 added the full host-authoritative damage net protocol (7 mirrored payload types), GameRoom validator pipeline (dedupe → FF check → plausibility → cap → broadcast), position-mirror channel, respawn scheduler, and NetworkManager bridges.
-Plan: 2/4 done. Next: 09.3-03 (client damage application + elimination overlay + respawn restore + cross-player overlaps).
+Phase: 09.3 (cross-player-combat-input-polish) — IN PROGRESS (3 of 4 plans shipped 2026-05-21; plans 01, 02, 04 done; plan 03 pending). Plan 04 shipped Shift dash (WASD-vector + last-faced fallback, cooldown, cast-cancel, i-frame timestamp, RESEARCH.md §3 setVelocity+delayedCall pattern), CTRL→SPACE rebind for radial menu (D-17/19 frees Ctrl+W), seven dash tunables in CONFIG + RUNTIME_CONFIG, and pre-declared #deathLockActive on GameScene for Plan 03 to consume.
+Plan: 3/4 done. Next: 09.3-03 (client damage application + elimination overlay + respawn restore + cross-player overlaps).
 Status: Phase 09.3 in progress
-Last activity: 2026-05-21 -- Phase 09.3 plan 02 complete
+Last activity: 2026-05-21 -- Phase 09.3 plan 04 complete
 
 ## Performance Metrics
 
@@ -85,9 +85,9 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-21T21:30:00.000Z
-Stopped at: Phase 09.3 plan 2 of 4 complete. Host-authoritative damage protocol shipped: 7 mirrored payload types (`SpellHit`/`DamageConfirmed`/`Elimination`/`Respawn`/`SpellHitEnvironment`/`SpellDestroyed`/`PosMirror`) + `MatchMode` union; 4 server tunable constants (`PLAUSIBILITY_RANGE_PX`/`PLAUSIBILITY_STALE_MS`/`RESPAWN_DELAY_MS`/`MAX_SPELL_DAMAGE`) authoritative on server, mirrored into client `RUNTIME_CONFIG` for debug-panel adjustment; `GameRoom` extended with position cache + `validateHit` (plausibility + FF check) + `tryConsumeHit` (per-spellId dedupe) + `applyDamage` (caps at `MAX_SPELL_DAMAGE`) + `scheduleRespawn` (skipped in `'last-standing'`, D-12) + `clearCombatState` lifecycle hooks (room emptied AND transition→ENDED) + per-player cleanup on individual disconnect; 3 new socket handlers (`game:pos-mirror`/`spell:hit`/`spell:hit-environment`) all gated on `room.state === 'ACTIVE'` with silent-drop semantics per D-02; player registration with damage pipeline at COUNTDOWN→ACTIVE using deterministic per-index spawn offset (TODO: align with client); `NetworkManager` got 3 senders (`sendPosMirror`/`sendSpellHit`/`sendSpellHitEnvironment`) + pos-mirror emission inside `startGameTick` + 4 inbound socket→EVENT_BUS bridges; `LobbyManager.getLobbyById` added (Rule 3 — blocking issue). `DcMessage` WebRTC union intentionally untouched. Zero new TS errors on server or client. Deviations: event keys went into existing `event-bus.ts` (no `event-keys.ts` file exists). Next plan: 09.3-03 (client damage application + elimination overlay + respawn restore + cross-player overlaps).
-Resume file: .planning/phases/09.3-cross-player-combat-input-polish/09.3-03-PLAN.md
+Last session: 2026-05-21T22:30:00.000Z
+Stopped at: Phase 09.3 plan 4 of 4 complete (out of order — 03 still pending). Plan 04 (input rebinds + dash) shipped: KeyboardComponent #ctrlKey→#spaceKey/#shiftKey with addCapture('SPACE,SHIFT'); isDashKeyJustDown getter on both KeyboardComponent and InputComponent base; seven dash tunables in CONFIG + RUNTIME_CONFIG (DASH_COOLDOWN_MS/DISTANCE_TILES/DURATION_MS/IFRAMES_ENABLED/IFRAMES_MS/CANCELS_CAST/INTERRUPTABLE_BY_CAST); Player.dash() with WASD-vector + last-faced fallback + cooldown gate + cast-cancel (CASTING_STATE→IDLE_STATE) + iFrameUntil timestamp + body.setVelocity + scene.time.delayedCall (NOT tween — RESEARCH.md §3 anti-tunneling at 640 px/s with defaults); Player public state iFrameUntil:number + isDashing:boolean; SpellCastingComponent.canCast() refuses cast when player.isDashing && !DASH_INTERRUPTABLE_BY_CAST (duck-typed Player read to avoid cyclic import); GameScene.#handleDashInput() wired into update() with #combatLocked + #deathLockActive guards; #deathLockActive:boolean=false pre-declared on GameScene for Plan 03 to consume. Rule 1 fix: widened debug-panel.ts Record<string,number> → Record<string,number|boolean> because three new tunables are booleans (SECTIONS-driven sliders unaffected — pure type relaxation). Zero new TS errors. Commits b767020 (Task 1) and b98e39d (Task 2). Coordination notes for Plan 03 captured in 09.3-04-SUMMARY.md: do NOT re-declare #deathLockActive; #onDamageConfirmed MUST check this.scene.time.now < this.#player.iFrameUntil before takeDamage when targetId === localPlayerId. Skipped earlier on plan 02 stopped_at: Host-authoritative damage protocol shipped: 7 mirrored payload types (`SpellHit`/`DamageConfirmed`/`Elimination`/`Respawn`/`SpellHitEnvironment`/`SpellDestroyed`/`PosMirror`) + `MatchMode` union; 4 server tunable constants (`PLAUSIBILITY_RANGE_PX`/`PLAUSIBILITY_STALE_MS`/`RESPAWN_DELAY_MS`/`MAX_SPELL_DAMAGE`) authoritative on server, mirrored into client `RUNTIME_CONFIG` for debug-panel adjustment; `GameRoom` extended with position cache + `validateHit` (plausibility + FF check) + `tryConsumeHit` (per-spellId dedupe) + `applyDamage` (caps at `MAX_SPELL_DAMAGE`) + `scheduleRespawn` (skipped in `'last-standing'`, D-12) + `clearCombatState` lifecycle hooks (room emptied AND transition→ENDED) + per-player cleanup on individual disconnect; 3 new socket handlers (`game:pos-mirror`/`spell:hit`/`spell:hit-environment`) all gated on `room.state === 'ACTIVE'` with silent-drop semantics per D-02; player registration with damage pipeline at COUNTDOWN→ACTIVE using deterministic per-index spawn offset (TODO: align with client); `NetworkManager` got 3 senders (`sendPosMirror`/`sendSpellHit`/`sendSpellHitEnvironment`) + pos-mirror emission inside `startGameTick` + 4 inbound socket→EVENT_BUS bridges; `LobbyManager.getLobbyById` added (Rule 3 — blocking issue). `DcMessage` WebRTC union intentionally untouched. Zero new TS errors on server or client. Deviations: event keys went into existing `event-bus.ts` (no `event-keys.ts` file exists). Next plan: 09.3-03 (client damage application + elimination overlay + respawn restore + cross-player overlaps).
+Resume file: .planning/phases/09.3-cross-player-combat-input-polish/09.3-03-PLAN.md (only remaining plan in Phase 9.3 — see 09.3-04-SUMMARY.md Coordination Notes for Plan 03 contracts: do NOT re-declare #deathLockActive, MUST add iFrameUntil short-circuit in #onDamageConfirmed)
 
 ## GSD Workflow Config
 
