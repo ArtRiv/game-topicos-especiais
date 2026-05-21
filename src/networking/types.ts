@@ -15,12 +15,35 @@ export type Lobby = {
   players: PlayerInfo[];
   mode: string | null;
   status: 'waiting' | 'in-progress';
+  config: LobbyConfig;
 };
+
+export type LobbyFormat = '1v1' | '2v2' | '3v3' | '4v4' | '5v5' | '6v6' | '7v7' | '8v8' | '9v9' | '10v10';
+
+// Single extensible lobby config object. Future fields (timeLimit?, friendlyFire?, spellModifiers?) are added as optional top-level keys — no nesting, no version envelope, no new socket events (LBC-07).
+export type LobbyConfig = {
+  format: LobbyFormat;
+  mapId: string;          // value from MAP_POOL[i].id
+  maxPlayers: number;     // derived: parseInt(format) * 2
+  // Future optional fields (LBC-07): timeLimit?, friendlyFire?, spellModifiers? — add as optional top-level keys, no nesting.
+};
+
+export type MapPoolEntry = {
+  id: string;             // wire identifier (stable)
+  displayName: string;    // human-readable lobby label
+  thumbnailKey: string;   // Phaser texture key (SCREAMING_SNAKE — matches ASSET_KEYS convention)
+};
+
+export const MAP_POOL: readonly MapPoolEntry[] = [
+  { id: 'WORLD', displayName: 'Open Field', thumbnailKey: 'MAP_THUMB_WORLD' },
+  { id: 'DUNGEON_1', displayName: 'Dungeon', thumbnailKey: 'MAP_THUMB_DUNGEON_1' },
+] as const;
 
 export type MatchConfig = {
   lobbyId: string;
   players: PlayerInfo[];
   mode: string;
+  config: LobbyConfig;
 };
 
 /** Outbound: local player sends this every 20 Hz tick */
