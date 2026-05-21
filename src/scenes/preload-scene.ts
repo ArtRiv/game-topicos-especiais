@@ -1,6 +1,6 @@
 import * as Phaser from 'phaser';
 import { SCENE_KEYS } from './scene-keys';
-import { ASSET_KEYS, ASSET_PACK_KEYS } from '../common/assets';
+import { ASSET_KEYS, ASSET_PACK_KEYS, DASH_ANIMATION_KEYS } from '../common/assets';
 import { LevelData } from '../common/types';
 import { DataManager } from '../common/data-manager';
 
@@ -350,6 +350,29 @@ export class PreloadScene extends Phaser.Scene {
     this.anims.create({
       key: ASSET_KEYS.THUNDER_SPLASH,
       frames: this.anims.generateFrameNumbers(ASSET_KEYS.THUNDER_SPLASH, { start: 0, end: 13 }),
+      frameRate: 18,
+      repeat: 0,
+      hideOnComplete: true,
+    });
+
+    // Dash roll animation — 5 separate 16x16 images. Frame rate ≈ 5 frames / DASH_DURATION_MS (150 ms) = 33 fps.
+    this.anims.create({
+      key: DASH_ANIMATION_KEYS.ROLL,
+      frames: [
+        { key: ASSET_KEYS.PLAYER_ROLL_1 },
+        { key: ASSET_KEYS.PLAYER_ROLL_2 },
+        { key: ASSET_KEYS.PLAYER_ROLL_3 },
+        { key: ASSET_KEYS.PLAYER_ROLL_4 },
+        { key: ASSET_KEYS.PLAYER_ROLL_5 },
+      ],
+      frameRate: 30,
+      repeat: 0,
+    });
+
+    // Dash smoke puff — 8 frames at 64x64.
+    this.anims.create({
+      key: DASH_ANIMATION_KEYS.SMOKE,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.DASH_SMOKE, { start: 0, end: 7 }),
       frameRate: 18,
       repeat: 0,
       hideOnComplete: true,

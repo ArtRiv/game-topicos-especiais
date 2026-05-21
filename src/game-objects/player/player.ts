@@ -12,7 +12,7 @@ import {
   PLAYER_MANA_REGEN_RATE,
 } from '../../common/config';
 import { AnimationConfig } from '../../components/game-object/animation-component';
-import { ASSET_KEYS, PLAYER_ANIMATION_KEYS } from '../../common/assets';
+import { ASSET_KEYS, DASH_ANIMATION_KEYS, PLAYER_ANIMATION_KEYS } from '../../common/assets';
 import { CharacterGameObject } from '../common/character-game-object';
 import { DIRECTION } from '../../common/common';
 import { RUNTIME_CONFIG } from '../../common/runtime-config';
@@ -190,6 +190,8 @@ export class Player extends CharacterGameObject {
     }
 
     const len = Math.hypot(dx, dy) || 1;
+    const nx = dx / len;
+    const ny = dy / len;
 
     // Cast-cancel (D-13): pressing Shift mid-cast aborts the cast.
     if (
@@ -203,7 +205,7 @@ export class Player extends CharacterGameObject {
     const TILE_SIZE = 32;
     const speed = (cfg.DASH_DISTANCE_TILES * TILE_SIZE) / (cfg.DASH_DURATION_MS / 1000);
     const body = this.body as Phaser.Physics.Arcade.Body;
-    body.setVelocity((dx / len) * speed, (dy / len) * speed);
+    body.setVelocity(nx * speed, ny * speed);
 
     this.isDashing = true;
     // Gate MoveState velocity overwrite (RESEARCH.md §3 landmine 1).
@@ -214,6 +216,8 @@ export class Player extends CharacterGameObject {
       this.iFrameUntil = now + cfg.DASH_IFRAMES_MS;
     }
 
+    this.#spawnDashVfx(nx, ny);
+
     // End dash: zero velocity, unlock movement, clear dashing flag.
     this.scene.time.delayedCall(cfg.DASH_DURATION_MS, () => {
       // Guard against player being destroyed mid-dash (e.g. respawn).
@@ -221,6 +225,60 @@ export class Player extends CharacterGameObject {
       (this.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
       this.isDashing = false;
       this.controls.isMovementLocked = false;
+    });
+  }
+
+  /**
+   * Dash VFX: a separate roll sprite (follows player, hides the body texture during the dash)
+   * and a one-shot smoke puff at the dash origin, drawn behind the player. Opacity/size are
+   * read from RUNTIME_CONFIG each cast so the debug panel can tune them live.
+   */
+  #spawnDashVfx(nx: number, ny: number): void {
+    const cfg = RUNTIME_CONFIG;
+
+    // Smoke puff at dash origin, behind the player. Slight offset opposite to dash direction
+    // so it sits where the feet "kicked off" from.
+    const smokeX = this.x - 12 -  nx * 2;
+    const smokeY = this.y + 14 - ny * 4;
+    const smoke = this.scene.add.sprite(smokeX, smokeY, ASSET_KEYS.DASH_SMOKE, 0);
+    smoke.setOrigin(0.5, 0.75);
+    // Same depth as player; added before the roll sprite so the roll renders on top.
+    smoke.setDepth(this.depth);
+    smoke.setAlpha(cfg.DASH_SMOKE_ALPHA);
+    smoke.setScale(cfg.DASH_SMOKE_SCALE);
+    smoke.play(DASH_ANIMATION_KEYS.SMOKE);
+    smoke.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => smoke.destroy());
+
+    // Roll sprite that follows the player; hide the body texture so only the roll shows.
+    const roll = this.scene.add.sprite(this.x, this.y + 4, ASSET_KEYS.PLAYER_ROLL_1);
+    roll.setOrigin(0.5, 0.5);
+    roll.setDepth(this.depth);
+    roll.setScale(cfg.DASH_ROLL_SCALE);
+    roll.setFlipX(this.flipX);
+    if (this.tintFill || this.tint !== 0xffffff) {
+      roll.setTint(this.tint);
+    }
+    roll.play(DASH_ANIMATION_KEYS.ROLL);
+
+    this.setVisible(false);
+
+    const followHandler = (): void => {
+      if (!roll.active) return;
+      roll.setPosition(this.x, this.y + 4);
+    };
+    this.scene.events.on(Phaser.Scenes.Events.UPDATE, followHandler);
+
+    const cleanup = (): void => {
+      this.scene.events.off(Phaser.Scenes.Events.UPDATE, followHandler);
+      if (this.active) this.setVisible(true);
+      roll.destroy();
+    };
+
+    roll.once(Phaser.Animations.Events.ANIMATION_COMPLETE, cleanup);
+    // Safety net: ensure the roll is cleaned up if the animation event never fires
+    // (e.g. scene shutdown or player destroyed mid-dash).
+    this.scene.time.delayedCall(cfg.DASH_DURATION_MS + 50, () => {
+      if (roll.active) cleanup();
     });
   }
 }

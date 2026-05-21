@@ -355,5 +355,26 @@
         "url": "thumbnail.png"
       }
     ]
+  },
+  {
+    "path": "assets/Little Mage/Role",
+    "files": [
+      { "type": "image", "key": "PLAYER_ROLL_1", "url": "Role1.png" },
+      { "type": "image", "key": "PLAYER_ROLL_2", "url": "Role2.png" },
+      { "type": "image", "key": "PLAYER_ROLL_3", "url": "Role3.png" },
+      { "type": "image", "key": "PLAYER_ROLL_4", "url": "Role4.png" },
+      { "type": "image", "key": "PLAYER_ROLL_5", "url": "Role5.png" }
+    ]
+  },
+  {
+    "path": "assets/spells/Smoke N Dust 03",
+    "files": [
+      {
+        "type": "spritesheet",
+        "key": "DASH_SMOKE",
+        "url": "SmokeNDust P03 VFX 2.png",
+        "frameConfig": { "frameWidth": 64, "frameHeight": 64 }
+      }
+    ]
   }
 ]

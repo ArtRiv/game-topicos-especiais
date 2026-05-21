@@ -54,6 +54,18 @@ export const ASSET_KEYS = {
   MENU_BG_VIDEO: 'MENU_BG_VIDEO',
   MENU_MUSIC: 'MENU_MUSIC',
   GAMEPLAY_MUSIC: 'GAMEPLAY_MUSIC',
+  // --- Dash VFX ---
+  PLAYER_ROLL_1: 'PLAYER_ROLL_1',
+  PLAYER_ROLL_2: 'PLAYER_ROLL_2',
+  PLAYER_ROLL_3: 'PLAYER_ROLL_3',
+  PLAYER_ROLL_4: 'PLAYER_ROLL_4',
+  PLAYER_ROLL_5: 'PLAYER_ROLL_5',
+  DASH_SMOKE: 'DASH_SMOKE',
+} as const;
+
+export const DASH_ANIMATION_KEYS = {
+  ROLL: 'player_roll',
+  SMOKE: 'dash_smoke',
 } as const;
 
 export const PLAYER_ANIMATION_KEYS = {

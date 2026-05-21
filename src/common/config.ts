@@ -190,10 +190,15 @@ export const PLAUSIBILITY_STALE_MS = 200;
 export const MAX_SPELL_DAMAGE = 50;
 
 // Phase 9.3 — Dash tunables (D-13). All values overridable via RUNTIME_CONFIG (debug panel).
-export const DASH_COOLDOWN_MS = 1500;            // ms between dashes
-export const DASH_DISTANCE_TILES = 3;            // dash distance in tiles (96 px at 32 px/tile)
+export const DASH_COOLDOWN_MS = 800;            // ms between dashes
+export const DASH_DISTANCE_TILES = 1;            // dash distance in tiles (96 px at 32 px/tile)
 export const DASH_DURATION_MS = 150;             // dash motion duration → velocity = 640 px/s (RESEARCH.md §3)
 export const DASH_IFRAMES_ENABLED = false;       // i-frames during dash (off by default)
 export const DASH_IFRAMES_MS = 150;              // i-frame window when enabled
 export const DASH_CANCELS_CAST = true;           // pressing Shift mid-cast aborts the cast
 export const DASH_INTERRUPTABLE_BY_CAST = false; // pressing 1/2/3 mid-dash is ignored
+
+// Dash VFX tunables — adjust live via RUNTIME_CONFIG / debug panel.
+export const DASH_SMOKE_ALPHA = 0.7;             // smoke puff opacity (0..1)
+export const DASH_SMOKE_SCALE = 1.0;             // smoke puff size multiplier
+export const DASH_ROLL_SCALE = 1.0;              // roll sprite size multiplier (Role frames are already 16x16, matching the in-frame character size)
