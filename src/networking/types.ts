@@ -144,3 +144,66 @@ export type MatchCountdownTickPayload = {
   label: string;       // '3' | '2' | '1' | 'FIGHT'
   serverTs: number;
 };
+
+// ────────────────────────────────────────────────────────────────
+// Phase 9.3: Host-authoritative cross-player damage (PVP-02/04/05/06)
+// Per D-01..D-04. Sent via socket.io (NOT WebRTC) because the host is server-side.
+// Mirrored in game-server/src/types.ts — keep field shapes identical.
+// ────────────────────────────────────────────────────────────────
+
+/** Match mode: 'respawn' broadcasts a RespawnPayload after RESPAWN_DELAY_MS; 'last-standing' does not (D-12). */
+export type MatchMode = 'respawn' | 'last-standing';
+
+/** Outbound from caster: a local-overlap claim that my spell hit a remote player (D-01). */
+export type SpellHitPayload = {
+  spellId: string;       // stable unique spell instance ID (NOT spellType — that's separate)
+  spellType: string;     // SPELL_ID constant (e.g. 'FIRE_BOLT') — used by server for damage table lookup
+  casterId: string;      // player id of caster (server cross-checks against socket → player id mapping)
+  targetId: string;      // player id of claimed target
+  hitX: number;          // claimed hit position
+  hitY: number;
+  damage: number;        // claimed damage; server caps against MAX_SPELL_DAMAGE per RESEARCH.md §2 landmine
+};
+
+/** Outbound broadcast from server: damage that ALL clients (incl. caster) must apply (PVP-05). */
+export type DamageConfirmedPayload = {
+  spellId: string;       // for client-side dedupe / animation correlation
+  targetId: string;
+  amount: number;        // server-decided final damage (post-cap)
+  spellType: string;
+  hitX: number;
+  hitY: number;
+};
+
+/** Outbound broadcast from server: target hit 0 HP (D-08). */
+export type EliminationPayload = {
+  playerId: string;
+  eliminatedAt: number;  // server epoch ms
+};
+
+/** Outbound broadcast from server: target's respawn timer elapsed (D-08, D-10). */
+export type RespawnPayload = {
+  playerId: string;
+  x: number;             // server-side original spawn point
+  y: number;
+};
+
+/** Outbound from any client: my spell hit an environment object (D-04 wall desync fix). */
+export type SpellHitEnvironmentPayload = {
+  spellId: string;
+  hitX: number;
+  hitY: number;
+};
+
+/** Outbound broadcast from server: a spell is destroyed everywhere (D-04). */
+export type SpellDestroyedPayload = {
+  spellId: string;
+  hitX: number;
+  hitY: number;
+};
+
+/** Outbound from each client at 20 Hz: position mirror for server-side plausibility cache (RESEARCH.md §2). */
+export type PosMirrorPayload = {
+  x: number;
+  y: number;
+};
