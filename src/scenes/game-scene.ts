@@ -200,6 +200,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   #handleRadialMenuInput(): void {
+    // Phase 9.3 (Plan 03): suppress radial menu while dead (D-11 input gating).
+    if (this.#deathLockActive) return;
     if (!this.#controls.isRadialMenuKeyJustDown) return;
     if (this.scene.isActive(SCENE_KEYS.RADIAL_MENU_SCENE)) return;
     this.scene.launch(SCENE_KEYS.RADIAL_MENU_SCENE);
@@ -248,6 +250,8 @@ export class GameScene extends Phaser.Scene {
     // isMovementLocked because the channel itself owns that flag (line ~280),
     // so #combatLocked is the correct lock here.
     if (this.#combatLocked) return;
+    // Phase 9.3 (Plan 03): D-11 dead-player input suppression.
+    if (this.#deathLockActive) return;
     if (!this.#player?.active) return;
     // When Earth element is active, key 3 casts EarthWall — skip fire breath
     if (ElementManager.instance.activeElement === ELEMENT.EARTH) return;
@@ -549,6 +553,8 @@ export class GameScene extends Phaser.Scene {
     // spell (pending-click → drawing) — locking via isMovementLocked alone would
     // not prevent a pending click from committing, so we gate at the very top.
     if (this.#combatLocked) return;
+    // Phase 9.3 (Plan 03): D-11 dead-player input suppression.
+    if (this.#deathLockActive) return;
     if (!this.#player?.active) return;
     if (ElementManager.instance.activeElement !== ELEMENT.EARTH) return;
 
@@ -1084,12 +1090,99 @@ export class GameScene extends Phaser.Scene {
     }
   };
 
-  // Stubs filled in by Task 3 (elimination overlay + respawn restore).
-  // Declared here so #registerCustomEvents subscriptions + SHUTDOWN cleanup compile clean
-  // with the Task 2 commit landing first.
-  #onElimination = (_payload: EliminationPayload): void => { /* Task 3 */ };
-  #onRespawn = (_payload: RespawnPayload): void => { /* Task 3 */ };
-  #clearLocalDeath(): void { /* Task 3 */ }
+  // ─── Elimination + respawn (D-08..D-11) ───
+  // Local-player elimination: dark overlay + BitmapText countdown + input suppression.
+  // Remote-player elimination: gray tint only (no overlay).
+  #onElimination = (payload: EliminationPayload): void => {
+    const nm = this.#safeNetworkManager();
+    const isLocal = nm != null && payload.playerId === nm.localPlayerId;
+
+    if (isLocal) {
+      this.#applyLocalDeath();
+      return;
+    }
+    const remote = this.#remotePlayers.get(payload.playerId);
+    if (remote) {
+      remote.setTint(0x666666);
+    }
+  };
+
+  #applyLocalDeath(): void {
+    this.#deathLockActive = true;
+    this.#player.controls.isMovementLocked = true;
+    this.#player.setTint(0x666666);
+    // Defensive velocity zero (mirrors #enterCountdownMode).
+    if (this.#player.body) {
+      (this.#player.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
+    }
+
+    // Full-screen dark overlay, viewport-anchored.
+    this.#deathOverlay = this.add
+      .rectangle(0, 0, this.scale.width, this.scale.height, 0x222233, 0.55)
+      .setOrigin(0, 0)
+      .setScrollFactor(0)
+      .setDepth(9999);
+
+    // BitmapText countdown using the project-wide press_start_2p atlas (Phase 9.1-04 standard;
+    // same key used by lobby/main-menu/splash scenes).
+    this.#deathCountdownRemaining = Math.ceil(RUNTIME_CONFIG.RESPAWN_DELAY_MS / 1000);
+    this.#deathCountdownText = this.add
+      .bitmapText(
+        this.scale.width / 2,
+        this.scale.height / 2,
+        'press_start_2p',
+        this.#countdownLabel(),
+        32,
+      )
+      .setOrigin(0.5, 0.5)
+      .setScrollFactor(0)
+      .setDepth(10000);
+
+    this.#deathCountdownTimer = this.time.addEvent({
+      delay: 1000,
+      loop: true,
+      callback: () => {
+        this.#deathCountdownRemaining = Math.max(0, this.#deathCountdownRemaining - 1);
+        this.#deathCountdownText?.setText(this.#countdownLabel());
+      },
+    });
+  }
+
+  #countdownLabel(): string {
+    return `RESPAWNING IN ${this.#deathCountdownRemaining}...`;
+  }
+
+  #onRespawn = (payload: RespawnPayload): void => {
+    const nm = this.#safeNetworkManager();
+    const isLocal = nm != null && payload.playerId === nm.localPlayerId;
+
+    if (isLocal) {
+      this.#clearLocalDeath();
+      this.#player.setPosition(payload.x, payload.y);
+      this.#player.lifeComponent.resetToFull();
+      this.#player.clearTint();
+      return;
+    }
+    const remote = this.#remotePlayers.get(payload.playerId);
+    if (remote) {
+      remote.setPosition(payload.x, payload.y);
+      remote.lifeComponent.resetToFull();
+      remote.clearTint();
+    }
+  };
+
+  #clearLocalDeath(): void {
+    this.#deathLockActive = false;
+    if (this.#player?.controls) {
+      this.#player.controls.isMovementLocked = false;
+    }
+    this.#deathOverlay?.destroy();
+    this.#deathOverlay = undefined;
+    this.#deathCountdownText?.destroy();
+    this.#deathCountdownText = undefined;
+    this.#deathCountdownTimer?.remove(false);
+    this.#deathCountdownTimer = undefined;
+  }
 
   // D-04 wall-desync close: remove matching spell from BOTH groups on server broadcast.
   #onSpellDestroyed = (payload: SpellDestroyedPayload): void => {
