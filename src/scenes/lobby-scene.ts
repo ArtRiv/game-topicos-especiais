@@ -4,6 +4,7 @@ import { NetworkManager } from '../networking/network-manager.js';
 import { EVENT_BUS, CUSTOM_EVENTS } from '../common/event-bus.js';
 import type { Lobby, LobbyConfig, LobbyFormat, MatchConfig, PlayerInfo } from '../networking/types.js';
 import { MAP_POOL } from '../networking/types.js';
+import { ASSET_KEYS } from '../common/assets.js';
 
 const FONT = { fontFamily: '"Press Start 2P"', fontSize: '10px', color: '#ffffff' };
 const FONT_TITLE = { fontFamily: '"Press Start 2P"', fontSize: '14px', color: '#ffdd55' };
@@ -28,6 +29,21 @@ export class LobbyScene extends Phaser.Scene {
 
   constructor() {
     super({ key: SCENE_KEYS.LOBBY_SCENE });
+  }
+
+  public preload(): void {
+    // Game boots straight into LobbyScene (main.ts), so PreloadScene's loads
+    // are not available yet when map cards first render. Load the two map
+    // thumbnails here so `this.textures.exists(...)` is true by create() time
+    // and the blue fallback rectangle never shows.
+    this.load.image(
+      ASSET_KEYS.MAP_THUMB_WORLD,
+      'assets/images/levels/world/thumbnail.png',
+    );
+    this.load.image(
+      ASSET_KEYS.MAP_THUMB_DUNGEON_1,
+      'assets/images/levels/dungeon_1/thumbnail.png',
+    );
   }
 
   public create(): void {
@@ -402,16 +418,13 @@ export class LobbyScene extends Phaser.Scene {
     });
   }
 
-  // --- Helpers ---
-  // Wraps this.add.text and applies setResolution to keep Phaser Text
-  // glyphs crisp under pixelArt:true (nearest-neighbor) scaling. Default
-  // Phaser text resolution is 1, which under-samples on HiDPI displays
-  // and produces blurry/chunky output. We bump to max(2, devicePixelRatio)
-  // so the rasterized text atlas has enough source pixels for NEAREST
-  // sampling to look sharp on standard and Retina displays alike.
+  // Canvas is 480x320 with pixelArt:true and upscales via nearest-neighbor.
+  // Pixel fonts must rasterize at native size and let the canvas upscale
+  // do the work — setResolution(>1) downsamples the glyph atlas to world
+  // size and breaks the pixel grid. Helper kept as pass-through to avoid
+  // reverting 21 call sites.
   #crispText(x: number, y: number, text: string, style: Phaser.Types.GameObjects.Text.TextStyle): Phaser.GameObjects.Text {
-    const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
-    return this.add.text(x, y, text, style).setResolution(Math.max(2, dpr));
+    return this.add.text(x, y, text, style);
   }
 
   #createButton(x: number, y: number, label: string, onClick: () => void): Phaser.GameObjects.Container {
