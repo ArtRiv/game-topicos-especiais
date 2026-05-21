@@ -13,6 +13,7 @@ export class InputComponent {
   #spell2Key: boolean;
   #spell3Key: boolean;
   #radialMenuKey: boolean;
+  #dashKey: boolean;
   #mouseX: number;
   #mouseY: number;
 
@@ -31,6 +32,7 @@ export class InputComponent {
     this.#spell2Key = false;
     this.#spell3Key = false;
     this.#radialMenuKey = false;
+    this.#dashKey = false;
     this.#mouseX = 0;
     this.#mouseY = 0;
   }
@@ -163,6 +165,14 @@ export class InputComponent {
     this.#radialMenuKey = val;
   }
 
+  get isDashKeyJustDown(): boolean {
+    return this.#dashKey;
+  }
+
+  set isDashKeyJustDown(val: boolean) {
+    this.#dashKey = val;
+  }
+
   get mouseWorldX(): number {
     return this.#mouseX;
   }
@@ -193,5 +203,6 @@ export class InputComponent {
     this.#spell2Key = false;
     this.#debugToggleKey = false;
     this.#radialMenuKey = false;
+    this.#dashKey = false;
   }
 }

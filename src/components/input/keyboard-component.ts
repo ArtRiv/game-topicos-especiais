@@ -13,7 +13,8 @@ export class KeyboardComponent extends InputComponent {
   #debugToggleKey: Phaser.Input.Keyboard.Key;
   #actionKey: Phaser.Input.Keyboard.Key;
   #enterKey: Phaser.Input.Keyboard.Key;
-  #ctrlKey: Phaser.Input.Keyboard.Key;
+  #spaceKey: Phaser.Input.Keyboard.Key;
+  #shiftKey: Phaser.Input.Keyboard.Key;
 
   constructor(scene: Phaser.Scene, keyboardPlugin: Phaser.Input.Keyboard.KeyboardPlugin) {
     super();
@@ -28,16 +29,24 @@ export class KeyboardComponent extends InputComponent {
     this.#actionKey = keyboardPlugin.addKey(Phaser.Input.Keyboard.KeyCodes.E);
     this.#enterKey = keyboardPlugin.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
     this.#debugToggleKey = keyboardPlugin.addKey(Phaser.Input.Keyboard.KeyCodes.P);
-    this.#ctrlKey = keyboardPlugin.addKey(Phaser.Input.Keyboard.KeyCodes.CTRL);
+    this.#spaceKey = keyboardPlugin.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+    this.#shiftKey = keyboardPlugin.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT);
 
-    // WASD = movement
-    // CTRL = hold to open radial element-selection menu
-    // 1 = spell slot 1 (Fire Bolt)
-    // 2 = spell slot 2 (Fire Area)
-    // 3 = spell slot 3 (Fire Breath - hold)
-    // P = toggle arcade physics hitboxes
-    // E = interact / action
+    // Prevent Chrome's default page-scroll on SPACE and any browser shortcuts on SHIFT
+    // while the game canvas has focus. CTRL is intentionally NOT captured (D-19, Phase 9.3)
+    // so Ctrl+W / Ctrl+T / Ctrl+R pass through to the browser.
+    keyboardPlugin.addCapture('SPACE,SHIFT');
+
+    // WASD  = movement
+    // SHIFT = dash (D-13/14, Phase 9.3)
+    // SPACE = hold to open radial element-selection menu (rebound from CTRL — D-17, Phase 9.3)
+    // 1     = spell slot 1
+    // 2     = spell slot 2
+    // 3     = spell slot 3 (hold)
+    // P     = toggle arcade physics hitboxes
+    // E     = interact / action
     // mouse = aim target position
+    // CTRL  = no longer bound (D-19) — Ctrl+W/T/R passes through to browser
   }
 
   get isUpDown(): boolean {
@@ -103,7 +112,11 @@ export class KeyboardComponent extends InputComponent {
   }
 
   get isRadialMenuKeyJustDown(): boolean {
-    return Phaser.Input.Keyboard.JustDown(this.#ctrlKey);
+    return Phaser.Input.Keyboard.JustDown(this.#spaceKey);
+  }
+
+  get isDashKeyJustDown(): boolean {
+    return Phaser.Input.Keyboard.JustDown(this.#shiftKey);
   }
 
   get mouseWorldX(): number {
