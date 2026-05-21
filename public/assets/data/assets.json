@@ -311,6 +311,11 @@
         "type": "tilemapTiledJSON",
         "key": "DUNGEON_1_LEVEL",
         "url": "dungeon_1.json"
+      },
+      {
+        "type": "image",
+        "key": "MAP_THUMB_DUNGEON_1",
+        "url": "thumbnail.png"
       }
     ]
   },
@@ -331,6 +336,11 @@
         "type": "tilemapTiledJSON",
         "key": "WORLD_LEVEL",
         "url": "world.json"
+      },
+      {
+        "type": "image",
+        "key": "MAP_THUMB_WORLD",
+        "url": "thumbnail.png"
       }
     ]
   }
