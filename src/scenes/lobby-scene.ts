@@ -5,6 +5,7 @@ import { EVENT_BUS, CUSTOM_EVENTS } from '../common/event-bus.js';
 import type { Lobby, LobbyConfig, LobbyFormat, MatchConfig, PlayerInfo } from '../networking/types.js';
 import { MAP_POOL } from '../networking/types.js';
 import { ASSET_KEYS } from '../common/assets.js';
+import { MusicManager } from '../common/music-manager';
 
 // BitmapText replaces Phaser.GameObjects.Text. Press_Start_2P TTF was
 // pre-rasterized via Snowb into Press_Start-2.png + Press_Start-2.fnt
@@ -62,6 +63,10 @@ export class LobbyScene extends Phaser.Scene {
 
   public create(): void {
     this.#showConnectView();
+
+    // D-13: duck menu music from 0.05 (MainMenu) to 0.03 (Lobby) — same track,
+    // just quieter so UI sfx + DOM input feel are not drowned out.
+    MusicManager.instance.setMenuVolume(0.03);
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_CONNECTED, this.#onConnected, this);
