@@ -41,6 +41,27 @@ export const CUSTOM_EVENTS = {
   NETWORK_SPELL_DESTROYED: 'NETWORK_SPELL_DESTROYED',
 } as const;
 
+/**
+ * Phase 9.3 (Plan 03): payload shape for CUSTOM_EVENTS.SPELL_CAST.
+ *
+ * Phaser's EventEmitter is structurally untyped (`...args: any[]`), so this type
+ * is documentary — receivers must locally cast (e.g. `payload as SpellCastEventPayload`).
+ * Adding new fields here does NOT produce a TypeScript error at emit/listen sites.
+ *
+ * - `spellInstanceId`: per-cast UUID for cross-client correlation (NEW in 9.3-03).
+ * - `spellId`: the SPELL_ID type constant (e.g. 'FIRE_BOLT'). Kept for backwards
+ *   compatibility with existing listeners that look up spell metadata by type.
+ */
+export type SpellCastEventPayload = {
+  spellInstanceId: string;
+  spellId: string;
+  slotIndex: number;
+  casterX: number;
+  casterY: number;
+  targetX: number;
+  targetY: number;
+};
+
 export const PLAYER_HEALTH_UPDATE_TYPE = {
   INCREASE: 'INCREASE',
   DECREASE: 'DECREASE',

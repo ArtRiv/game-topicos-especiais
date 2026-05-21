@@ -8,6 +8,7 @@ import { ActiveSpell } from '../../game-objects/spells/base-spell';
 import { ElementManager } from '../../common/element-manager';
 import { SPELL_SLOT_REGISTRY, SPELL_CONFIG, SPELL_FACTORY_REGISTRY } from '../../game-objects/spells/spell-registry';
 import { RUNTIME_CONFIG } from '../../common/runtime-config';
+import { NetworkManager } from '../../networking/network-manager';
 
 export class SpellCastingComponent extends BaseGameObjectComponent {
   #manaComponent: ManaComponent;
@@ -92,11 +93,25 @@ export class SpellCastingComponent extends BaseGameObjectComponent {
     this.#activeSpells.push(spell);
     this.#spellGroup.add(spell.gameObject);
 
+    // Phase 9.3 (Plan 03): tag the spell gameObject with a unique per-cast UUID and the casterId
+    // so cross-player overlap callbacks can identify the spell over the wire (D-01..D-04).
+    const spellInstanceId = Phaser.Math.RND.uuid();
+    spell.gameObject.setData('spellId', spellInstanceId);
+    spell.gameObject.setData('spellType', spellId);
+    try {
+      const localId = NetworkManager.getInstance().localPlayerId;
+      if (localId) spell.gameObject.setData('casterId', localId);
+    } catch {
+      /* offline / single-player — no casterId needed */
+    }
+
     spell.gameObject.once(Phaser.GameObjects.Events.DESTROY, () => {
       this.#activeSpells = this.#activeSpells.filter((s) => s !== spell);
     });
 
-    EVENT_BUS.emit(CUSTOM_EVENTS.SPELL_CAST, { spellId, slotIndex, casterX, casterY, targetX, targetY });
+    // SPELL_CAST payload now carries BOTH the per-cast UUID (spellInstanceId, NEW)
+    // and the SPELL_ID type constant (spellId — preserved for back-compat).
+    EVENT_BUS.emit(CUSTOM_EVENTS.SPELL_CAST, { spellInstanceId, spellId, slotIndex, casterX, casterY, targetX, targetY });
 
     return spell;
   }

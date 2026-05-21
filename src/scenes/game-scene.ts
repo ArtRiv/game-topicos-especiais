@@ -114,7 +114,17 @@ export class GameScene extends Phaser.Scene {
   // Multiplayer: remote players keyed by playerId
   #remotePlayers = new Map<string, Player>();
   #remoteSpellGroup!: Phaser.GameObjects.Group;
+  // Phase 9.3 (Plan 03): cross-player overlap target. Holds Player instances for every
+  // lazily-spawned remote player; tagged via setData('playerId', …).
+  #remotePlayerGroup!: Phaser.GameObjects.Group;
   #remoteFireBreaths = new Map<string, FireBreath>();
+  // Phase 9.3 (Plan 03): dedupe set for NETWORK_DAMAGE_CONFIRMED. Cleared on shutdown.
+  #appliedDamageSpellIds: Set<string> = new Set();
+  // Phase 9.3 (Plan 03): death overlay/countdown state for local-player elimination.
+  #deathOverlay: Phaser.GameObjects.Rectangle | undefined;
+  #deathCountdownText: Phaser.GameObjects.BitmapText | undefined;
+  #deathCountdownTimer: Phaser.Time.TimerEvent | undefined;
+  #deathCountdownRemaining: number = 0;
   // Countdown cinematic (LFC-06..09): set on COUNTDOWN, cleared on ACTIVE.
   // #combatLocked is an additive guard that gates spell handlers (#updateFireBreathChanneling,
   // #updateEarthWallSpell) that bypass #controls.isMovementLocked. Default false — set true
@@ -161,6 +171,8 @@ export class GameScene extends Phaser.Scene {
     this.#earthWallGroup = this.add.group();
     this.#debugFlyingObeliskGroup = this.add.group();
     this.#remoteSpellGroup = this.add.group({ runChildUpdate: false });
+    // Phase 9.3 (Plan 03): remote-player overlap group (PVP-02 cross-player damage).
+    this.#remotePlayerGroup = this.add.group({ runChildUpdate: false });
 
     this.#registerColliders();
     this.#registerCustomEvents();
@@ -1250,6 +1262,15 @@ export class GameScene extends Phaser.Scene {
       maxLife: CONFIG.PLAYER_START_MAX_HEALTH,
       currentLife: CONFIG.PLAYER_START_MAX_HEALTH,
     });
+
+    // Phase 9.3 (Plan 03): tag the local player with its network playerId so cross-player
+    // overlap callbacks can reverse-lookup. Defensive try/catch — offline play has no NM.
+    try {
+      const localId = NetworkManager.getInstance().localPlayerId;
+      if (localId) this.#player.setData('playerId', localId);
+    } catch {
+      /* offline */
+    }
   }
 
   /**
@@ -1698,6 +1719,9 @@ export class GameScene extends Phaser.Scene {
         tintColor: tint,
       });
       this.#remotePlayers.set(payload.playerId, remote);
+      // Phase 9.3 (Plan 03): tag + register for cross-player overlap (PVP-02).
+      remote.setData('playerId', payload.playerId);
+      this.#remotePlayerGroup.add(remote);
     }
 
     // Store network target — per-frame interpolation in #interpolateRemotePlayers handles rendering
@@ -1773,12 +1797,20 @@ export class GameScene extends Phaser.Scene {
     return GameScene.#PLAYER_TINT_PALETTE[(this.#remotePlayers.size + 1) % len];
   }
 
-  #onLocalSpellCast = (payload: { spellId: string; slotIndex: number; casterX: number; casterY: number; targetX: number; targetY: number }): void => {
+  // Phase 9.3 (Plan 03): payload now carries BOTH spellInstanceId (per-cast UUID, NEW) and
+  // spellId (SPELL_ID type constant). The UUID is what rides the wire as SpellCastPayload.spellId.
+  // The legacy `element` field carries the active element; receivers re-derive the spell type
+  // from element + slot (or from a future broadcasted SPELL_ID — out of scope for this plan).
+  #onLocalSpellCast = (payload: { spellInstanceId?: string; spellId: string; slotIndex: number; casterX: number; casterY: number; targetX: number; targetY: number }): void => {
     let nm: NetworkManager | null = null;
     try { nm = NetworkManager.getInstance(); } catch { return; }
     if (!nm?.isConnected || !this.#player?.active) return;
+    // Prefer the new UUID; fall back to the legacy type constant if for some reason
+    // the emitter is from an older code path (defensive — should never trigger after Plan 03).
+    const wireSpellId = payload.spellInstanceId ?? payload.spellId;
     nm.sendSpellCast({
-      spellId: payload.spellId,
+      spellId: wireSpellId,
+      spellType: payload.spellId,                   // SPELL_ID constant — factory key on receiver side.
       element: ElementManager.instance.activeElement,
       x: payload.casterX,
       y: payload.casterY,
@@ -1791,9 +1823,12 @@ export class GameScene extends Phaser.Scene {
   #onRemoteSpellCast = (payload: SpellCastBroadcast): void => {
     // Instantiate the spell directly via the registry — do NOT re-emit SPELL_CAST (that would
     // trigger #onLocalSpellCast and re-broadcast, creating an infinite loop).
-    const factory = SPELL_FACTORY_REGISTRY[payload.spellId as keyof typeof SPELL_FACTORY_REGISTRY];
+    // Phase 9.3 (Plan 03): factory lookup now uses spellType (SPELL_ID constant);
+    // spellId is the per-cast UUID used for cross-client correlation, NOT a factory key.
+    const factoryKey = payload.spellType ?? payload.spellId; // fallback if a peer is on older protocol
+    const factory = SPELL_FACTORY_REGISTRY[factoryKey as keyof typeof SPELL_FACTORY_REGISTRY];
     if (!factory) {
-      console.warn(`[GameScene] No factory for remote spellId: ${payload.spellId}`);
+      console.warn(`[GameScene] No factory for remote spellType: ${factoryKey}`);
       return;
     }
 
@@ -1823,6 +1858,12 @@ export class GameScene extends Phaser.Scene {
     );
 
     this.#remoteSpellGroup.add(spell.gameObject);
+
+    // Phase 9.3 (Plan 03): tag the remote spell so NETWORK_SPELL_DESTROYED + cross-player
+    // overlap callbacks can match by spellId (the per-cast UUID).
+    spell.gameObject.setData('spellId', payload.spellId);
+    spell.gameObject.setData('casterId', payload.playerId);
+    spell.gameObject.setData('spellType', payload.spellType);
 
     spell.gameObject.once(Phaser.GameObjects.Events.DESTROY, () => {
       this.#remoteSpellGroup.remove(spell.gameObject, false, false);

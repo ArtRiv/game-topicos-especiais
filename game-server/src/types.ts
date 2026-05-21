@@ -59,7 +59,10 @@ export type PlayerUpdatePayload = {
 export type PlayerUpdateBroadcast = PlayerUpdatePayload & { playerId: string };
 
 export type SpellCastPayload = {
+  // Phase 9.3 (Plan 03): per-cast UUID for cross-client correlation (matches client mirror).
   spellId: string;
+  // SPELL_ID type constant (e.g. 'FIRE_BOLT') — used by remote receivers to look up the factory.
+  spellType: string;
   element: string;
   x: number;
   y: number;
