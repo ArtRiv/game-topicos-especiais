@@ -16,7 +16,7 @@ Turn the working PvP foundation into a tournament-grade experience for the colle
 - [x] **Phase 7: LOADING State + Match FSM Foundation** — Server-side match state machine with LOADING transition; clients see a loading screen with match player list + map preview before everyone enters together (completed 2026-05-16)
 - [x] **Phase 8: COUNTDOWN State** — Players locked at spawn during a 3–4s zoom-in cinematic with 3-2-1-FIGHT! overlay; combat unlocks simultaneously (completed 2026-05-16)
 - [ ] **Phase 9: Lobby Format & Map Configuration** — Host selects 1v1→10v10 and a map; lobby capacity adjusts; single extensible `GameRoom.config` object broadcast on every change
-- [ ] **Phase 9.2: UI Motion & Lobby Polish** *(INSERTED)* — Cinematic menu→lobby→match transitions tied to music; final map thumbnail art replaces placeholders
+- [x] **Phase 9.2: UI Motion & Lobby Polish** *(INSERTED)* — Cinematic menu→lobby→match transitions tied to music; final map thumbnail art replaces placeholders (completed 2026-05-21)
 - [ ] **Phase 10: Match End & Results Screen** — Server transitions to ENDED on win condition; full-screen results show winner/kills/damage/MVP; rematch flow remains intact
 - [ ] **Phase 11: Reconnect Grace Window** — 15-second slot hold on disconnect; reconnects within window restore active play
 - [ ] **Phase 12: In-Match Feedback HUD** — Kill feed, floating damage numbers, name tags + HP bars overhead, match timer, ping indicator
@@ -129,7 +129,7 @@ Plans:
 - [x] 09.2-02-PLAN.md — Splash + MainMenu cinematic verification & human-verify checkpoint
 - [x] 09.2-03-PLAN.md — Lobby Start→LOADING fade-out + menu-music duck + setMenuVolume(0.03) on Lobby entry
 - [x] 09.2-04-PLAN.md — LoadingScene cinematic (typewriter + map preview + tip card) + gameplay-music drop sync
-- [ ] 09.2-05-PLAN.md — ImageMagick downscale of map backgrounds to 96×64 thumbnails (success criterion #3)
+- [x] 09.2-05-PLAN.md — ImageMagick downscale of map backgrounds to 96×64 thumbnails (success criterion #3)
 **UI hint**: yes
 **Source todos**: `.planning/todos/pending/2026-05-21-menu-and-lobby-motion-transitions.md`, `.planning/todos/pending/2026-05-21-replace-map-thumbnail-placeholders.md`
 
@@ -196,7 +196,7 @@ Plans:
 | 7. LOADING State + Match FSM | 0/? | Not started | — |
 | 8. COUNTDOWN State | 0/2 | Not started | — |
 | 9. Lobby Format & Map Config | 3/3 | Plans complete (pending verify) | — |
-| 9.2. UI Motion & Lobby Polish | 4/5 | In progress (Plans 01, 02, 03, 04 complete 2026-05-21) | — |
+| 9.2. UI Motion & Lobby Polish | 5/5 | Complete | 2026-05-21 |
 | 10. Match End & Results Screen | 0/? | Not started | — |
 | 11. Reconnect Grace Window | 0/? | Not started | — |
 | 12. In-Match Feedback HUD | 0/? | Not started | — |

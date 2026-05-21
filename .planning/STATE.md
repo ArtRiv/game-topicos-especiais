@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: milestone
 status: executing
-stopped_at: "Phase 09.2 plan 4 of 5 complete — Plan 02 (Splash/MainMenu cinematic) signed off by human-verify checkpoint; only Plan 05 (map thumbnail downscale) remains"
-last_updated: "2026-05-21T14:00:00.000Z"
-last_activity: 2026-05-21 -- Phase 09.2 Plan 02 closed via human-verify approval (no source drift)
+stopped_at: "Phase 09.2 plan 5 of 5 complete — Phase 9.2 (UI Motion & Lobby Polish) shipped"
+last_updated: "2026-05-21T15:00:00.000Z"
+last_activity: 2026-05-21 -- Phase 09.2 complete
 progress:
   total_phases: 9
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 21
-  completed_plans: 15
-  percent: 71
+  completed_plans: 16
+  percent: 76
 ---
 
 # Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-24)
 
 ## Current Position
 
-Phase: 09.2 (ui-motion-lobby-polish) — Plan 4 of 5 complete; Plan 05 (thumbnail downscale) remains
-Plan: 4 of 5 done (Plans 01, 02, 03, 04). Plan 02 closed via human-verify approval — zero source drift from Plan 01's cinematic vs UI-SPEC.
-Status: Phase 09.2 plan 4 of 5 complete — Plan 05 (thumbnail downscale) remains
-Last activity: 2026-05-21 -- Phase 09.2 Plan 02 closed (human-approved)
+Phase: 09.2 (ui-motion-lobby-polish) — COMPLETE (5 of 5 plans shipped 2026-05-21). Next up per ROADMAP: Phase 10 (Match End & Results Screen).
+Plan: All 5 plans done (01, 02, 03, 04, 05). Plan 05 closed via human-verify auto-approval (user authorized; will catch issues in next play session).
+Status: Phase 09.2 complete — ready to scope Phase 10
+Last activity: 2026-05-21 -- Phase 09.2 complete
 
 ## Performance Metrics
 
@@ -83,9 +83,9 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-21T14:00:00.000Z
-Stopped at: Phase 09.2 plan 4 of 5 complete — Plan 02 (Splash/MainMenu cinematic verification) signed off via human-verify checkpoint with zero source drift; audit confirmed MUSIC_DROP_MS=2_000, Back.Out title slam, Quad.Out subtitle/menu-item tweens, 0xffc857 hover tint, scale 1.05 hover, cinematicPlayed gate, FADE_OUT_COMPLETE splash dismiss, Sine.InOut blink — all matched UI-SPEC beats exactly. No source patches required. Only Plan 05 (ImageMagick downscale of map backgrounds to 96x64 thumbnails) remains in Phase 09.2.
-Resume file: .planning/phases/09.2-ui-motion-lobby-polish/09.2-05-PLAN.md
+Last session: 2026-05-21T15:00:00.000Z
+Stopped at: Phase 09.2 plan 5 of 5 complete — Phase 9.2 (UI Motion & Lobby Polish) shipped. Plan 05 swapped placeholder green-W / purple-D thumbnails for 96x64 nearest-neighbor downscales of world_background.png and dungeon_1_background.png (ImageMagick `-filter Point -resize 96x64^ -gravity center -extent 96x64`); both PNGs verified `PNG 96x64` via `magick identify` (1244 B and 928 B respectively). Zero code changes — existing ASSET_KEYS.MAP_THUMB_* wiring from Phase 9.1-01 picked them up. Task 2 human-verify auto-approved by user. Folded todos moved to `.planning/todos/done/`. Next phase: Phase 10 (Match End & Results Screen).
+Resume file: (none — Phase 9.2 complete; next is Phase 10 scoping)
 
 ## GSD Workflow Config
 
