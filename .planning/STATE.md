@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: milestone
 status: executing
-stopped_at: "Phase 09.2 plan 1 of 5 complete — UI-branch port + boot-flow change (Splash/MainMenu/stubs/MusicManager) on multiplayer; BitmapText converted across all ported scenes; vite build clean"
-last_updated: "2026-05-21T16:30:00.000Z"
-last_activity: 2026-05-21 -- Phase 09.2 plan 1 of 5 complete
+stopped_at: "Phase 09.2 plan 3 of 5 complete — Lobby->LOADING fade-out + menu-music duck + setMenuVolume(0.03) on Lobby entry; Wave 2 done in parallel with Plan 02"
+last_updated: "2026-05-21T13:30:00.000Z"
+last_activity: 2026-05-21 -- Phase 09.2 plan 3 of 5 complete (Wave 2)
 progress:
   total_phases: 9
   completed_phases: 4
   total_plans: 21
-  completed_plans: 12
-  percent: 57
+  completed_plans: 13
+  percent: 62
 ---
 
 # Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-24)
 
 ## Current Position
 
-Phase: 09.2 (ui-motion-lobby-polish) — Plan 1 of 5 complete
-Plan: 1 of 5 done (UI-branch port + boot-flow change on multiplayer)
-Status: Ready to execute Plan 02 (Splash + MainMenu cinematic verification)
-Last activity: 2026-05-21 -- Phase 09.2 plan 1 of 5 complete
+Phase: 09.2 (ui-motion-lobby-polish) — Plan 3 of 5 complete (Wave 2)
+Plan: 3 of 5 done (Lobby->LOADING transition + menu-music duck on Lobby entry)
+Status: Wave 2 (Plans 02 + 03) in progress; ready to execute Plan 04 (LoadingScene cinematic) once Plan 02 also completes
+Last activity: 2026-05-21 -- Phase 09.2 plan 3 of 5 complete
 
 ## Performance Metrics
 
@@ -83,9 +83,9 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-21T16:30:00.000Z
-Stopped at: Phase 09.2 plan 1 of 5 complete — UI-branch port (commits a62045b, dbb4b7d, 65355db, 341702c, f414e7e, b4bc62a); boot order now SPLASH_SCENE → MAIN_MENU_SCENE → LOBBY_SCENE; all ported scenes use BitmapText
-Resume file: .planning/phases/09.2-ui-motion-lobby-polish/09.2-02-PLAN.md
+Last session: 2026-05-21T13:30:00.000Z
+Stopped at: Phase 09.2 plan 3 of 5 complete — Lobby->LOADING transition (commits 6a54472, eff68b9); LobbyScene.create() ducks menu music to 0.03; #onLobbyStarted runs eager #clearView() then 400ms camera fadeOut + parallel menu-music volume tween (0.03->0), hard-stop on FADE_OUT_COMPLETE, then scene.start(LOADING_SCENE)
+Resume file: .planning/phases/09.2-ui-motion-lobby-polish/09.2-04-PLAN.md
 
 ## GSD Workflow Config
 

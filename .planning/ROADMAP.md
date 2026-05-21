@@ -127,7 +127,7 @@ Plans:
 Plans:
 - [x] 09.2-01-PLAN.md — UI-branch asset & code port + boot-flow change (BitmapText conversion of Splash/MainMenu/stub scenes)
 - [ ] 09.2-02-PLAN.md — Splash + MainMenu cinematic verification & human-verify checkpoint
-- [ ] 09.2-03-PLAN.md — Lobby Start→LOADING fade-out + menu-music duck + setMenuVolume(0.03) on Lobby entry
+- [x] 09.2-03-PLAN.md — Lobby Start→LOADING fade-out + menu-music duck + setMenuVolume(0.03) on Lobby entry
 - [ ] 09.2-04-PLAN.md — LoadingScene cinematic (typewriter + map preview + tip card) + gameplay-music drop sync
 - [ ] 09.2-05-PLAN.md — ImageMagick downscale of map backgrounds to 96×64 thumbnails (success criterion #3)
 **UI hint**: yes
