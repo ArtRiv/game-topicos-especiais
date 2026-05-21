@@ -320,11 +320,26 @@ export class LobbyScene extends Phaser.Scene {
   };
 
   #onLobbyStarted = (data: { matchConfig: MatchConfig }): void => {
+    // 1. Unbind EVENT_BUS listeners first (existing behavior).
     EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_LOBBY_UPDATED, this.#onWaitingRoomUpdate, this);
     EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_LOBBY_STARTED, this.#onLobbyStarted, this);
     EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_HOST_CHANGED, this.#onHostChanged, this);
     EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_LOBBY_ERROR, this.#onLobbyError, this);
     this.#currentLobby = null;
+
+    // 2. EAGER teardown of host-only DOM <select> and configBlock Phaser
+    //    objects BEFORE scene.start. Without this, Phaser's DOMElement
+    //    (#formatSelectDom) sits in the browser's DOM tree across the
+    //    LobbyScene->LoadingScene transition and forces a layout reflow
+    //    that the host (only — non-host never created the DOM) experiences
+    //    as a ~1s black-screen stall. SHUTDOWN cleanup runs ~1 frame too
+    //    late for the host. The SHUTDOWN handler at lines 36-46 still
+    //    invokes #clearView() but is now idempotent against this eager
+    //    call (Phaser GameObject.destroy is a no-op on already-destroyed
+    //    objects; the array assignments to [] make a second pass cheap).
+    this.#clearView();
+
+    // 3. Now safe to swap scenes — the DOM tree is clean.
     this.scene.stop(SCENE_KEYS.LOBBY_SCENE);
     this.scene.start(SCENE_KEYS.LOADING_SCENE, { matchConfig: data.matchConfig });
   };
