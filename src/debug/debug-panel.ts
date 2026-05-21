@@ -135,7 +135,7 @@ const PANEL_CSS = `
 
 export class DebugPanel {
   #panel: HTMLDivElement;
-  #defaultValues: Record<string, number>;
+  #defaultValues: Record<string, number | boolean>;
 
   constructor() {
     this.#defaultValues = Object.fromEntries(
@@ -220,7 +220,7 @@ export class DebugPanel {
 
     slider.addEventListener('input', () => {
       const parsed = parseFloat(slider.value);
-      (RUNTIME_CONFIG as Record<string, number>)[param.key] = parsed;
+      (RUNTIME_CONFIG as Record<string, number | boolean>)[param.key] = parsed;
       valueDisplay.textContent = String(parsed);
     });
 
@@ -232,7 +232,7 @@ export class DebugPanel {
 
   #resetAll(panel: HTMLDivElement): void {
     for (const [key, val] of Object.entries(this.#defaultValues)) {
-      (RUNTIME_CONFIG as Record<string, number>)[key] = val;
+      (RUNTIME_CONFIG as Record<string, number | boolean>)[key] = val;
     }
 
     panel.querySelectorAll<HTMLInputElement>('input[type=range]').forEach((slider) => {

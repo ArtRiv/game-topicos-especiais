@@ -7,6 +7,7 @@ import { ManaComponent } from './mana-component';
 import { ActiveSpell } from '../../game-objects/spells/base-spell';
 import { ElementManager } from '../../common/element-manager';
 import { SPELL_SLOT_REGISTRY, SPELL_CONFIG, SPELL_FACTORY_REGISTRY } from '../../game-objects/spells/spell-registry';
+import { RUNTIME_CONFIG } from '../../common/runtime-config';
 
 export class SpellCastingComponent extends BaseGameObjectComponent {
   #manaComponent: ManaComponent;
@@ -34,6 +35,14 @@ export class SpellCastingComponent extends BaseGameObjectComponent {
 
   public canCast(slotIndex: number): boolean {
     if (slotIndex !== 0 && slotIndex !== 1) return false;
+    // Phase 9.3 — DASH_INTERRUPTABLE_BY_CAST guard (D-13). When false, an active
+    // dash refuses new casts (1/2/3). Player.isDashing is the duck-typed flag.
+    if (
+      !RUNTIME_CONFIG.DASH_INTERRUPTABLE_BY_CAST &&
+      (this.gameObject as unknown as { isDashing?: boolean }).isDashing === true
+    ) {
+      return false;
+    }
     const element = ElementManager.instance.activeElement;
     const spellId = SPELL_SLOT_REGISTRY[element]?.[slotIndex];
     if (!spellId) return false;

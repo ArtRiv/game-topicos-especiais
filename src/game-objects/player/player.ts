@@ -14,6 +14,8 @@ import {
 import { AnimationConfig } from '../../components/game-object/animation-component';
 import { ASSET_KEYS, PLAYER_ANIMATION_KEYS } from '../../common/assets';
 import { CharacterGameObject } from '../common/character-game-object';
+import { DIRECTION } from '../../common/common';
+import { RUNTIME_CONFIG } from '../../common/runtime-config';
 import { HurtState } from '../../components/state-machine/states/character/hurt-state';
 import { flash } from '../../common/juice-utils';
 import { DeathState } from '../../components/state-machine/states/character/death-state';
@@ -42,6 +44,11 @@ export class Player extends CharacterGameObject {
   #collidingObjectsComponent: CollidingObjectsComponent;
   #manaComponent: ManaComponent;
   #spellCastingComponent: SpellCastingComponent;
+
+  // Phase 9.3 — Dash state (D-13/14, RESEARCH.md §3)
+  public iFrameUntil: number = 0;
+  public isDashing: boolean = false;
+  #lastDashTime: number = -Infinity;
 
   constructor(config: PlayerConfig) {
     // create animation config for component
@@ -155,5 +162,65 @@ export class Player extends CharacterGameObject {
     // update mana regen
     const delta = this.scene.game.loop.delta;
     this.#manaComponent.update(delta);
+  }
+
+  /**
+   * Phase 9.3 — Dash (D-13/14, RESEARCH.md §3).
+   * Uses body.setVelocity + delayedCall (NOT a tween) so wall collisions interrupt the motion
+   * naturally without tunneling. Direction = current WASD vector, fallback to last-faced direction.
+   */
+  public dash(): void {
+    const cfg = RUNTIME_CONFIG;
+    const now = this.scene.time.now;
+    if (now - this.#lastDashTime < cfg.DASH_COOLDOWN_MS) return;
+
+    // Direction vector (D-14): WASD first, fallback to last-faced direction.
+    let dx = 0;
+    let dy = 0;
+    if (this.controls.isLeftDown) dx -= 1;
+    if (this.controls.isRightDown) dx += 1;
+    if (this.controls.isUpDown) dy -= 1;
+    if (this.controls.isDownDown) dy += 1;
+
+    if (dx === 0 && dy === 0) {
+      if (this.direction === DIRECTION.LEFT) dx = -1;
+      else if (this.direction === DIRECTION.RIGHT) dx = 1;
+      else if (this.direction === DIRECTION.UP) dy = -1;
+      else dy = 1;
+    }
+
+    const len = Math.hypot(dx, dy) || 1;
+
+    // Cast-cancel (D-13): pressing Shift mid-cast aborts the cast.
+    if (
+      cfg.DASH_CANCELS_CAST &&
+      this.stateMachine.currentStateName === CHARACTER_STATES.CASTING_STATE
+    ) {
+      this.stateMachine.setState(CHARACTER_STATES.IDLE_STATE);
+    }
+
+    // TILE_SIZE = 32 (project-wide; no exported constant).
+    const TILE_SIZE = 32;
+    const speed = (cfg.DASH_DISTANCE_TILES * TILE_SIZE) / (cfg.DASH_DURATION_MS / 1000);
+    const body = this.body as Phaser.Physics.Arcade.Body;
+    body.setVelocity((dx / len) * speed, (dy / len) * speed);
+
+    this.isDashing = true;
+    // Gate MoveState velocity overwrite (RESEARCH.md §3 landmine 1).
+    this.controls.isMovementLocked = true;
+    this.#lastDashTime = now;
+
+    if (cfg.DASH_IFRAMES_ENABLED) {
+      this.iFrameUntil = now + cfg.DASH_IFRAMES_MS;
+    }
+
+    // End dash: zero velocity, unlock movement, clear dashing flag.
+    this.scene.time.delayedCall(cfg.DASH_DURATION_MS, () => {
+      // Guard against player being destroyed mid-dash (e.g. respawn).
+      if (!this.active || !this.body) return;
+      (this.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
+      this.isDashing = false;
+      this.controls.isMovementLocked = false;
+    });
   }
 }

@@ -120,6 +120,9 @@ export class GameScene extends Phaser.Scene {
   // #updateEarthWallSpell) that bypass #controls.isMovementLocked. Default false — set true
   // only when match:state-changed COUNTDOWN arrives.
   #combatLocked: boolean = false;
+  // Phase 9.3 — Pre-declared for Plan 03 to consume (see 09.3-04-SUMMARY.md). When true, all
+  // gameplay input (cast/dash) is suppressed for the dead local player until respawn.
+  #deathLockActive: boolean = false;
   #countdownText: Phaser.GameObjects.Text | null = null;
 
   constructor() {
@@ -179,6 +182,7 @@ export class GameScene extends Phaser.Scene {
     this.#updateEarthBoltFireAreaCombo();
     this.#updateEarthWallSpell();
     this.#handleRadialMenuInput();
+    this.#handleDashInput();
     this.#interpolateRemotePlayers(delta);
   }
 
@@ -186,6 +190,15 @@ export class GameScene extends Phaser.Scene {
     if (!this.#controls.isRadialMenuKeyJustDown) return;
     if (this.scene.isActive(SCENE_KEYS.RADIAL_MENU_SCENE)) return;
     this.scene.launch(SCENE_KEYS.RADIAL_MENU_SCENE);
+  }
+
+  #handleDashInput(): void {
+    // Respect COUNTDOWN lock and (Plan 03) death lock.
+    if (this.#combatLocked) return;
+    if (this.#deathLockActive) return;
+    if (!this.#controls.isDashKeyJustDown) return;
+    if (!this.#player?.active) return;
+    this.#player.dash();
   }
 
   #configureArcadeDebug(): void {
