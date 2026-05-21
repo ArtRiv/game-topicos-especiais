@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Match Lifecycle & Event Polish
 status: executing
-stopped_at: v1.2 milestone started — defining requirements
-last_updated: "2026-05-16T00:57:40.516Z"
-last_activity: 2026-05-16 -- Phase 08 execution started
+stopped_at: Phase 09 plan 1 of 3 complete — server lobby config foundation
+last_updated: "2026-05-21T00:00:00.000Z"
+last_activity: 2026-05-21 -- Phase 09 plan 1 executed (server LobbyConfig + MAP_POOL + lobby:set-config)
 progress:
   total_phases: 8
   completed_phases: 1
   total_plans: 4
-  completed_plans: 2
-  percent: 13
+  completed_plans: 3
+  percent: 17
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-24)
 
 **Core value:** The "I outplayed everyone" moment -- landing a perfectly timed spell combo that eliminates an opponent in front of a crowd.
-**Current focus:** Phase 08 — countdown-state
+**Current focus:** Phase 09 — lobby-format-map-configuration
 
 ## Current Position
 
-Phase: 08 (countdown-state) — EXECUTING
-Plan: 1 of 2
-Status: Executing Phase 08
-Last activity: 2026-05-16 -- Phase 08 execution started
+Phase: 09 (lobby-format-map-configuration) — EXECUTING
+Plan: 1 of 3 complete (next: 09-02 — map thumbnail assets)
+Status: Executing Phase 09
+Last activity: 2026-05-21 -- Phase 09 plan 1 complete (server LobbyConfig + setConfig + lobby:set-config handler)
 
 ## Performance Metrics
 
@@ -78,9 +78,9 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-24T00:00:00.000Z
-Stopped at: v1.2 milestone started — defining requirements
-Resume file: —
+Last session: 2026-05-21T00:00:00.000Z
+Stopped at: Phase 09 plan 1 of 3 complete — server lobby config foundation
+Resume file: .planning/phases/09-lobby-format-map-configuration/09-02-PLAN.md
 
 ## GSD Workflow Config
 
