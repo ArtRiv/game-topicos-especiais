@@ -154,7 +154,7 @@ Plans:
 **Plans**: 4 plans
 Plans:
 - [x] 09.3-01-PLAN.md — Phantom fireball + earth-wall vs remote-spell collider + state-machine queue-dispatch bug fixes (D-20, D-21, E10) (completed 2026-05-21)
-- [ ] 09.3-02-PLAN.md — Damage net protocol + server validator + position mirror (D-01..D-04, D-08, D-12; PVP-04/06)
+- [x] 09.3-02-PLAN.md — Damage net protocol + server validator + position mirror (D-01..D-04, D-08, D-12; PVP-04/06) (completed 2026-05-21)
 - [ ] 09.3-03-PLAN.md — Client damage application + elimination overlay + respawn restore + cross-player overlaps (PVP-02/05; D-11)
 - [ ] 09.3-04-PLAN.md — Dash on Shift + CTRL→SPACE rebind + RUNTIME_CONFIG dash tunables (D-13..D-19)
 **UI hint**: minor (dash visual; spell-select rebind doesn't change radial menu visuals — only the key that opens it)

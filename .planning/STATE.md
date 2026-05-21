@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: milestone
 status: executing
-stopped_at: "Phase 09.3 plan 1 of 4 complete — phantom fireball + earth-wall symmetry + state-machine queue bug fixed"
-last_updated: "2026-05-21T20:40:00.000Z"
-last_activity: 2026-05-21 -- Phase 09.3 plan 01 complete
+stopped_at: "Phase 09.3 plan 2 of 4 complete — host-authoritative damage net protocol + server validator + position mirror shipped"
+last_updated: "2026-05-21T21:30:00.000Z"
+last_activity: 2026-05-21 -- Phase 09.3 plan 02 complete
 progress:
   total_phases: 9
   completed_phases: 5
   total_plans: 25
-  completed_plans: 17
-  percent: 68
+  completed_plans: 18
+  percent: 72
 ---
 
 # Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-24)
 
 ## Current Position
 
-Phase: 09.3 (cross-player-combat-input-polish) — IN PROGRESS (1 of 4 plans shipped 2026-05-21). Phase 9.3 plan 01 closed three independent multiplayer bugs (phantom fireball D-20, earth-wall asymmetry D-21, state-machine queue dispatch E10).
-Plan: 1/4 done. Next: 09.3-02 (damage net protocol + server validator).
+Phase: 09.3 (cross-player-combat-input-polish) — IN PROGRESS (2 of 4 plans shipped 2026-05-21). Plan 02 added the full host-authoritative damage net protocol (7 mirrored payload types), GameRoom validator pipeline (dedupe → FF check → plausibility → cap → broadcast), position-mirror channel, respawn scheduler, and NetworkManager bridges.
+Plan: 2/4 done. Next: 09.3-03 (client damage application + elimination overlay + respawn restore + cross-player overlaps).
 Status: Phase 09.3 in progress
-Last activity: 2026-05-21 -- Phase 09.3 plan 01 complete
+Last activity: 2026-05-21 -- Phase 09.3 plan 02 complete
 
 ## Performance Metrics
 
@@ -85,9 +85,9 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-21T20:40:00.000Z
-Stopped at: Phase 09.3 plan 1 of 4 complete. Three independent multiplayer bug fixes landed: (1) `#onRemoteSpellCast` strict-drop guard + self-filter — removed straight-right fallback (`payload.targetX ?? payload.x + 1`) that was producing phantom right-flying fireballs from any nullish-target broadcast; (2) `#remoteSpellGroup × #earthWallGroup` overlap added mirroring the local-spell handler verbatim (closes D-21 — earth wall now stops remote fireballs symmetrically with FireBolt splash damage on adjacent pillars within `EARTH_WALL_FIREBOLT_SPLASH_RADIUS`); (3) `StateMachine.update()` queue redispatch fixed with spread operator (E10) — queued state transitions now receive original args instead of a wrapping array, eliminating silent `canCast(NaN)` no-ops. Zero new TS errors in src/. Manual 2-client repro deferred to next playtest. Next plan: 09.3-02 (damage net protocol + server validator).
-Resume file: .planning/phases/09.3-cross-player-combat-input-polish/09.3-02-PLAN.md
+Last session: 2026-05-21T21:30:00.000Z
+Stopped at: Phase 09.3 plan 2 of 4 complete. Host-authoritative damage protocol shipped: 7 mirrored payload types (`SpellHit`/`DamageConfirmed`/`Elimination`/`Respawn`/`SpellHitEnvironment`/`SpellDestroyed`/`PosMirror`) + `MatchMode` union; 4 server tunable constants (`PLAUSIBILITY_RANGE_PX`/`PLAUSIBILITY_STALE_MS`/`RESPAWN_DELAY_MS`/`MAX_SPELL_DAMAGE`) authoritative on server, mirrored into client `RUNTIME_CONFIG` for debug-panel adjustment; `GameRoom` extended with position cache + `validateHit` (plausibility + FF check) + `tryConsumeHit` (per-spellId dedupe) + `applyDamage` (caps at `MAX_SPELL_DAMAGE`) + `scheduleRespawn` (skipped in `'last-standing'`, D-12) + `clearCombatState` lifecycle hooks (room emptied AND transition→ENDED) + per-player cleanup on individual disconnect; 3 new socket handlers (`game:pos-mirror`/`spell:hit`/`spell:hit-environment`) all gated on `room.state === 'ACTIVE'` with silent-drop semantics per D-02; player registration with damage pipeline at COUNTDOWN→ACTIVE using deterministic per-index spawn offset (TODO: align with client); `NetworkManager` got 3 senders (`sendPosMirror`/`sendSpellHit`/`sendSpellHitEnvironment`) + pos-mirror emission inside `startGameTick` + 4 inbound socket→EVENT_BUS bridges; `LobbyManager.getLobbyById` added (Rule 3 — blocking issue). `DcMessage` WebRTC union intentionally untouched. Zero new TS errors on server or client. Deviations: event keys went into existing `event-bus.ts` (no `event-keys.ts` file exists). Next plan: 09.3-03 (client damage application + elimination overlay + respawn restore + cross-player overlaps).
+Resume file: .planning/phases/09.3-cross-player-combat-input-polish/09.3-03-PLAN.md
 
 ## GSD Workflow Config
 
