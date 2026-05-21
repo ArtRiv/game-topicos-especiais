@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Match Lifecycle & Event Polish
 status: executing
-stopped_at: Phase 09 plan 2 of 3 complete — map thumbnail assets registered
+stopped_at: Phase 09 plan 3 of 3 complete — client lobby UI shipped; Phase 09 ready for verification
 last_updated: "2026-05-21T00:00:00.000Z"
-last_activity: 2026-05-21 -- Phase 09 plan 2 executed (placeholder thumbnails + assets.json + ASSET_KEYS constants)
+last_activity: 2026-05-21 -- Phase 09 plan 3 executed (client types mirror + NetworkManager helpers + LobbyScene host controls + capacity header + browser row + lobby:error display)
 progress:
   total_phases: 8
   completed_phases: 1
   total_plans: 4
-  completed_plans: 4
-  percent: 22
+  completed_plans: 5
+  percent: 28
 ---
 
 # Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-24)
 
 ## Current Position
 
-Phase: 09 (lobby-format-map-configuration) — EXECUTING
-Plan: 2 of 3 complete (next: 09-03 — client type mirror + LobbyScene UI)
-Status: Executing Phase 09
-Last activity: 2026-05-21 -- Phase 09 plan 2 complete (placeholder thumbnails registered as MAP_THUMB_* in assets.json + ASSET_KEYS)
+Phase: 09 (lobby-format-map-configuration) — ALL PLANS COMPLETE (pending verification)
+Plan: 3 of 3 complete — Phase 09 ready for /gsd-verify
+Status: Executing Phase 09 (verification pending)
+Last activity: 2026-05-21 -- Phase 09 plan 3 complete (client mirror, NetworkManager helpers, LobbyScene host UI + capacity header + browser-row extension + lobby:error display)
 
 ## Performance Metrics
 
@@ -79,8 +79,8 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-05-21T00:00:00.000Z
-Stopped at: Phase 09 plan 2 of 3 complete — map thumbnail assets registered
-Resume file: .planning/phases/09-lobby-format-map-configuration/09-03-PLAN.md
+Stopped at: Phase 09 plan 3 of 3 complete — client lobby UI shipped; Phase 09 ready for verification
+Resume file: (run /gsd-verify on Phase 09, then transition to Phase 10)
 
 ## GSD Workflow Config
 
