@@ -18,6 +18,7 @@ import type {
   EarthWallPillarDestroyPayload,
   EarthWallPillarDestroyBroadcast,
   Lobby,
+  LobbyConfig,
   MatchConfig,
   MatchStateChangedPayload,
   MatchCountdownTickPayload,
@@ -135,6 +136,7 @@ export class NetworkManager {
   sendLobbySetMode(gameMode: string): void { this.#socket.emit('lobby:set-mode', { gameMode }); }
   sendLobbyStart(): void { this.#socket.emit('lobby:start'); }
   sendLobbyAssignTeam(targetPlayerId: string, team: number): void { this.#socket.emit('lobby:assign-team', { targetPlayerId, team }); }
+  sendLobbySetConfig(partial: Partial<LobbyConfig>): void { this.#socket.emit('lobby:set-config', { config: partial }); }
 
   /** Client ack for the LOADING sync barrier (LFC-05). Sent exactly once when the local LoadingScene finishes preparation. */
   sendMatchLoaded(lobbyId: string): void {
@@ -244,6 +246,10 @@ export class NetworkManager {
 
     this.#socket.on('lobby:updated', ({ lobby }: { lobby: Lobby }) => {
       EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_LOBBY_UPDATED, { lobby });
+    });
+
+    this.#socket.on('lobby:error', (data: { message: string }) => {
+      EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_LOBBY_ERROR, data);
     });
 
     this.#socket.on('lobby:started', ({ matchConfig }: { matchConfig: MatchConfig }) => {
