@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: milestone
 status: executing
-stopped_at: Phase 09.1 plan 1 of 4 complete — explicit MAP_THUMB_* preload loads added; UAT Tests 4/8 gap closed
+stopped_at: Phase 09.1 plan 2 of 4 complete — lobby layout polish (player list Y push + Format/select centerline)
 last_updated: "2026-05-21T00:00:00.000Z"
-last_activity: 2026-05-21 -- Phase 09.1 plan 01 complete (preload thumbnail fix, commit 1bf9178)
+last_activity: 2026-05-21 -- Phase 09.1 plan 02 complete (lobby layout polish, commits 6ea43b0 + 7d760a5)
 progress:
   total_phases: 9
   completed_phases: 3
   total_plans: 15
-  completed_plans: 8
-  percent: 53
+  completed_plans: 9
+  percent: 60
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-04-24)
 ## Current Position
 
 Phase: 09.1 (lobby-format-map-config-fixes) — EXECUTING
-Plan: 2 of 4 (next: 9.1-02 lobby layout polish)
-Status: Executing Phase 09.1 — 1/4 plans complete
-Last activity: 2026-05-21 -- Phase 09.1 plan 01 complete (preload thumbnail fix, commit 1bf9178)
+Plan: 3 of 4 (next: 9.1-03 host scene-transition cleanup)
+Status: Executing Phase 09.1 — 2/4 plans complete
+Last activity: 2026-05-21 -- Phase 09.1 plan 02 complete (lobby layout polish, commits 6ea43b0 + 7d760a5)
 
 ## Performance Metrics
 
@@ -79,8 +79,8 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-05-21T00:00:00.000Z
-Stopped at: Phase 09.1 plan 1 of 4 complete — explicit MAP_THUMB_* preload loads (commit 1bf9178); UAT Tests 4/8 gap closed
-Resume file: .planning/phases/09.1-lobby-format-map-config-fixes/9.1-02-PLAN.md
+Stopped at: Phase 09.1 plan 2 of 4 complete — lobby layout polish (commits 6ea43b0, 7d760a5); UAT gaps 1b + Format alignment closed
+Resume file: .planning/phases/09.1-lobby-format-map-config-fixes/9.1-03-PLAN.md
 
 ## GSD Workflow Config
 
