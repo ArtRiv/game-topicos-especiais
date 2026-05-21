@@ -87,7 +87,7 @@ Plans:
 **Plans**: 3 plans
 Plans:
 - [x] 09-01-PLAN.md — Server LobbyConfig + MAP_POOL types, host-gated setConfig, lobby:set-config handler, MatchConfig snapshot
-- [ ] 09-02-PLAN.md — Map thumbnail assets, assets.json registration, ASSET_KEYS constants
+- [x] 09-02-PLAN.md — Map thumbnail assets, assets.json registration, ASSET_KEYS constants
 - [ ] 09-03-PLAN.md — Client type mirror, NetworkManager helpers, LobbyScene host controls + capacity header + browser row + lobby:error display
 **UI hint**: yes
 
@@ -167,7 +167,7 @@ Plans:
 |-------|----------------|--------|-----------|
 | 7. LOADING State + Match FSM | 0/? | Not started | — |
 | 8. COUNTDOWN State | 0/2 | Not started | — |
-| 9. Lobby Format & Map Config | 1/3 | In progress | — |
+| 9. Lobby Format & Map Config | 2/3 | In progress | — |
 | 10. Ready-Up & AFK Detection | 0/? | Not started | — |
 | 11. Match End & Results Screen | 0/? | Not started | — |
 | 12. Reconnect Grace Window | 0/? | Not started | — |

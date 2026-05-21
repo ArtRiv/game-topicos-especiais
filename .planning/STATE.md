@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Match Lifecycle & Event Polish
 status: executing
-stopped_at: Phase 09 plan 1 of 3 complete — server lobby config foundation
+stopped_at: Phase 09 plan 2 of 3 complete — map thumbnail assets registered
 last_updated: "2026-05-21T00:00:00.000Z"
-last_activity: 2026-05-21 -- Phase 09 plan 1 executed (server LobbyConfig + MAP_POOL + lobby:set-config)
+last_activity: 2026-05-21 -- Phase 09 plan 2 executed (placeholder thumbnails + assets.json + ASSET_KEYS constants)
 progress:
   total_phases: 8
   completed_phases: 1
   total_plans: 4
-  completed_plans: 3
-  percent: 17
+  completed_plans: 4
+  percent: 22
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-04-24)
 ## Current Position
 
 Phase: 09 (lobby-format-map-configuration) — EXECUTING
-Plan: 1 of 3 complete (next: 09-02 — map thumbnail assets)
+Plan: 2 of 3 complete (next: 09-03 — client type mirror + LobbyScene UI)
 Status: Executing Phase 09
-Last activity: 2026-05-21 -- Phase 09 plan 1 complete (server LobbyConfig + setConfig + lobby:set-config handler)
+Last activity: 2026-05-21 -- Phase 09 plan 2 complete (placeholder thumbnails registered as MAP_THUMB_* in assets.json + ASSET_KEYS)
 
 ## Performance Metrics
 
@@ -79,8 +79,8 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-05-21T00:00:00.000Z
-Stopped at: Phase 09 plan 1 of 3 complete — server lobby config foundation
-Resume file: .planning/phases/09-lobby-format-map-configuration/09-02-PLAN.md
+Stopped at: Phase 09 plan 2 of 3 complete — map thumbnail assets registered
+Resume file: .planning/phases/09-lobby-format-map-configuration/09-03-PLAN.md
 
 ## GSD Workflow Config
 
