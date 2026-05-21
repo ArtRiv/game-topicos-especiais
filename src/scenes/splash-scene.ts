@@ -35,8 +35,8 @@ export class SplashScene extends Phaser.Scene {
     // Pure black background.
     this.add.rectangle(0, 0, width, height, 0x000000, 1).setOrigin(0);
 
-    // BitmapText replaces `this.add.text(...).setResolution(2)` from UI branch
-    // (D-02 CONVERT). Copy is locked verbatim from UI-SPEC §Splash Scene.
+    // BitmapText replaces the legacy Phaser Text + setResolution call from
+    // UI branch (D-02 CONVERT). Copy is locked verbatim from UI-SPEC §Splash.
     const prompt = this.add
       .bitmapText(cx, cy, BMFONT_KEY, 'PRESS ANYTHING TO\nGET HIGH IN THE\nFANTASY', 8)
       .setOrigin(0.5)
