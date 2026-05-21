@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
-import type { Lobby, PlayerInfo } from './types.js';
+import type { Lobby, PlayerInfo, LobbyConfig, LobbyFormat } from './types.js';
+import { MAP_POOL } from './types.js';
 
 export class LobbyManager {
   #lobbies: Map<string, Lobby> = new Map();
@@ -16,6 +17,7 @@ export class LobbyManager {
       players: [player],
       mode: null,
       status: 'waiting',
+      config: { format: '3v3', mapId: 'WORLD', maxPlayers: 6 },
     };
     this.#lobbies.set(lobbyId, lobby);
     this.#socketToLobby.set(socketId, lobbyId);
@@ -95,5 +97,46 @@ export class LobbyManager {
     if (!target) return null;
     target.team = team;
     return lobby;
+  }
+
+  setConfig(
+    socketId: string,
+    partial: Partial<LobbyConfig>
+  ): { ok: true; lobby: Lobby } | { ok: false; reason: string } {
+    const lobby = this.getLobbyBySocketId(socketId);
+    if (!lobby) return { ok: false, reason: 'No lobby' };
+    if (lobby.status !== 'waiting') return { ok: false, reason: 'Match already in progress' };
+    const player = lobby.players.find(p => p.socketId === socketId);
+    if (!player || player.id !== lobby.hostPlayerId) {
+      return { ok: false, reason: 'Only the host can change lobby settings' };
+    }
+
+    // Validate format if provided
+    const validFormats: LobbyFormat[] = ['1v1','2v2','3v3','4v4','5v5','6v6','7v7','8v8','9v9','10v10'];
+    if (partial.format !== undefined && !validFormats.includes(partial.format)) {
+      return { ok: false, reason: 'Invalid format' };
+    }
+
+    // Validate mapId if provided
+    if (partial.mapId !== undefined && !MAP_POOL.some(m => m.id === partial.mapId)) {
+      return { ok: false, reason: 'Invalid map' };
+    }
+
+    // Compute new config (partial merge; maxPlayers always derived from format, never trusted from client)
+    const nextFormat: LobbyFormat = partial.format ?? lobby.config.format;
+    const nextMapId: string = partial.mapId ?? lobby.config.mapId;
+    const nextMaxPlayers = this.#maxPlayersForFormat(nextFormat);
+
+    // Capacity downshift guard (D-11) — verbatim copy
+    if (lobby.players.length > nextMaxPlayers) {
+      return { ok: false, reason: `Reduce players first (${lobby.players.length} > ${nextMaxPlayers} cap)` };
+    }
+
+    lobby.config = { format: nextFormat, mapId: nextMapId, maxPlayers: nextMaxPlayers };
+    return { ok: true, lobby };
+  }
+
+  #maxPlayersForFormat(format: LobbyFormat): number {
+    return parseInt(format, 10) * 2;
   }
 }
