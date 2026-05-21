@@ -153,7 +153,7 @@ Plans:
   7. Casting a fireball never spawns a second phantom projectile — the cause of the ghost-projectile bug is identified via `/gsd-debug` and the root cause is removed (not papered over with a destroy-after call)
 **Plans**: 4 plans
 Plans:
-- [ ] 09.3-01-PLAN.md — Phantom fireball + earth-wall vs remote-spell collider + state-machine queue-dispatch bug fixes (D-20, D-21, E10)
+- [x] 09.3-01-PLAN.md — Phantom fireball + earth-wall vs remote-spell collider + state-machine queue-dispatch bug fixes (D-20, D-21, E10) (completed 2026-05-21)
 - [ ] 09.3-02-PLAN.md — Damage net protocol + server validator + position mirror (D-01..D-04, D-08, D-12; PVP-04/06)
 - [ ] 09.3-03-PLAN.md — Client damage application + elimination overlay + respawn restore + cross-player overlaps (PVP-02/05; D-11)
 - [ ] 09.3-04-PLAN.md — Dash on Shift + CTRL→SPACE rebind + RUNTIME_CONFIG dash tunables (D-13..D-19)
@@ -243,7 +243,7 @@ Plans:
 | 8. COUNTDOWN State | 0/2 | Not started | — |
 | 9. Lobby Format & Map Config | 3/3 | Plans complete (pending verify) | — |
 | 9.2. UI Motion & Lobby Polish | 5/5 | Complete | 2026-05-21 |
-| 9.3. Cross-Player Combat & Input Polish | 0/4 | Planning complete | — |
+| 9.3. Cross-Player Combat & Input Polish | 1/4 | In progress | — |
 | 9.4. Combo System & Spell Roster | 0/? | Not started | — |
 | 10. Match End & Results Screen | 0/? | Not started | — |
 | 11. Reconnect Grace Window | 0/? | Not started | — |

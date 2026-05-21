@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: milestone
 status: executing
-stopped_at: "Phase 09.2 plan 5 of 5 complete — Phase 9.2 (UI Motion & Lobby Polish) shipped"
-last_updated: "2026-05-21T15:00:00.000Z"
-last_activity: 2026-05-21 -- Phase 09.2 complete
+stopped_at: "Phase 09.3 plan 1 of 4 complete — phantom fireball + earth-wall symmetry + state-machine queue bug fixed"
+last_updated: "2026-05-21T20:40:00.000Z"
+last_activity: 2026-05-21 -- Phase 09.3 plan 01 complete
 progress:
   total_phases: 9
   completed_phases: 5
-  total_plans: 21
-  completed_plans: 16
-  percent: 76
+  total_plans: 25
+  completed_plans: 17
+  percent: 68
 ---
 
 # Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-24)
 
 ## Current Position
 
-Phase: 09.2 (ui-motion-lobby-polish) — COMPLETE (5 of 5 plans shipped 2026-05-21). Next up per ROADMAP: Phase 10 (Match End & Results Screen).
-Plan: All 5 plans done (01, 02, 03, 04, 05). Plan 05 closed via human-verify auto-approval (user authorized; will catch issues in next play session).
-Status: Phase 09.2 complete — ready to scope Phase 10
-Last activity: 2026-05-21 -- Phase 09.2 complete
+Phase: 09.3 (cross-player-combat-input-polish) — IN PROGRESS (1 of 4 plans shipped 2026-05-21). Phase 9.3 plan 01 closed three independent multiplayer bugs (phantom fireball D-20, earth-wall asymmetry D-21, state-machine queue dispatch E10).
+Plan: 1/4 done. Next: 09.3-02 (damage net protocol + server validator).
+Status: Phase 09.3 in progress
+Last activity: 2026-05-21 -- Phase 09.3 plan 01 complete
 
 ## Performance Metrics
 
@@ -85,9 +85,9 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-21T15:00:00.000Z
-Stopped at: Phase 09.2 plan 5 of 5 complete — Phase 9.2 (UI Motion & Lobby Polish) shipped. Plan 05 swapped placeholder green-W / purple-D thumbnails for 96x64 nearest-neighbor downscales of world_background.png and dungeon_1_background.png (ImageMagick `-filter Point -resize 96x64^ -gravity center -extent 96x64`); both PNGs verified `PNG 96x64` via `magick identify` (1244 B and 928 B respectively). Zero code changes — existing ASSET_KEYS.MAP_THUMB_* wiring from Phase 9.1-01 picked them up. Task 2 human-verify auto-approved by user. Folded todos moved to `.planning/todos/done/`. Next phase: Phase 10 (Match End & Results Screen).
-Resume file: (none — Phase 9.2 complete; next is Phase 10 scoping)
+Last session: 2026-05-21T20:40:00.000Z
+Stopped at: Phase 09.3 plan 1 of 4 complete. Three independent multiplayer bug fixes landed: (1) `#onRemoteSpellCast` strict-drop guard + self-filter — removed straight-right fallback (`payload.targetX ?? payload.x + 1`) that was producing phantom right-flying fireballs from any nullish-target broadcast; (2) `#remoteSpellGroup × #earthWallGroup` overlap added mirroring the local-spell handler verbatim (closes D-21 — earth wall now stops remote fireballs symmetrically with FireBolt splash damage on adjacent pillars within `EARTH_WALL_FIREBOLT_SPLASH_RADIUS`); (3) `StateMachine.update()` queue redispatch fixed with spread operator (E10) — queued state transitions now receive original args instead of a wrapping array, eliminating silent `canCast(NaN)` no-ops. Zero new TS errors in src/. Manual 2-client repro deferred to next playtest. Next plan: 09.3-02 (damage net protocol + server validator).
+Resume file: .planning/phases/09.3-cross-player-combat-input-polish/09.3-02-PLAN.md
 
 ## GSD Workflow Config
 
