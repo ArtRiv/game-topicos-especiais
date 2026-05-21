@@ -7,11 +7,11 @@ stopped_at: Phase 09.1 complete — all 4 gap-closure plans landed (thumbnails, 
 last_updated: "2026-05-21T00:00:00.000Z"
 last_activity: 2026-05-21 -- Phase 09.1 plan 04 complete (#crispText helper for pixel-art text, commit 0769f03)
 progress:
-  total_phases: 9
-  completed_phases: 3
-  total_plans: 15
+  total_phases: 8
+  completed_phases: 4
+  total_plans: 11
   completed_plans: 11
-  percent: 73
+  percent: 50
 ---
 
 # Project State

@@ -16,26 +16,24 @@ Turn the working PvP foundation into a tournament-grade experience for the colle
 - [x] **Phase 7: LOADING State + Match FSM Foundation** — Server-side match state machine with LOADING transition; clients see a loading screen with match player list + map preview before everyone enters together (completed 2026-05-16)
 - [x] **Phase 8: COUNTDOWN State** — Players locked at spawn during a 3–4s zoom-in cinematic with 3-2-1-FIGHT! overlay; combat unlocks simultaneously (completed 2026-05-16)
 - [ ] **Phase 9: Lobby Format & Map Configuration** — Host selects 1v1→10v10 and a map; lobby capacity adjusts; single extensible `GameRoom.config` object broadcast on every change
-- [ ] **Phase 10: Ready-Up & AFK Detection** — Per-player ready toggle gates host's Start; idle players flagged AFK with one-click host kick
-- [ ] **Phase 11: Match End & Results Screen** — Server transitions to ENDED on win condition; full-screen results show winner/kills/damage/MVP; rematch flow remains intact
-- [ ] **Phase 12: Reconnect Grace Window** — 15-second slot hold on disconnect; reconnects within window restore active play
-- [ ] **Phase 13: In-Match Feedback HUD** — Kill feed, floating damage numbers, name tags + HP bars overhead, match timer, ping indicator
-- [ ] **Phase 14: Spectator Mode** — Eliminated players watch the remainder of the match (free cam or follow surviving player)
+- [ ] **Phase 10: Match End & Results Screen** — Server transitions to ENDED on win condition; full-screen results show winner/kills/damage/MVP; rematch flow remains intact
+- [ ] **Phase 11: Reconnect Grace Window** — 15-second slot hold on disconnect; reconnects within window restore active play
+- [ ] **Phase 12: In-Match Feedback HUD** — Kill feed, floating damage numbers, name tags + HP bars overhead, match timer, ping indicator
+- [ ] **Phase 13: Spectator Mode** — Eliminated players watch the remainder of the match (free cam or follow surviving player)
 
 ## Overview
 
-**8 phases** | **32 requirements** | All v1.2 requirements covered ✓
+**7 phases** | **28 requirements** | All v1.2 requirements covered ✓
 
 | # | Phase | Goal | Requirements | Success Criteria |
 |---|-------|------|--------------|------------------|
 | 7 | LOADING State + Match FSM | 2/2 | Complete   | 2026-05-16 |
 | 8 | COUNTDOWN State | 2/2 | Complete   | 2026-05-16 |
 | 9 | Lobby Format & Map Config | Host configures match format/map via single extensible config broadcast to all | LBC-01..07 (7) | 4 |
-| 10 | Ready-Up & AFK Detection | Lobby gates start on all-ready + min count; AFK detection + kick | LBC-08..11 (4) | 3 |
-| 11 | Match End & Results Screen | Win condition fires ENDED state; full-screen results breakdown; rematch intact | MER-01, MER-02, MER-07 (3) | 3 |
-| 12 | Reconnect Grace Window | 15s slot hold on disconnect; reconnect restores state | MER-05, MER-06 (2) | 2 |
-| 13 | In-Match Feedback HUD | Kill feed, damage numbers, name tags+HP, timer, ping | FBK-01..05 (5) | 4 |
-| 14 | Spectator Mode | Eliminated players watch rest of match instead of black screen | MER-03, MER-04 (2) | 2 |
+| 10 | Match End & Results Screen | Win condition fires ENDED state; full-screen results breakdown; rematch intact | MER-01, MER-02, MER-07 (3) | 3 |
+| 11 | Reconnect Grace Window | 15s slot hold on disconnect; reconnect restores state | MER-05, MER-06 (2) | 2 |
+| 12 | In-Match Feedback HUD | Kill feed, damage numbers, name tags+HP, timer, ping | FBK-01..05 (5) | 4 |
+| 13 | Spectator Mode | Eliminated players watch rest of match instead of black screen | MER-03, MER-04 (2) | 2 |
 
 ---
 
@@ -114,21 +112,7 @@ Plans:
 
 ---
 
-### Phase 10: Ready-Up & AFK Detection
-
-**Goal**: The lobby prevents accidental starts and surfaces idle players to the host.
-**Depends on**: Phase 9 (config object exists; min-count comes from format)
-**Requirements**: LBC-08, LBC-09, LBC-10, LBC-11
-**Success Criteria** (what must be TRUE):
-  1. Each player has a visible "Ready" toggle, and the host's Start button is disabled until every player is ready AND the format-required minimum is met
-  2. A player who has been idle in the lobby past the configured timeout is visibly flagged as AFK on every client
-  3. The host has a one-click action to kick any AFK-flagged player from the lobby
-**Plans**: TBD
-**UI hint**: yes
-
----
-
-### Phase 11: Match End & Results Screen
+### Phase 10: Match End & Results Screen
 
 **Goal**: When the match ends, every player sees the same full-screen results breakdown (winner, per-player kills, per-player damage, MVP), and the existing rematch flow still returns everyone to the lobby cleanly.
 **Depends on**: Phase 8 (ACTIVE state is reachable; needed for ENDED transition)
@@ -142,10 +126,10 @@ Plans:
 
 ---
 
-### Phase 12: Reconnect Grace Window
+### Phase 11: Reconnect Grace Window
 
 **Goal**: Brief network blips don't eliminate players from a live match.
-**Depends on**: Phase 11 (need ENDED/elimination semantics in place to distinguish "graced" from "truly out")
+**Depends on**: Phase 10 (need ENDED/elimination semantics in place to distinguish "graced" from "truly out")
 **Requirements**: MER-05, MER-06
 **Success Criteria** (what must be TRUE):
   1. When a player disconnects mid-match, their slot is held for 15 seconds before they are treated as eliminated
@@ -154,10 +138,10 @@ Plans:
 
 ---
 
-### Phase 13: In-Match Feedback HUD
+### Phase 12: In-Match Feedback HUD
 
 **Goal**: Combat is readable and tournament-ready — the crowd can follow eliminations, players feel hits, and team modes are playable because everyone can see who's who.
-**Depends on**: Phase 11 (results screen needs accurate kills/damage data; this phase produces the same telemetry the results screen consumes)
+**Depends on**: Phase 10 (results screen needs accurate kills/damage data; this phase produces the same telemetry the results screen consumes)
 **Requirements**: FBK-01, FBK-02, FBK-03, FBK-04, FBK-05
 **Success Criteria** (what must be TRUE):
   1. A scrolling kill feed in a screen corner displays `X eliminated Y` entries in real time during ACTIVE
@@ -169,10 +153,10 @@ Plans:
 
 ---
 
-### Phase 14: Spectator Mode
+### Phase 13: Spectator Mode
 
 **Goal**: Eliminated players stay engaged with the match instead of staring at a black screen.
-**Depends on**: Phase 13 (spectator camera needs name tags + HP bars to be useful when following someone)
+**Depends on**: Phase 12 (spectator camera needs name tags + HP bars to be useful when following someone)
 **Requirements**: MER-03, MER-04
 **Success Criteria** (what must be TRUE):
   1. When a player is eliminated, their view transitions to a spectator camera (free cam or following a surviving player) — never a black screen
@@ -189,11 +173,10 @@ Plans:
 | 7. LOADING State + Match FSM | 0/? | Not started | — |
 | 8. COUNTDOWN State | 0/2 | Not started | — |
 | 9. Lobby Format & Map Config | 3/3 | Plans complete (pending verify) | — |
-| 10. Ready-Up & AFK Detection | 0/? | Not started | — |
-| 11. Match End & Results Screen | 0/? | Not started | — |
-| 12. Reconnect Grace Window | 0/? | Not started | — |
-| 13. In-Match Feedback HUD | 0/? | Not started | — |
-| 14. Spectator Mode | 0/? | Not started | — |
+| 10. Match End & Results Screen | 0/? | Not started | — |
+| 11. Reconnect Grace Window | 0/? | Not started | — |
+| 12. In-Match Feedback HUD | 0/? | Not started | — |
+| 13. Spectator Mode | 0/? | Not started | — |
 
 ---
 
@@ -217,32 +200,28 @@ Plans:
 | LBC-05 | 9 | Pending |
 | LBC-06 | 9 | Pending |
 | LBC-07 | 9 | Pending |
-| LBC-08 | 10 | Pending |
-| LBC-09 | 10 | Pending |
-| LBC-10 | 10 | Pending |
-| LBC-11 | 10 | Pending |
-| MER-01 | 11 | Pending |
-| MER-02 | 11 | Pending |
-| MER-07 | 11 | Pending |
-| MER-05 | 12 | Pending |
-| MER-06 | 12 | Pending |
-| FBK-01 | 13 | Pending |
-| FBK-02 | 13 | Pending |
-| FBK-03 | 13 | Pending |
-| FBK-04 | 13 | Pending |
-| FBK-05 | 13 | Pending |
-| MER-03 | 14 | Pending |
-| MER-04 | 14 | Pending |
+| MER-01 | 10 | Pending |
+| MER-02 | 10 | Pending |
+| MER-07 | 10 | Pending |
+| MER-05 | 11 | Pending |
+| MER-06 | 11 | Pending |
+| FBK-01 | 12 | Pending |
+| FBK-02 | 12 | Pending |
+| FBK-03 | 12 | Pending |
+| FBK-04 | 12 | Pending |
+| FBK-05 | 12 | Pending |
+| MER-03 | 13 | Pending |
+| MER-04 | 13 | Pending |
 
-**32/32 v1.2 requirements mapped ✓ — no orphans, no duplicates**
+**28/28 v1.2 requirements mapped ✓ — no orphans, no duplicates** (LBC-08..11 dropped along with the Ready-Up & AFK phase)
 
 ---
 
 ## Phase Ordering Rationale
 
-Phases are ordered to honor the event-deadline constraint: match-critical features (loading screen, countdown, results) ship before quality-of-life (damage numbers, spectator). If the timeline tightens, Phases 13 and 14 are the safest to defer — combat is still playable without them.
+Phases are ordered to honor the event-deadline constraint: match-critical features (loading screen, countdown, results) ship before quality-of-life (damage numbers, spectator). If the timeline tightens, Phases 12 and 13 are the safest to defer — combat is still playable without them.
 
-- **7 → 8 → 11**: Core lifecycle (LOADING → COUNTDOWN → ENDED). The match cannot run end-to-end without these.
-- **9 → 10**: Tournament hosting must-haves (format/map config, ready-up). Can run after lifecycle but before the event.
-- **12**: Resilience — already partially designed in Phase 6, low risk. Slots in after the FSM stabilizes.
-- **13 → 14**: Polish. The kill feed and damage numbers are the highest-energy crowd features; spectator is heaviest scope.
+- **7 → 8 → 10**: Core lifecycle (LOADING → COUNTDOWN → ENDED). The match cannot run end-to-end without these.
+- **9**: Tournament hosting must-have (format/map config). Can run after lifecycle but before the event.
+- **11**: Resilience — already partially designed in Phase 6, low risk. Slots in after the FSM stabilizes.
+- **12 → 13**: Polish. The kill feed and damage numbers are the highest-energy crowd features; spectator is heaviest scope.
