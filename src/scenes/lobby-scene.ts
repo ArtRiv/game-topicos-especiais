@@ -11,8 +11,12 @@ import { ASSET_KEYS } from '../common/assets.js';
 // so glyphs draw as nearest-neighbor sprites instead of canvas2d AA text.
 const BMFONT_KEY = 'press_start_2p';
 type BMStyle = { size: number; tint: number };
-const FONT: BMStyle = { size: 10, tint: 0xffffff };
-const FONT_TITLE: BMStyle = { size: 14, tint: 0xffdd55 };
+// Atlas is rendered at native 8px — render at 8 (1:1) or 16 (2:1) for
+// crisp pixel-grid output. Non-multiples of 8 cause fractional glyph
+// scaling and blur, so FONT (was 10) snaps to 8 and FONT_TITLE (was 14)
+// snaps to 16.
+const FONT: BMStyle = { size: 8, tint: 0xffffff };
+const FONT_TITLE: BMStyle = { size: 16, tint: 0xffdd55 };
 const FONT_SMALL: BMStyle = { size: 8, tint: 0xcccccc };
 const FONT_SMALL_WHITE: BMStyle = { size: 8, tint: 0xffffff };
 const BTN_COLOR = 0x3355aa;
@@ -51,8 +55,8 @@ export class LobbyScene extends Phaser.Scene {
     );
     this.load.bitmapFont(
       BMFONT_KEY,
-      'assets/fonts/Press_Start_2P/Press_Start-2.png',
-      'assets/fonts/Press_Start_2P/Press_Start-2.fnt',
+      'assets/fonts/Press_Start_2P/Press_Start_8-2.png',
+      'assets/fonts/Press_Start_2P/Press_Start_8-2.fnt',
     );
   }
 
