@@ -2,3 +2,4 @@ node_modules
 .DS_Store
 dist
 project-task-tracker.todo
+public/assets/fonts/Press_Start_2P/*.sbf
