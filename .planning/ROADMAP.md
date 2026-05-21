@@ -125,7 +125,7 @@ Plans:
   3. The map preview thumbnails for Open Field and Dungeon are replaced with final pixel-art assets (96×64 PNG, no AA, no baked border/text) — placeholder "W" / "D" colored rectangles no longer appear
 **Plans**: 5 plans
 Plans:
-- [ ] 09.2-01-PLAN.md — UI-branch asset & code port + boot-flow change (BitmapText conversion of Splash/MainMenu/stub scenes)
+- [x] 09.2-01-PLAN.md — UI-branch asset & code port + boot-flow change (BitmapText conversion of Splash/MainMenu/stub scenes)
 - [ ] 09.2-02-PLAN.md — Splash + MainMenu cinematic verification & human-verify checkpoint
 - [ ] 09.2-03-PLAN.md — Lobby Start→LOADING fade-out + menu-music duck + setMenuVolume(0.03) on Lobby entry
 - [ ] 09.2-04-PLAN.md — LoadingScene cinematic (typewriter + map preview + tip card) + gameplay-music drop sync
@@ -196,7 +196,7 @@ Plans:
 | 7. LOADING State + Match FSM | 0/? | Not started | — |
 | 8. COUNTDOWN State | 0/2 | Not started | — |
 | 9. Lobby Format & Map Config | 3/3 | Plans complete (pending verify) | — |
-| 9.2. UI Motion & Lobby Polish | 0/? | Not started (inserted) | — |
+| 9.2. UI Motion & Lobby Polish | 1/5 | In progress (Plan 01 complete 2026-05-21) | — |
 | 10. Match End & Results Screen | 0/? | Not started | — |
 | 11. Reconnect Grace Window | 0/? | Not started | — |
 | 12. In-Match Feedback HUD | 0/? | Not started | — |
