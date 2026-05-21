@@ -41,7 +41,7 @@ export class StateMachine {
   public update(): void {
     const queuedState = this.#changingStateQueue.shift();
     if (queuedState !== undefined) {
-      this.setState(queuedState.state, queuedState.args);
+      this.setState(queuedState.state, ...queuedState.args);
     }
 
     if (this.#currentState && this.#currentState.onUpdate) {
