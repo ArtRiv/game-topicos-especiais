@@ -1,0 +1,10 @@
+# Loading tips — one per line, lines starting with # are comments.
+# Add tips freely; no code change required.
+Mages don't blink. They strategize.
+Tip: spells deal more damage when aimed.
+Combo: WindBolt + ThunderStrike for the airborne finish.
+Earth Wall blocks projectiles but not your friends' egos.
+Ice Shard slows; Thunder Strike stuns. Use both.
+FireBreath is a cone — flanking beats running.
+Holding down a spell key charges some elements.
+Host migration is automatic. Don't panic.
