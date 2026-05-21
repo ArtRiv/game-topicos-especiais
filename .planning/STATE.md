@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: milestone
 status: executing
-stopped_at: Phase 09.1 complete — all 4 gap-closure plans landed (thumbnails, layout, host transition, text crispness)
+stopped_at: Phase 09.2 UI-SPEC approved (6/6 dimensions pass) — ready for /gsd-plan-phase 9.2
 last_updated: "2026-05-21T00:00:00.000Z"
 last_activity: 2026-05-21 -- Phase 09.1 plan 04 complete (#crispText helper for pixel-art text, commit 0769f03)
 progress:
-  total_phases: 8
+  total_phases: 9
   completed_phases: 4
   total_plans: 11
   completed_plans: 11
-  percent: 50
+  percent: 44
 ---
 
 # Project State
@@ -54,6 +54,11 @@ Last activity: 2026-05-21 -- Phase 09.1 plan 04 complete (#crispText helper, com
 *Updated after each plan completion*
 
 ## Accumulated Context
+
+### Roadmap Evolution
+
+- Phase 10 (Ready-Up & AFK Detection) removed 2026-05-21 — dropped to focus available time on higher-priority UI polish; LBC-08..LBC-11 dropped with it. Subsequent phases renumbered 11→10, 12→11, 13→12, 14→13.
+- Phase 9.2 (UI Motion & Lobby Polish) inserted 2026-05-21 after Phase 9.1 — promotes the menu/lobby-motion-transitions and map-thumbnail-placeholder todos into a real phase before Match End.
 
 ### Decisions
 
