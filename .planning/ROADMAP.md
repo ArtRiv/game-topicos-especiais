@@ -93,6 +93,27 @@ Plans:
 
 ---
 
+### Phase 9.1: Lobby Config Polish
+
+**Goal**: Close the 4 UAT gaps from Phase 9 (thumbnail load, layout overlap, format-label alignment, host transition stall, blurry text) without adding new feature surface.
+**Depends on**: Phase 9 (all 3 plans complete; verifies via the 09-UAT.md gap entries)
+**Requirements**: LBC-04 (thumbnail visibility — re-satisfies the visual half of LBC-04)
+**Type**: gap_closure (decimal phase — polish only)
+**Success Criteria** (what must be TRUE):
+  1. Map preview cards render the actual thumbnail PNGs (no blue fallback rectangle) — UAT Test 4/8 passes
+  2. Host player list does not overlap the map control area; Format label and the format <select> are visually aligned — UAT Test 1b + cosmetic alignment gap pass
+  3. Host’s lobby->loading->game transition is smooth (no black-screen flash) — UAT Test 9 passes
+  4. Lobby text renders crisply on standard and HiDPI displays — UAT Test 1a passes
+**Plans**: 4 plans
+Plans:
+- [ ] 9.1-01-PLAN.md — Explicit MAP_THUMB_* loads in PreloadScene (UAT Test 4/8)
+- [ ] 9.1-02-PLAN.md — Lobby layout polish: player-list Y push + Format label/select alignment (UAT Test 1b + cosmetic)
+- [ ] 9.1-03-PLAN.md — Eager DOM/configBlock cleanup in #onLobbyStarted before scene.start (UAT Test 9)
+- [ ] 9.1-04-PLAN.md — #crispText helper applying setResolution to all LobbyScene Text objects (UAT Test 1a)
+**UI hint**: yes
+
+---
+
 ### Phase 10: Ready-Up & AFK Detection
 
 **Goal**: The lobby prevents accidental starts and surfaces idle players to the host.
