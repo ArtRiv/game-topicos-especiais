@@ -68,6 +68,12 @@ export class LobbyManager {
     return this.#lobbies.get(lobbyId);
   }
 
+  /** Direct lobby lookup by lobbyId. Phase 9.3: used at COUNTDOWN→ACTIVE to iterate players
+   *  and register each one with the damage pipeline (GameRoom.registerPlayer). */
+  getLobbyById(lobbyId: string): Lobby | undefined {
+    return this.#lobbies.get(lobbyId);
+  }
+
   setMode(socketId: string, mode: string): Lobby | null {
     const lobby = this.getLobbyBySocketId(socketId);
     if (!lobby) return null;

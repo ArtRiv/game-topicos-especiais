@@ -24,6 +24,13 @@ import type {
   MatchCountdownTickPayload,
   MatchLoadedPayload,
   PlayerInfo,
+  SpellHitPayload,
+  SpellHitEnvironmentPayload,
+  PosMirrorPayload,
+  DamageConfirmedPayload,
+  EliminationPayload,
+  RespawnPayload,
+  SpellDestroyedPayload,
 } from './types.js';
 
 // Messages exchanged over WebRTC data channels
@@ -143,6 +150,23 @@ export class NetworkManager {
     this.#socket.emit('match:loaded', { lobbyId } satisfies MatchLoadedPayload);
   }
 
+  // --- Phase 9.3: host-authoritative damage senders (socket.io, NOT WebRTC) ---
+
+  /** Mirror local player position to the server at 20 Hz so the validator has data for plausibility checks. */
+  sendPosMirror(payload: PosMirrorPayload): void {
+    this.#socket.emit('game:pos-mirror', payload);
+  }
+
+  /** Claim that a locally-cast spell hit a remote player. Host validates → may broadcast damage:confirmed. */
+  sendSpellHit(payload: SpellHitPayload): void {
+    this.#socket.emit('spell:hit', payload);
+  }
+
+  /** Claim that a locally-cast spell hit a wall/environment. Host broadcasts spell:destroyed to all peers (D-04). */
+  sendSpellHitEnvironment(payload: SpellHitEnvironmentPayload): void {
+    this.#socket.emit('spell:hit-environment', payload);
+  }
+
   // --- Game methods (WebRTC data channels — low latency, P2P) ---
 
   /** Sends position snapshot to all peers via unreliable (UDP-like) data channel — skips if unchanged */
@@ -200,7 +224,12 @@ export class NetworkManager {
     const intervalMs = Math.round(1000 / NETWORK_TICK_RATE_HZ);
     this.#tickInterval = setInterval(() => {
       const payload = snapshotGetter();
-      if (payload) this.sendPlayerUpdate(payload);
+      if (payload) {
+        this.sendPlayerUpdate(payload);
+        // Phase 9.3: server-bound position mirror for plausibility cache (RESEARCH.md §2).
+        // Rides socket.io (reliable, server-authoritative) — independent of the P2P WebRTC pos broadcast.
+        this.sendPosMirror({ x: payload.x, y: payload.y });
+      }
     }, intervalMs);
   }
 
@@ -307,6 +336,22 @@ export class NetworkManager {
     // Host migration — server reassigned host after a disconnect
     this.#socket.on('host:changed', ({ newHostPlayerId }: { newHostPlayerId: string }) => {
       EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_HOST_CHANGED, { newHostPlayerId });
+    });
+
+    // --- Phase 9.3: host-authoritative damage inbound broadcasts (D-01..D-04) ---
+    // These ride socket.io (NOT WebRTC) because the host is the game-server. Plan 03 wires the
+    // listeners on GameScene; this layer just bridges them onto EVENT_BUS.
+    this.#socket.on('damage:confirmed', (payload: DamageConfirmedPayload) => {
+      EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_DAMAGE_CONFIRMED, payload);
+    });
+    this.#socket.on('elimination', (payload: EliminationPayload) => {
+      EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_ELIMINATION, payload);
+    });
+    this.#socket.on('respawn', (payload: RespawnPayload) => {
+      EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_RESPAWN, payload);
+    });
+    this.#socket.on('spell:destroyed', (payload: SpellDestroyedPayload) => {
+      EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_SPELL_DESTROYED, payload);
     });
   }
 

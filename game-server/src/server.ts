@@ -3,7 +3,21 @@ import express from 'express';
 import { Server } from 'socket.io';
 import { LobbyManager } from './lobby-manager.js';
 import { GameRoom } from './game-room.js';
-import type { RoomTransitionPayload, MatchState, MatchStateChangedPayload, MatchLoadedPayload, MatchCountdownTickPayload, LobbyConfig } from './types.js';
+import type {
+  RoomTransitionPayload,
+  MatchState,
+  MatchStateChangedPayload,
+  MatchLoadedPayload,
+  MatchCountdownTickPayload,
+  LobbyConfig,
+  SpellHitPayload,
+  DamageConfirmedPayload,
+  EliminationPayload,
+  RespawnPayload,
+  SpellHitEnvironmentPayload,
+  SpellDestroyedPayload,
+  PosMirrorPayload,
+} from './types.js';
 import { COUNTDOWN_DURATION_MS, FIGHT_HOLD_MS } from './types.js';
 import { decode as msgpackDecode } from '@msgpack/msgpack';
 
@@ -70,6 +84,18 @@ function startCountdown(lobbyId: string, room: GameRoom): void {
       room.transitionTo('ACTIVE');
     } catch {
       return;
+    }
+    // Phase 9.3: register every player with the damage pipeline at match start.
+    // Spawn allocation: deterministic per-index offset. TODO: align with client-side
+    // spawn allocation when lobby exposes per-slot spawn coordinates.
+    const lobby = lobbyManager.getLobbyById(lobbyId);
+    if (lobby) {
+      const maxHp = 100; // mirror CONFIG.PLAYER_START_MAX_HEALTH (server-authoritative copy)
+      lobby.players.forEach((info, idx) => {
+        const spawnX = 100 + idx * 64;
+        const spawnY = 100;
+        room.registerPlayer(info, spawnX, spawnY, maxHp);
+      });
     }
     broadcastMatchState(lobbyId, room);
   }, COUNTDOWN_DURATION_MS + FIGHT_HOLD_MS);
@@ -224,6 +250,75 @@ io.on('connection', (socket) => {
 
     socket.to(`lobby:${lobbyId}`).emit('game:player-update-mp', data, socket.id);
     if (typeof ack === 'function') ack(Date.now());
+  });
+
+  // --- Phase 9.3: host-authoritative damage pipeline (D-01..D-04) ---
+
+  /** 20 Hz client → server position mirror. Feeds GameRoom plausibility cache (RESEARCH.md §2). */
+  socket.on('game:pos-mirror', ({ x, y }: PosMirrorPayload) => {
+    const lobbyId = findLobbyIdBySocket(socket.id);
+    if (!lobbyId) return;
+    const room = gameRooms.get(lobbyId);
+    if (!room) return;
+    const playerId = room.getPlayerIdBySocketId(socket.id);
+    if (!playerId) return;
+    room.recordPosition(playerId, x, y);
+  });
+
+  /** Client claims a hit on a remote player (D-01). Server dedupes by spellId, validates
+   *  via plausibility cache + FF check, applies capped damage, broadcasts damage:confirmed.
+   *  On HP-zero, broadcasts EliminationPayload and schedules RespawnPayload after RESPAWN_DELAY_MS (D-08). */
+  socket.on('spell:hit', (claim: SpellHitPayload) => {
+    const lobbyId = findLobbyIdBySocket(socket.id);
+    if (!lobbyId) return;
+    const room = gameRooms.get(lobbyId);
+    if (!room || room.state !== 'ACTIVE') return;
+
+    // Dedupe: N clients can each emit the same overlap.
+    if (!room.tryConsumeHit(claim.spellId)) return;
+
+    // Validate (range + freshness + FF). Bad/late claims are silently dropped per D-02.
+    if (!room.validateHit(
+      { targetId: claim.targetId, hitX: claim.hitX, hitY: claim.hitY, casterId: claim.casterId },
+      Date.now(),
+    )) {
+      return;
+    }
+
+    const result = room.applyDamage(claim.targetId, claim.damage);
+    const confirmed: DamageConfirmedPayload = {
+      spellId: claim.spellId,
+      targetId: claim.targetId,
+      amount: result.cappedAmount,
+      spellType: claim.spellType,
+      hitX: claim.hitX,
+      hitY: claim.hitY,
+    };
+    io.to(`lobby:${lobbyId}`).emit('damage:confirmed', confirmed);
+
+    if (result.eliminated) {
+      const elim: EliminationPayload = { playerId: claim.targetId, eliminatedAt: Date.now() };
+      io.to(`lobby:${lobbyId}`).emit('elimination', elim);
+
+      room.scheduleRespawn(claim.targetId, () => {
+        const spawn = room.getSpawnPoint(claim.targetId);
+        if (!spawn) return;
+        const payload: RespawnPayload = { playerId: claim.targetId, x: spawn.x, y: spawn.y };
+        io.to(`lobby:${lobbyId}`).emit('respawn', payload);
+      });
+    }
+  });
+
+  /** Client claims a spell hit a wall / environment object (D-04 wall desync fix).
+   *  Server dedupes by spellId then broadcasts SpellDestroyed so every client removes the projectile. */
+  socket.on('spell:hit-environment', (claim: SpellHitEnvironmentPayload) => {
+    const lobbyId = findLobbyIdBySocket(socket.id);
+    if (!lobbyId) return;
+    const room = gameRooms.get(lobbyId);
+    if (!room || room.state !== 'ACTIVE') return;
+    if (!room.tryConsumeHit(claim.spellId)) return;
+    const out: SpellDestroyedPayload = { spellId: claim.spellId, hitX: claim.hitX, hitY: claim.hitY };
+    io.to(`lobby:${lobbyId}`).emit('spell:destroyed', out);
   });
 
   socket.on('disconnect', () => {
