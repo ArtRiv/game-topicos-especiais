@@ -52,19 +52,19 @@ export class LobbyScene extends Phaser.Scene {
     const cx = this.cameras.main.centerX;
     const cy = this.cameras.main.centerY;
 
-    const title = this.add.text(cx, cy - 120, 'MAGES ONLINE', FONT_TITLE).setOrigin(0.5);
+    const title = this.#crispText(cx, cy - 120, 'MAGES ONLINE', FONT_TITLE).setOrigin(0.5);
 
-    const ipLabel = this.add.text(cx - 150, cy - 50, 'SERVER IP:', FONT_SMALL).setOrigin(0, 0.5);
+    const ipLabel = this.#crispText(cx - 150, cy - 50, 'SERVER IP:', FONT_SMALL).setOrigin(0, 0.5);
     this.#ipInput = this.add.dom(cx + 30, cy - 50).createFromHTML(
       '<input type="text" value="localhost" style="width:160px;background:#111;color:#fff;border:1px solid #555;padding:4px;font-size:10px;font-family:monospace">'
     );
 
-    const nickLabel = this.add.text(cx - 150, cy - 10, 'NICKNAME:', FONT_SMALL).setOrigin(0, 0.5);
+    const nickLabel = this.#crispText(cx - 150, cy - 10, 'NICKNAME:', FONT_SMALL).setOrigin(0, 0.5);
     this.#nickInput = this.add.dom(cx + 30, cy - 10).createFromHTML(
       '<input type="text" value="Player" maxlength="12" style="width:160px;background:#111;color:#fff;border:1px solid #555;padding:4px;font-size:10px;font-family:monospace">'
     );
 
-    this.#statusText = this.add.text(cx, cy + 40, '', FONT_SMALL).setOrigin(0.5);
+    this.#statusText = this.#crispText(cx, cy + 40, '', FONT_SMALL).setOrigin(0.5);
 
     const btn = this.#createButton(cx, cy + 70, 'CONNECT', () => this.#onConnect());
 
@@ -114,14 +114,14 @@ export class LobbyScene extends Phaser.Scene {
     const cx = this.cameras.main.centerX;
     const cy = this.cameras.main.centerY;
 
-    const title = this.add.text(cx, 40, 'LOBBIES', FONT_TITLE).setOrigin(0.5);
-    const hint = this.add.text(cx, 65, 'Click a lobby to join it', FONT_SMALL).setOrigin(0.5);
+    const title = this.#crispText(cx, 40, 'LOBBIES', FONT_TITLE).setOrigin(0.5);
+    const hint = this.#crispText(cx, 65, 'Click a lobby to join it', FONT_SMALL).setOrigin(0.5);
 
     const createBtn = this.#createButton(cx, 100, 'CREATE LOBBY', () => {
       NetworkManager.getInstance().sendLobbyCreate(this.#playerName);
     });
 
-    const listLabel = this.add.text(cx - 200, 130, 'Available lobbies:', FONT_SMALL).setOrigin(0, 0);
+    const listLabel = this.#crispText(cx - 200, 130, 'Available lobbies:', FONT_SMALL).setOrigin(0, 0);
     this.#lobbyListContainer = [];
 
     this.#viewObjects = [title, hint, createBtn, listLabel];
@@ -152,7 +152,7 @@ export class LobbyScene extends Phaser.Scene {
     const baseY = 155;
 
     if (this.#lobbies.length === 0) {
-      const empty = this.add.text(cx, baseY + 16, 'No open lobbies', FONT_SMALL).setOrigin(0.5);
+      const empty = this.#crispText(cx, baseY + 16, 'No open lobbies', FONT_SMALL).setOrigin(0.5);
       this.#lobbyListContainer.push(empty);
       return;
     }
@@ -163,7 +163,7 @@ export class LobbyScene extends Phaser.Scene {
       const c = lobby.config;
       const md = MAP_POOL.find(m => m.id === c.mapId)?.displayName ?? c.mapId;
       const rowText = `${lobby.players[0]?.name ?? '?'}'s lobby — ${c.format} • ${md} • ${lobby.players.length}/${c.maxPlayers}`;
-      const label = this.add.text(cx - 185, rowY, rowText, FONT_SMALL_WHITE);
+      const label = this.#crispText(cx - 185, rowY, rowText, FONT_SMALL_WHITE);
 
       bg.on('pointerover', () => bg.setFillStyle(BTN_HOVER));
       bg.on('pointerout', () => bg.setFillStyle(0x223366));
@@ -194,15 +194,15 @@ export class LobbyScene extends Phaser.Scene {
     const cx = this.cameras.main.centerX;
     const cy = this.cameras.main.centerY;
 
-    const title = this.add.text(cx, 40, 'WAITING ROOM', FONT_TITLE).setOrigin(0.5);
+    const title = this.#crispText(cx, 40, 'WAITING ROOM', FONT_TITLE).setOrigin(0.5);
     const hostName = lobby.players.find((p) => p.id === lobby.hostPlayerId)?.name ?? '?';
-    const subtitle = this.add.text(cx, 70, `Host: ${hostName}`, FONT_SMALL).setOrigin(0.5);
+    const subtitle = this.#crispText(cx, 70, `Host: ${hostName}`, FONT_SMALL).setOrigin(0.5);
 
     this.#waitingRoomObjects = [title, subtitle];
     this.#viewObjects = [...this.#waitingRoomObjects];
 
     // Re-add #statusText for error/info feedback (lobby:error display)
-    this.#statusText = this.add.text(cx, cy + 80, '', FONT_SMALL).setOrigin(0.5);
+    this.#statusText = this.#crispText(cx, cy + 80, '', FONT_SMALL).setOrigin(0.5);
     this.#viewObjects.push(this.#statusText);
 
     this.#renderConfigBlock(lobby);
@@ -235,7 +235,7 @@ export class LobbyScene extends Phaser.Scene {
     const mapDisplay = MAP_POOL.find((m) => m.id === cfg.mapId)?.displayName ?? cfg.mapId;
 
     // Capacity header (visible to everyone)
-    this.#capacityHeader = this.add.text(
+    this.#capacityHeader = this.#crispText(
       cx,
       96,
       `Players ${lobby.players.length}/${cfg.maxPlayers} — ${cfg.format} on ${mapDisplay}`,
@@ -245,7 +245,7 @@ export class LobbyScene extends Phaser.Scene {
 
     if (this.#isHost) {
       // Host: Format <select> at y=116
-      const formatLabel = this.add.text(cx - 150, 127, 'Format:', FONT_SMALL_WHITE).setOrigin(0, 0.5);
+      const formatLabel = this.#crispText(cx - 150, 127, 'Format:', FONT_SMALL_WHITE).setOrigin(0, 0.5);
       const formats: LobbyFormat[] = ['1v1', '2v2', '3v3', '4v4', '5v5', '6v6', '7v7', '8v8', '9v9', '10v10'];
       const optionsHtml = formats.map((f) => `<option value="${f}">${f}</option>`).join('');
       const formatDom = this.add.dom(cx + 30, 127).createFromHTML(
@@ -260,7 +260,7 @@ export class LobbyScene extends Phaser.Scene {
       this.#configBlockObjects.push(formatLabel, formatDom);
 
       // Host: Map preview cards at y=180 (label at y=140)
-      const mapLabel = this.add.text(cx - 150, 140, 'Map:', FONT_SMALL_WHITE).setOrigin(0, 0);
+      const mapLabel = this.#crispText(cx - 150, 140, 'Map:', FONT_SMALL_WHITE).setOrigin(0, 0);
       this.#configBlockObjects.push(mapLabel);
       MAP_POOL.forEach((entry, i) => {
         const cardX = cx + (i - (MAP_POOL.length - 1) / 2) * (96 + 8);
@@ -274,7 +274,7 @@ export class LobbyScene extends Phaser.Scene {
         const thumb = this.textures.exists(entry.thumbnailKey)
           ? this.add.image(cardX, cardY, entry.thumbnailKey)
           : this.add.rectangle(cardX, cardY, 96, 64, 0x223366);
-        const cardLabel = this.add.text(cardX, cardY + 40, entry.displayName, FONT_SMALL_WHITE).setOrigin(0.5, 0);
+        const cardLabel = this.#crispText(cardX, cardY + 40, entry.displayName, FONT_SMALL_WHITE).setOrigin(0.5, 0);
         bg.on('pointerover', () => bg.setFillStyle(0x222222));
         bg.on('pointerout', () => bg.setFillStyle(0x111111));
         bg.on('pointerdown', () => {
@@ -284,8 +284,8 @@ export class LobbyScene extends Phaser.Scene {
       });
     } else {
       // Non-host: read-only labels at the same anchors
-      const fmtLabel = this.add.text(cx, 116, `Format: ${cfg.format}`, FONT_SMALL_WHITE).setOrigin(0.5, 0);
-      const mapReadLabel = this.add.text(cx, 140, `Map: ${mapDisplay}`, FONT_SMALL_WHITE).setOrigin(0.5, 0);
+      const fmtLabel = this.#crispText(cx, 116, `Format: ${cfg.format}`, FONT_SMALL_WHITE).setOrigin(0.5, 0);
+      const mapReadLabel = this.#crispText(cx, 140, `Map: ${mapDisplay}`, FONT_SMALL_WHITE).setOrigin(0.5, 0);
       this.#configBlockObjects.push(fmtLabel, mapReadLabel);
     }
   }
@@ -358,9 +358,9 @@ export class LobbyScene extends Phaser.Scene {
       const rowY = baseY + i * 36;
       const tint = TINTS[i % TINTS.length];
       const dot = this.add.rectangle(cx - 150, rowY + 8, 12, 12, tint);
-      const name = this.add.text(cx - 130, rowY, player.name, FONT_SMALL_WHITE);
+      const name = this.#crispText(cx - 130, rowY, player.name, FONT_SMALL_WHITE);
       const role = player.id === this.#currentLobby?.hostPlayerId
-        ? this.add.text(cx + 30, rowY, '(HOST)', FONT_SMALL)
+        ? this.#crispText(cx + 30, rowY, '(HOST)', FONT_SMALL)
         : null;
 
       this.#playerListObjects.push(dot, name);
@@ -396,16 +396,27 @@ export class LobbyScene extends Phaser.Scene {
         // Non-host sees a read-only team badge
         const teamLabel = player.team === 0 ? 'TEAM A' : player.team === 1 ? 'TEAM B' : 'NO TEAM';
         const teamColor = player.team === 0 ? '#44aaff' : player.team === 1 ? '#ff5533' : '#aaaaaa';
-        const badge = this.add.text(cx + 80, rowY, teamLabel, { ...FONT_SMALL, color: teamColor });
+        const badge = this.#crispText(cx + 80, rowY, teamLabel, { ...FONT_SMALL, color: teamColor });
         this.#playerListObjects.push(badge);
       }
     });
   }
 
   // --- Helpers ---
+  // Wraps this.add.text and applies setResolution to keep Phaser Text
+  // glyphs crisp under pixelArt:true (nearest-neighbor) scaling. Default
+  // Phaser text resolution is 1, which under-samples on HiDPI displays
+  // and produces blurry/chunky output. We bump to max(2, devicePixelRatio)
+  // so the rasterized text atlas has enough source pixels for NEAREST
+  // sampling to look sharp on standard and Retina displays alike.
+  #crispText(x: number, y: number, text: string, style: Phaser.Types.GameObjects.Text.TextStyle): Phaser.GameObjects.Text {
+    const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
+    return this.add.text(x, y, text, style).setResolution(Math.max(2, dpr));
+  }
+
   #createButton(x: number, y: number, label: string, onClick: () => void): Phaser.GameObjects.Container {
     const bg = this.add.rectangle(0, 0, label.length * 10 + 24, 28, BTN_COLOR).setInteractive();
-    const text = this.add.text(0, 0, label, FONT_SMALL_WHITE).setOrigin(0.5);
+    const text = this.#crispText(0, 0, label, FONT_SMALL_WHITE).setOrigin(0.5);
     const container = this.add.container(x, y, [bg, text]);
 
     bg.on('pointerover', () => bg.setFillStyle(BTN_HOVER));
