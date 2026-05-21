@@ -6,10 +6,15 @@ import type { Lobby, LobbyConfig, LobbyFormat, MatchConfig, PlayerInfo } from '.
 import { MAP_POOL } from '../networking/types.js';
 import { ASSET_KEYS } from '../common/assets.js';
 
-const FONT = { fontFamily: '"Press Start 2P"', fontSize: '10px', color: '#ffffff' };
-const FONT_TITLE = { fontFamily: '"Press Start 2P"', fontSize: '14px', color: '#ffdd55' };
-const FONT_SMALL = { fontFamily: '"Press Start 2P"', fontSize: '8px', color: '#cccccc' };
-const FONT_SMALL_WHITE = { fontFamily: '"Press Start 2P"', fontSize: '8px', color: '#ffffff' };
+// BitmapText replaces Phaser.GameObjects.Text. Press_Start_2P TTF was
+// pre-rasterized via Snowb into Press_Start-2.png + Press_Start-2.fnt
+// so glyphs draw as nearest-neighbor sprites instead of canvas2d AA text.
+const BMFONT_KEY = 'press_start_2p';
+type BMStyle = { size: number; tint: number };
+const FONT: BMStyle = { size: 10, tint: 0xffffff };
+const FONT_TITLE: BMStyle = { size: 14, tint: 0xffdd55 };
+const FONT_SMALL: BMStyle = { size: 8, tint: 0xcccccc };
+const FONT_SMALL_WHITE: BMStyle = { size: 8, tint: 0xffffff };
 const BTN_COLOR = 0x3355aa;
 const BTN_HOVER = 0x4477cc;
 const BTN_DISABLED = 0x223366;
@@ -22,10 +27,10 @@ export class LobbyScene extends Phaser.Scene {
   #viewObjects: ViewObjects = [];
   #ipInput!: Phaser.GameObjects.DOMElement;
   #nickInput!: Phaser.GameObjects.DOMElement;
-  #statusText!: Phaser.GameObjects.Text;
+  #statusText!: Phaser.GameObjects.BitmapText;
   #configBlockObjects: Phaser.GameObjects.GameObject[] = [];
   #formatSelectDom: Phaser.GameObjects.DOMElement | null = null;
-  #capacityHeader: Phaser.GameObjects.Text | null = null;
+  #capacityHeader: Phaser.GameObjects.BitmapText | null = null;
 
   constructor() {
     super({ key: SCENE_KEYS.LOBBY_SCENE });
@@ -43,6 +48,11 @@ export class LobbyScene extends Phaser.Scene {
     this.load.image(
       ASSET_KEYS.MAP_THUMB_DUNGEON_1,
       'assets/images/levels/dungeon_1/thumbnail.png',
+    );
+    this.load.bitmapFont(
+      BMFONT_KEY,
+      'assets/fonts/Press_Start_2P/Press_Start-2.png',
+      'assets/fonts/Press_Start_2P/Press_Start-2.fnt',
     );
   }
 
@@ -97,7 +107,7 @@ export class LobbyScene extends Phaser.Scene {
 
   #onDisconnected = (): void => {
     if (this.#statusText) {
-      this.#statusText.setText('Disconnected from server').setColor('#ff4444');
+      this.#statusText.setText('Disconnected from server').setTint(0xff4444);
     }
   };
 
@@ -108,7 +118,7 @@ export class LobbyScene extends Phaser.Scene {
     const nick = ((nickEl.querySelector('input') ?? nickEl) as HTMLInputElement).value.trim() || 'Player';
 
     this.#playerName = nick;
-    if (this.#statusText) this.#statusText.setText('Connecting...').setColor('#ffdd55');
+    if (this.#statusText) this.#statusText.setText('Connecting...').setTint(0xffdd55);
 
     const port = 3000;
     const url = ip.includes(':') ? `http://${ip}` : `http://${ip}:${port}`;
@@ -308,9 +318,9 @@ export class LobbyScene extends Phaser.Scene {
 
   #onLobbyError = (data: { message: string }): void => {
     if (!this.#statusText) return;
-    this.#statusText.setText(data.message).setColor('#ff4444');
+    this.#statusText.setText(data.message).setTint(0xff4444);
     this.time.delayedCall(3000, () => {
-      this.#statusText?.setText('').setColor('#ffffff');
+      this.#statusText?.setText('').setTint(0xffffff);
     });
   };
 
@@ -411,20 +421,19 @@ export class LobbyScene extends Phaser.Scene {
       } else {
         // Non-host sees a read-only team badge
         const teamLabel = player.team === 0 ? 'TEAM A' : player.team === 1 ? 'TEAM B' : 'NO TEAM';
-        const teamColor = player.team === 0 ? '#44aaff' : player.team === 1 ? '#ff5533' : '#aaaaaa';
-        const badge = this.#crispText(cx + 80, rowY, teamLabel, { ...FONT_SMALL, color: teamColor });
+        const teamColor = player.team === 0 ? 0x44aaff : player.team === 1 ? 0xff5533 : 0xaaaaaa;
+        const badge = this.#crispText(cx + 80, rowY, teamLabel, { ...FONT_SMALL, tint: teamColor });
         this.#playerListObjects.push(badge);
       }
     });
   }
 
-  // Canvas is 480x320 with pixelArt:true and upscales via nearest-neighbor.
-  // Pixel fonts must rasterize at native size and let the canvas upscale
-  // do the work — setResolution(>1) downsamples the glyph atlas to world
-  // size and breaks the pixel grid. Helper kept as pass-through to avoid
-  // reverting 21 call sites.
-  #crispText(x: number, y: number, text: string, style: Phaser.Types.GameObjects.Text.TextStyle): Phaser.GameObjects.Text {
-    return this.add.text(x, y, text, style);
+  // BitmapText draws each glyph as a sprite from the pre-rasterized atlas
+  // loaded in preload(). No runtime canvas2d AA, so glyphs stay sharp under
+  // the 480x320 → viewport nearest-neighbor upscale. Tint replaces the CSS
+  // color from the old Text-based styling.
+  #crispText(x: number, y: number, text: string, style: BMStyle): Phaser.GameObjects.BitmapText {
+    return this.add.bitmapText(x, y, BMFONT_KEY, text, style.size).setTint(style.tint);
   }
 
   #createButton(x: number, y: number, label: string, onClick: () => void): Phaser.GameObjects.Container {
