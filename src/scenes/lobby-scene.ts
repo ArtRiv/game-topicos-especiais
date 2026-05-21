@@ -55,8 +55,8 @@ export class LobbyScene extends Phaser.Scene {
     );
     this.load.bitmapFont(
       BMFONT_KEY,
-      'assets/fonts/Press_Start_2P/Press_Start_8-2.png',
-      'assets/fonts/Press_Start_2P/Press_Start_8-2.fnt',
+      'assets/fonts/Press_Start_2P/press_start_xml-2.png',
+      'assets/fonts/Press_Start_2P/press_start_xml-2.xml',
     );
   }
 
