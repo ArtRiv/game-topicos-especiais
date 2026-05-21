@@ -2,7 +2,8 @@ import * as Phaser from 'phaser';
 import { SCENE_KEYS } from './scene-keys.js';
 import { NetworkManager } from '../networking/network-manager.js';
 import { EVENT_BUS, CUSTOM_EVENTS } from '../common/event-bus.js';
-import type { Lobby, MatchConfig, PlayerInfo } from '../networking/types.js';
+import type { Lobby, LobbyConfig, LobbyFormat, MatchConfig, PlayerInfo } from '../networking/types.js';
+import { MAP_POOL } from '../networking/types.js';
 
 const FONT = { fontFamily: '"Press Start 2P"', fontSize: '10px', color: '#ffffff' };
 const FONT_TITLE = { fontFamily: '"Press Start 2P"', fontSize: '14px', color: '#ffdd55' };
@@ -21,6 +22,9 @@ export class LobbyScene extends Phaser.Scene {
   #ipInput!: Phaser.GameObjects.DOMElement;
   #nickInput!: Phaser.GameObjects.DOMElement;
   #statusText!: Phaser.GameObjects.Text;
+  #configBlockObjects: Phaser.GameObjects.GameObject[] = [];
+  #formatSelectDom: Phaser.GameObjects.DOMElement | null = null;
+  #capacityHeader: Phaser.GameObjects.Text | null = null;
 
   constructor() {
     super({ key: SCENE_KEYS.LOBBY_SCENE });
@@ -36,6 +40,7 @@ export class LobbyScene extends Phaser.Scene {
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_DISCONNECTED, this.#onDisconnected, this);
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_LOBBY_UPDATED, this.#onWaitingRoomUpdate, this);
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_HOST_CHANGED, this.#onHostChanged, this);
+      EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_LOBBY_ERROR, this.#onLobbyError, this);
       this.#currentLobby = null;
       this.#clearView();
     });
@@ -155,8 +160,10 @@ export class LobbyScene extends Phaser.Scene {
     this.#lobbies.slice(0, 6).forEach((lobby, i) => {
       const rowY = baseY + i * 36;
       const bg = this.add.rectangle(cx, rowY + 12, 380, 30, 0x223366).setInteractive();
-      const label = this.add.text(cx - 185, rowY, `${lobby.players[0]?.name ?? '?'}\'s lobby`, FONT_SMALL_WHITE);
-      const count = this.add.text(cx + 140, rowY, `${lobby.players.length} player(s)`, FONT_SMALL);
+      const c = lobby.config;
+      const md = MAP_POOL.find(m => m.id === c.mapId)?.displayName ?? c.mapId;
+      const rowText = `${lobby.players[0]?.name ?? '?'}'s lobby — ${c.format} • ${md} • ${lobby.players.length}/${c.maxPlayers}`;
+      const label = this.add.text(cx - 185, rowY, rowText, FONT_SMALL_WHITE);
 
       bg.on('pointerover', () => bg.setFillStyle(BTN_HOVER));
       bg.on('pointerout', () => bg.setFillStyle(0x223366));
@@ -164,7 +171,7 @@ export class LobbyScene extends Phaser.Scene {
         NetworkManager.getInstance().sendLobbyJoin(lobby.id, this.#playerName);
       });
 
-      this.#lobbyListContainer.push(bg, label, count);
+      this.#lobbyListContainer.push(bg, label);
     });
   }
 
@@ -190,11 +197,15 @@ export class LobbyScene extends Phaser.Scene {
     const title = this.add.text(cx, 40, 'WAITING ROOM', FONT_TITLE).setOrigin(0.5);
     const hostName = lobby.players.find((p) => p.id === lobby.hostPlayerId)?.name ?? '?';
     const subtitle = this.add.text(cx, 70, `Host: ${hostName}`, FONT_SMALL).setOrigin(0.5);
-    const hint = this.add.text(cx, 88, 'Waiting for host to start...', FONT_SMALL).setOrigin(0.5);
 
-    this.#waitingRoomObjects = [title, subtitle, hint];
+    this.#waitingRoomObjects = [title, subtitle];
     this.#viewObjects = [...this.#waitingRoomObjects];
 
+    // Re-add #statusText for error/info feedback (lobby:error display)
+    this.#statusText = this.add.text(cx, cy + 80, '', FONT_SMALL).setOrigin(0.5);
+    this.#viewObjects.push(this.#statusText);
+
+    this.#renderConfigBlock(lobby);
     this.#renderPlayerList(lobby.players);
 
     // Show START button only for the host (derived from lobby.hostPlayerId)
@@ -209,12 +220,95 @@ export class LobbyScene extends Phaser.Scene {
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_LOBBY_UPDATED, this.#onWaitingRoomUpdate, this);
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_LOBBY_STARTED, this.#onLobbyStarted, this);
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_HOST_CHANGED, this.#onHostChanged, this);
+    EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_LOBBY_ERROR, this.#onLobbyError, this);
   }
+
+  #renderConfigBlock(lobby: Lobby): void {
+    // Tear down any prior config-block objects (used on lobby:updated re-render).
+    this.#configBlockObjects.forEach((o) => o.destroy());
+    this.#configBlockObjects = [];
+    this.#formatSelectDom = null;
+    this.#capacityHeader = null;
+
+    const cx = this.cameras.main.centerX;
+    const cfg = lobby.config;
+    const mapDisplay = MAP_POOL.find((m) => m.id === cfg.mapId)?.displayName ?? cfg.mapId;
+
+    // Capacity header (visible to everyone)
+    this.#capacityHeader = this.add.text(
+      cx,
+      96,
+      `Players ${lobby.players.length}/${cfg.maxPlayers} — ${cfg.format} on ${mapDisplay}`,
+      FONT,
+    ).setOrigin(0.5, 0);
+    this.#configBlockObjects.push(this.#capacityHeader);
+
+    if (this.#isHost) {
+      // Host: Format <select> at y=116
+      const formatLabel = this.add.text(cx - 150, 116, 'Format:', FONT_SMALL_WHITE).setOrigin(0, 0);
+      const formats: LobbyFormat[] = ['1v1', '2v2', '3v3', '4v4', '5v5', '6v6', '7v7', '8v8', '9v9', '10v10'];
+      const optionsHtml = formats.map((f) => `<option value="${f}">${f}</option>`).join('');
+      const formatDom = this.add.dom(cx + 30, 116).createFromHTML(
+        `<select style="background:#111;color:#fff;border:1px solid #555;padding:4px;font-size:10px;font-family:monospace">${optionsHtml}</select>`,
+      ).setOrigin(0, 0);
+      const selectEl = (formatDom.node as HTMLElement).querySelector('select') as HTMLSelectElement;
+      selectEl.value = cfg.format;
+      selectEl.addEventListener('change', () => {
+        NetworkManager.getInstance().sendLobbySetConfig({ format: selectEl.value as LobbyFormat });
+      });
+      this.#formatSelectDom = formatDom;
+      this.#configBlockObjects.push(formatLabel, formatDom);
+
+      // Host: Map preview cards at y=180 (label at y=140)
+      const mapLabel = this.add.text(cx - 150, 140, 'Map:', FONT_SMALL_WHITE).setOrigin(0, 0);
+      this.#configBlockObjects.push(mapLabel);
+      MAP_POOL.forEach((entry, i) => {
+        const cardX = cx + (i - (MAP_POOL.length - 1) / 2) * (96 + 8);
+        const cardY = 180;
+        const isSelected = entry.id === cfg.mapId;
+        const border = this.add.rectangle(cardX, cardY, 96, 64).setStrokeStyle(
+          isSelected ? 2 : 1,
+          isSelected ? 0xffdd55 : 0x444444,
+        );
+        const bg = this.add.rectangle(cardX, cardY, 96, 64, 0x111111).setInteractive();
+        const thumb = this.textures.exists(entry.thumbnailKey)
+          ? this.add.image(cardX, cardY, entry.thumbnailKey)
+          : this.add.rectangle(cardX, cardY, 96, 64, 0x223366);
+        const cardLabel = this.add.text(cardX, cardY + 40, entry.displayName, FONT_SMALL_WHITE).setOrigin(0.5, 0);
+        bg.on('pointerover', () => bg.setFillStyle(0x222222));
+        bg.on('pointerout', () => bg.setFillStyle(0x111111));
+        bg.on('pointerdown', () => {
+          NetworkManager.getInstance().sendLobbySetConfig({ mapId: entry.id });
+        });
+        this.#configBlockObjects.push(border, bg, thumb, cardLabel);
+      });
+    } else {
+      // Non-host: read-only labels at the same anchors
+      const fmtLabel = this.add.text(cx, 116, `Format: ${cfg.format}`, FONT_SMALL_WHITE).setOrigin(0.5, 0);
+      const mapReadLabel = this.add.text(cx, 140, `Map: ${mapDisplay}`, FONT_SMALL_WHITE).setOrigin(0.5, 0);
+      this.#configBlockObjects.push(fmtLabel, mapReadLabel);
+    }
+  }
+
+  #onLobbyError = (data: { message: string }): void => {
+    if (!this.#statusText) return;
+    this.#statusText.setText(data.message).setColor('#ff4444');
+    this.time.delayedCall(3000, () => {
+      this.#statusText?.setText('').setColor('#ffffff');
+    });
+  };
 
   #onWaitingRoomUpdate = (data: { lobby?: Lobby }): void => {
     if (data.lobby) {
       this.#currentLobby = data.lobby;
       this.#renderPlayerList(data.lobby.players);
+      // Tear-down-and-rebuild the config block on every lobby:updated.
+      // N is small (1 select + ≤10 cards) so the cost is negligible, and rebuild
+      // guarantees the gold border tracks the authoritative server selection.
+      // The DOM <select>.value is set to cfg.format on rebuild so an in-flight
+      // host edit converges to the server's accepted value (which is the value
+      // the host just sent, so no visible flicker).
+      this.#renderConfigBlock(data.lobby);
     }
   };
 
@@ -229,6 +323,7 @@ export class LobbyScene extends Phaser.Scene {
     EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_LOBBY_UPDATED, this.#onWaitingRoomUpdate, this);
     EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_LOBBY_STARTED, this.#onLobbyStarted, this);
     EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_HOST_CHANGED, this.#onHostChanged, this);
+    EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_LOBBY_ERROR, this.#onLobbyError, this);
     this.#currentLobby = null;
     this.scene.stop(SCENE_KEYS.LOBBY_SCENE);
     this.scene.start(SCENE_KEYS.LOADING_SCENE, { matchConfig: data.matchConfig });
@@ -241,7 +336,7 @@ export class LobbyScene extends Phaser.Scene {
     this.#playerListObjects = [];
 
     const cx = this.cameras.main.centerX;
-    const baseY = 120;
+    const baseY = 220;
     const TINTS = [0xffffff, 0x00aaff, 0xff4444, 0x44ff44, 0xff44ff];
 
     players.forEach((player, i) => {
@@ -310,9 +405,13 @@ export class LobbyScene extends Phaser.Scene {
     this.#lobbyListContainer.forEach((o) => o.destroy());
     this.#waitingRoomObjects.forEach((o) => o.destroy());
     this.#playerListObjects.forEach((o) => o.destroy());
+    this.#configBlockObjects.forEach((o) => o.destroy());
     this.#viewObjects = [];
     this.#lobbyListContainer = [];
     this.#waitingRoomObjects = [];
     this.#playerListObjects = [];
+    this.#configBlockObjects = [];
+    this.#formatSelectDom = null;
+    this.#capacityHeader = null;
   }
 }
