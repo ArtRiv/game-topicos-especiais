@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.2
-milestone_name: Match Lifecycle & Event Polish
+milestone_name: milestone
 status: executing
-stopped_at: Phase 09 plan 3 of 3 complete — client lobby UI shipped; Phase 09 ready for verification
+stopped_at: Phase 09.1 plan 1 of 4 complete — explicit MAP_THUMB_* preload loads added; UAT Tests 4/8 gap closed
 last_updated: "2026-05-21T00:00:00.000Z"
-last_activity: 2026-05-21 -- Phase 09 plan 3 executed (client types mirror + NetworkManager helpers + LobbyScene host controls + capacity header + browser row + lobby:error display)
+last_activity: 2026-05-21 -- Phase 09.1 plan 01 complete (preload thumbnail fix, commit 1bf9178)
 progress:
-  total_phases: 8
-  completed_phases: 1
-  total_plans: 4
-  completed_plans: 5
-  percent: 28
+  total_phases: 9
+  completed_phases: 3
+  total_plans: 15
+  completed_plans: 8
+  percent: 53
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-24)
 
 **Core value:** The "I outplayed everyone" moment -- landing a perfectly timed spell combo that eliminates an opponent in front of a crowd.
-**Current focus:** Phase 09 — lobby-format-map-configuration
+**Current focus:** Phase 09.1 — lobby-format-map-config-fixes
 
 ## Current Position
 
-Phase: 09 (lobby-format-map-configuration) — ALL PLANS COMPLETE (pending verification)
-Plan: 3 of 3 complete — Phase 09 ready for /gsd-verify
-Status: Executing Phase 09 (verification pending)
-Last activity: 2026-05-21 -- Phase 09 plan 3 complete (client mirror, NetworkManager helpers, LobbyScene host UI + capacity header + browser-row extension + lobby:error display)
+Phase: 09.1 (lobby-format-map-config-fixes) — EXECUTING
+Plan: 2 of 4 (next: 9.1-02 lobby layout polish)
+Status: Executing Phase 09.1 — 1/4 plans complete
+Last activity: 2026-05-21 -- Phase 09.1 plan 01 complete (preload thumbnail fix, commit 1bf9178)
 
 ## Performance Metrics
 
@@ -79,8 +79,8 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-05-21T00:00:00.000Z
-Stopped at: Phase 09 plan 3 of 3 complete — client lobby UI shipped; Phase 09 ready for verification
-Resume file: (run /gsd-verify on Phase 09, then transition to Phase 10)
+Stopped at: Phase 09.1 plan 1 of 4 complete — explicit MAP_THUMB_* preload loads (commit 1bf9178); UAT Tests 4/8 gap closed
+Resume file: .planning/phases/09.1-lobby-format-map-config-fixes/9.1-02-PLAN.md
 
 ## GSD Workflow Config
 

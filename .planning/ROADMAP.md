@@ -106,7 +106,7 @@ Plans:
   4. Lobby text renders crisply on standard and HiDPI displays — UAT Test 1a passes
 **Plans**: 4 plans
 Plans:
-- [ ] 9.1-01-PLAN.md — Explicit MAP_THUMB_* loads in PreloadScene (UAT Test 4/8)
+- [x] 9.1-01-PLAN.md — Explicit MAP_THUMB_* loads in PreloadScene (UAT Test 4/8)
 - [ ] 9.1-02-PLAN.md — Lobby layout polish: player-list Y push + Format label/select alignment (UAT Test 1b + cosmetic)
 - [ ] 9.1-03-PLAN.md — Eager DOM/configBlock cleanup in #onLobbyStarted before scene.start (UAT Test 9)
 - [ ] 9.1-04-PLAN.md — #crispText helper applying setResolution to all LobbyScene Text objects (UAT Test 1a)
