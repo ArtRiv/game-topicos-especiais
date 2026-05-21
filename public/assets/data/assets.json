@@ -39,7 +39,19 @@
         "key": "UI_ICONS",
         "url": "icons.png",
         "frameConfig": { "frameWidth": 16, "frameHeight": 16 }
+      },
+      {
+        "type": "image",
+        "key": "MENU_BG",
+        "url": "menu_bg.jpg"
       }
+    ]
+  },
+  {
+    "path": "assets/audio",
+    "files": [
+      { "type": "audio", "key": "MENU_MUSIC", "url": ["menu_music.ogg"] },
+      { "type": "audio", "key": "GAMEPLAY_MUSIC", "url": ["gameplay_music.ogg"] }
     ]
   },
   {
