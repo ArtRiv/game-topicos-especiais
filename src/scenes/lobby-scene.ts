@@ -336,7 +336,7 @@ export class LobbyScene extends Phaser.Scene {
     this.#playerListObjects = [];
 
     const cx = this.cameras.main.centerX;
-    const baseY = 220;
+    const baseY = 248;
     const TINTS = [0xffffff, 0x00aaff, 0xff4444, 0x44ff44, 0xff44ff];
 
     players.forEach((player, i) => {
