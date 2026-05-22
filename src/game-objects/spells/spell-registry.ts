@@ -9,6 +9,7 @@ import {
   EARTH_BUMP_MANA_COST, EARTH_BUMP_COOLDOWN,
   WATER_SPIKE_MANA_COST, WATER_SPIKE_COOLDOWN,
   WATER_TORNADO_MANA_COST, WATER_TORNADO_COOLDOWN,
+  DARK_BOLT_MANA_COST, DARK_BOLT_COOLDOWN,
 } from '../../common/config';
 
 export type SpellFactory = (
@@ -28,6 +29,7 @@ export const SPELL_SLOT_REGISTRY: Record<Element, readonly [SpellId | null, Spel
   [ELEMENT.ICE]:     [SPELL_ID.ICE_SHARD,      null],
   [ELEMENT.WIND]:    [SPELL_ID.WIND_BOLT,      null],
   [ELEMENT.THUNDER]: [SPELL_ID.THUNDER_STRIKE, null],
+  [ELEMENT.DARKNESS]: [SPELL_ID.DARK_BOLT, null],
 };
 
 /** Mana cost and cooldown (ms) per spell — only source of truth for these values in the component. */
@@ -43,6 +45,7 @@ export const SPELL_CONFIG: Record<SpellId, { manaCost: number; cooldown: number 
   [SPELL_ID.ICE_SHARD]:      { manaCost: RUNTIME_CONFIG.ICE_SHARD_MANA_COST,      cooldown: RUNTIME_CONFIG.ICE_SHARD_COOLDOWN },
   [SPELL_ID.WIND_BOLT]:      { manaCost: RUNTIME_CONFIG.WIND_BOLT_MANA_COST,      cooldown: RUNTIME_CONFIG.WIND_BOLT_COOLDOWN },
   [SPELL_ID.THUNDER_STRIKE]: { manaCost: RUNTIME_CONFIG.THUNDER_STRIKE_MANA_COST, cooldown: RUNTIME_CONFIG.THUNDER_STRIKE_COOLDOWN },
+  [SPELL_ID.DARK_BOLT]:      { manaCost: DARK_BOLT_MANA_COST,      cooldown: DARK_BOLT_COOLDOWN },
 };
 
 /**

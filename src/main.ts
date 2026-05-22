@@ -17,6 +17,8 @@ import { UiScene } from './scenes/ui-scene';
 import { GameOverScene } from './scenes/game-over-scene';
 import { RadialMenuScene } from './scenes/radial-menu-scene';
 import { DebugPanel } from './debug/debug-panel';
+import { installCustomCursor } from './common/cursor';
+import { DEV_SKIP_TO_GAMEPLAY } from './common/config';
 
 // ---------------------------------------------------------------------------
 // Phaser game configuration
@@ -101,7 +103,16 @@ void (async () => {
 
   // Boot flow per D-03: Splash -> MainMenu -> Lobby
   // SplashScene loads music then fades to MainMenuScene on any keypress.
-  game.scene.start(SCENE_KEYS.SPLASH_SCENE);
+  // DEV shortcut: jump straight to PreloadScene (→ GameScene) for fast iteration.
+  // PreloadScene queues the audio tracks itself when this path is taken, so the
+  // splash → menu → lobby → loading chain is fully bypassed.
+  if (DEV_SKIP_TO_GAMEPLAY) {
+    console.warn('[DEV_SKIP_TO_GAMEPLAY] Skipping splash/menu/lobby — booting straight into gameplay.');
+    game.scene.start(SCENE_KEYS.PRELOAD_SCENE);
+  } else {
+    game.scene.start(SCENE_KEYS.SPLASH_SCENE);
+  }
 
   new DebugPanel();
+  installCustomCursor();
 })();

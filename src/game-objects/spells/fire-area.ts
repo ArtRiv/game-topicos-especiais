@@ -155,6 +155,34 @@ export class FireArea extends Phaser.Physics.Arcade.Sprite implements ActiveSpel
     }
   }
 
+  /** Combo extinguish: play START (if still in it) → END, no LOOP. Stops damage
+   *  immediately. Idempotent — safe to call multiple times. Used by the DarkBolt
+   *  combo (and any other counter that wants the user to *see* the fire appear and
+   *  die rather than just vanish). */
+  public extinguish(): void {
+    if (this.#isEnding) return;
+    // Kill damage immediately — the fire is being countered, not consumed.
+    this.#tickTimer?.destroy();
+    this.#tickTimer = undefined;
+    this.#durationTimer?.destroy();
+    this.#durationTimer = undefined;
+
+    const currentAnim = this.anims.currentAnim?.key;
+    const startKey = `${ASSET_KEYS.FIRE_AREA_EXPLOSION}_START`;
+
+    const goToEnd = (): void => this.#playEndAnimation();
+
+    if (currentAnim === startKey && this.anims.isPlaying) {
+      // Still in the START flourish — let it finish naturally, then play END.
+      // Remove any pre-existing animationcomplete handler (the one that would queue LOOP).
+      this.off('animationcomplete');
+      this.once('animationcomplete', goToEnd);
+    } else {
+      // Already in LOOP (or anim finished) — skip straight to END.
+      goToEnd();
+    }
+  }
+
   #playEndAnimation(): void {
     this.#isEnding = true;
     this.#tickTimer?.destroy();

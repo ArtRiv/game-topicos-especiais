@@ -164,6 +164,7 @@ export class UiScene extends Phaser.Scene {
       ICE: 0x22ccff,
       WIND: 0x44ff99,
       WATER: 0x0088ff,
+      DARKNESS: 0x884bb6,
     };
     const hexColor = colorMap[data.element] ?? 0xffffff;
     const cssColor = `#${hexColor.toString(16).padStart(6, '0')}`;

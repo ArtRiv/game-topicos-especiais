@@ -56,7 +56,11 @@ import { EarthBump } from '../game-objects/spells/earth-bump';
 import { IceShard } from '../game-objects/spells/ice-shard';
 import { WindBolt } from '../game-objects/spells/wind-bolt';
 import { ThunderStrike } from '../game-objects/spells/thunder-strike';
+import { DarkBolt } from '../game-objects/spells/dark-bolt';
+import { LightningBurstCombo, LightningStrikeCombo } from '../game-objects/spells/lightning-combo';
+import { SteamBurst } from '../game-objects/spells/steam-burst';
 import { SPELL_FACTORY_REGISTRY } from '../game-objects/spells/spell-registry';
+import { maybeSpawnGhost } from '../game-objects/spells/spell-ghost';
 import { ElementManager } from '../common/element-manager';
 import {
   EARTH_WALL_MANA_COST,
@@ -134,7 +138,12 @@ export class GameScene extends Phaser.Scene {
   // Phase 9.3 — Pre-declared for Plan 03 to consume (see 09.3-04-SUMMARY.md). When true, all
   // gameplay input (cast/dash) is suppressed for the dead local player until respawn.
   #deathLockActive: boolean = false;
-  #countdownText: Phaser.GameObjects.Text | null = null;
+  #countdownText: Phaser.GameObjects.BitmapText | null = null;
+  // Faded ring around the local player at PLAYER_ATTACK_RANGE_PX so the player can see their reach.
+  #rangeRing: Phaser.GameObjects.Graphics | undefined;
+  // EarthBump-vs-EarthWall combo overlap result: maps the bump → set of shattered pillar positions
+  // so we only fire shards once per pillar.
+  #bumpsThatShattered = new WeakSet<EarthBump>();
 
   constructor() {
     super({
@@ -194,9 +203,376 @@ export class GameScene extends Phaser.Scene {
     this.#updateEarthFireCombo();
     this.#updateEarthBoltFireAreaCombo();
     this.#updateEarthWallSpell();
+    this.#updateFireBoltThunderCombo();
+    this.#updateThunderFireAreaCombo();
+    this.#updateFireWaterSteamCombo();
+    this.#updateDarkBoltCombos(delta);
+    this.#updateEarthBumpWallCombo();
+    this.#updateFireBreathVsEarthWall();
     this.#handleRadialMenuInput();
     this.#handleDashInput();
     this.#interpolateRemotePlayers(delta);
+    this.#updateRangeRing();
+  }
+
+  /** Draws / refreshes the faded reach circle around the player each frame. */
+  #updateRangeRing(): void {
+    if (!RUNTIME_CONFIG.SHOW_PLAYER_ATTACK_RANGE) {
+      this.#rangeRing?.setVisible(false);
+      return;
+    }
+    if (!this.#player?.active) return;
+    if (!this.#rangeRing || !this.#rangeRing.scene) {
+      // Re-create if the previous Graphics was destroyed by a scene shutdown — the
+      // class field is reset on a fresh scene instance, but be defensive in case the
+      // reference somehow survives but its scene has gone away.
+      this.#rangeRing = this.add.graphics();
+      // Foreground tiles render at depth 2 (see #createLevel). Depth=1 (the original)
+      // put the ring under the dungeon foreground so it disappeared the moment you
+      // entered any room whose foreground covered the floor. 1000 sits above all
+      // world content but well below UI overlays (9999+).
+      this.#rangeRing.setDepth(1000);
+      this.#rangeRing.setScrollFactor(1);
+    }
+    this.#rangeRing.clear();
+    this.#rangeRing.lineStyle(
+      1,
+      RUNTIME_CONFIG.PLAYER_ATTACK_RANGE_RING_COLOR,
+      RUNTIME_CONFIG.PLAYER_ATTACK_RANGE_RING_ALPHA,
+    );
+    this.#rangeRing.strokeCircle(this.#player.x, this.#player.y, RUNTIME_CONFIG.PLAYER_ATTACK_RANGE_PX);
+    this.#rangeRing.setVisible(true);
+  }
+
+  /** FireBolt + ThunderStrike combo — when the bolt touches an active strike, both
+   *  are consumed and a LightningBurstCombo VFX is spawned (large-violet variant). */
+  #updateFireBoltThunderCombo(): void {
+    if (!this.#player?.spellCastingComponent?.spellGroup) return;
+    const all = [
+      ...this.#player.spellCastingComponent.spellGroup.getChildren(),
+      ...(this.#remoteSpellGroup?.getChildren() ?? []),
+    ];
+    const fireBolts = all.filter(
+      (s): s is FireBolt => s instanceof FireBolt && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+    );
+    const strikes = all.filter(
+      (s): s is ThunderStrike => s instanceof ThunderStrike && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+    );
+    if (fireBolts.length === 0 || strikes.length === 0) return;
+    for (const bolt of fireBolts) {
+      for (const strike of strikes) {
+        if (!this.physics.overlap(bolt, strike)) continue;
+        const x = (bolt.x + strike.x) / 2;
+        const y = (bolt.y + strike.y) / 2;
+        bolt.explode();
+        strike.destroy();
+        const burst = new LightningBurstCombo(this, x, y);
+        this.#player.spellCastingComponent.spellGroup.add(burst);
+        break;
+      }
+    }
+  }
+
+  /** DarkBolt orb combos — everything that interacts with an active darkness orb.
+   *  Runs every frame so pull forces are continuous; one-shot consumption combos use
+   *  setData flags to fire exactly once per orb-victim pair. */
+  #updateDarkBoltCombos(delta: number): void {
+    if (!this.#player?.spellCastingComponent?.spellGroup) return;
+    const all = [
+      ...this.#player.spellCastingComponent.spellGroup.getChildren(),
+      ...(this.#remoteSpellGroup?.getChildren() ?? []),
+    ];
+    const orbs = all.filter(
+      (s): s is DarkBolt => s instanceof DarkBolt && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+    );
+    if (orbs.length === 0) return;
+
+    // Pull tuning. Radius is how close you have to be for the orb to grab you; speed is
+    // how hard it pulls at the edge. Closeness ramps the pull up linearly (1 at the orb,
+    // 0 at the edge of the radius), so the closer you stand the more violently you're sucked in.
+    const PULL_RADIUS = 110;
+    const PULL_SPEED = 70; // px/s at the orb center
+    const dt = delta / 1000;
+
+    // -----------------------------------------------------------------------------------
+    // 1. Pull on players (local + remote). Position-additive so collisions still apply
+    //    via the regular physics step (Arcade syncs body to sprite on preUpdate).
+    // -----------------------------------------------------------------------------------
+    const playerTargets: Phaser.GameObjects.Sprite[] = [];
+    if (this.#player?.active) playerTargets.push(this.#player);
+    for (const p of this.#remotePlayers.values()) if (p.active) playerTargets.push(p);
+
+    for (const orb of orbs) {
+      for (const target of playerTargets) {
+        const dx = orb.x - target.x;
+        const dy = orb.y - target.y;
+        const distSq = dx * dx + dy * dy;
+        if (distSq < 1 || distSq > PULL_RADIUS * PULL_RADIUS) continue;
+        const dist = Math.sqrt(distSq);
+        const closeness = 1 - dist / PULL_RADIUS;
+        const move = PULL_SPEED * closeness * dt;
+        target.x += (dx / dist) * move;
+        target.y += (dy / dist) * move;
+      }
+    }
+
+    // -----------------------------------------------------------------------------------
+    // 2. WaterTornado pull + grow + gradual purple tint (combo lasts the orb's lifetime).
+    // -----------------------------------------------------------------------------------
+    const tornadoes = all.filter(
+      (s): s is WaterTornado => s instanceof WaterTornado && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+    );
+    for (const orb of orbs) {
+      const orbBody = orb.body as Phaser.Physics.Arcade.Body;
+      for (const tornado of tornadoes) {
+        const tBody = tornado.body as Phaser.Physics.Arcade.Body;
+        // Pull on BODY centers, not sprite positions — the tornado's body sits ~35px
+        // below its sprite origin (128x128 frame with the body near the bottom), so
+        // pulling sprite-to-sprite left the hitboxes badly misaligned. Translate the
+        // orb's body-center target back into the equivalent tornado sprite position.
+        const spriteToBodyX = tBody.center.x - tornado.x;
+        const spriteToBodyY = tBody.center.y - tornado.y;
+        const targetSpriteX = orbBody.center.x - spriteToBodyX;
+        const targetSpriteY = orbBody.center.y - spriteToBodyY;
+        const dx = targetSpriteX - tornado.x;
+        const dy = targetSpriteY - tornado.y;
+        const distSq = dx * dx + dy * dy;
+        if (distSq > PULL_RADIUS * PULL_RADIUS) continue;
+        const dist = Math.sqrt(distSq) || 1;
+        const closeness = 1 - dist / PULL_RADIUS;
+
+        // Pull a bit harder than a player so the tornado visibly migrates onto the orb.
+        // Clamp the per-frame move to the remaining distance so we settle exactly on
+        // the target instead of jittering past it once the bodies overlap.
+        const move = Math.min(dist, PULL_SPEED * 1.5 * closeness * dt);
+        tornado.x += (dx / dist) * move;
+        tornado.y += (dy / dist) * move;
+
+        // Grow & tint progression — ramp scale/tint over ~1.5s of sustained overlap so
+        // a tornado that just grazes the edge doesn't snap to purple. Tracked per-tornado.
+        const t = ((tornado.getData('darkComboT') as number | undefined) ?? 0) + dt;
+        tornado.setData('darkComboT', t);
+        const k = Math.min(1, t / 1.5);
+        tornado.setScale(1 + 0.35 * k);
+        // Lerp tint white(0xffffff) → soft violet(0xc8a8ff). Phaser's setTint multiplies,
+        // so a brightish purple keeps the tornado's whites readable.
+        const lerp = (a: number, b: number): number => Math.round(a + (b - a) * k);
+        const r = lerp(0xff, 0xc8);
+        const g = lerp(0xff, 0xa8);
+        const b = lerp(0xff, 0xff);
+        tornado.setTint((r << 16) | (g << 8) | b);
+      }
+    }
+
+    // -----------------------------------------------------------------------------------
+    // 3. FireBolt vs orb: spawn a one-shot lightning_burst_002 VFX where they touched
+    //    (no damage — pure feedback) and consume the bolt. Orb persists.
+    // -----------------------------------------------------------------------------------
+    const fireBolts = all.filter(
+      (s): s is FireBolt => s instanceof FireBolt && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+    );
+    for (const bolt of fireBolts) {
+      for (const orb of orbs) {
+        if (!this.physics.overlap(bolt, orb)) continue;
+        // Spawn LightningBurstCombo (force the 002 variant for this combo) so the burst
+        // gets a real physics body, hitEnemy de-dup, and damage via the existing spell-
+        // vs-enemy overlap registered in #registerColliders.
+        const burst = new LightningBurstCombo(this, bolt.x, bolt.y, { variant: '002' });
+        this.#player.spellCastingComponent.spellGroup.add(burst);
+        bolt.explode();
+        break;
+      }
+    }
+
+    // -----------------------------------------------------------------------------------
+    // 4. FireArea vs orb: extinguish the fire. Orb persists. One-shot per area.
+    // -----------------------------------------------------------------------------------
+    const fireAreas = all.filter(
+      (s): s is FireArea => s instanceof FireArea && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+    );
+    for (const area of fireAreas) {
+      if (area.getData('darkConsumed')) continue;
+      for (const orb of orbs) {
+        if (!this.physics.overlap(area, orb)) continue;
+        area.setData('darkConsumed', true);
+        // Play the full START → END sequence (no LOOP) so the player sees the fire
+        // appear and immediately die — clear "you cast it, it got countered" feedback.
+        area.extinguish();
+        break;
+      }
+    }
+
+    // -----------------------------------------------------------------------------------
+    // 5. EarthBolt vs orb: consumed (the rock is swallowed). Orb persists.
+    // -----------------------------------------------------------------------------------
+    const earthBolts = all.filter(
+      (s): s is EarthBolt => s instanceof EarthBolt && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+    );
+    for (const eb of earthBolts) {
+      for (const orb of orbs) {
+        if (!this.physics.overlap(eb, orb)) continue;
+        eb.explode();
+        break;
+      }
+    }
+
+    // -----------------------------------------------------------------------------------
+    // 6. EarthWall pillars touching the orb take periodic damage (throttled per pillar).
+    //    Same shape as FireBreath-vs-pillar above.
+    // -----------------------------------------------------------------------------------
+    const pillars = this.#earthWallGroup.getChildren() as EarthWallPillar[];
+    if (pillars.length > 0) {
+      const now = this.time.now;
+      const DARK_TICK_MS = 300;
+      for (const pillar of pillars) {
+        if (!pillar.active || pillar.isBeingDestroyed) continue;
+        for (const orb of orbs) {
+          if (!this.physics.overlap(pillar, orb)) continue;
+          const last = (pillar.getData('lastDarkTickAt') as number | undefined) ?? 0;
+          if (now - last < DARK_TICK_MS) break;
+          pillar.setData('lastDarkTickAt', now);
+          pillar.takeDamage(1);
+          break;
+        }
+      }
+    }
+  }
+
+  /** Fire + Water steam combo — FireBolt vs Water(Spike|Tornado) destroys the bolt and
+   *  spawns a small steam puff. FireArea vs Water(Spike|Tornado) destroys the FireArea
+   *  (extinguished) and spawns the steam — the water spell stays alive (the whole point
+   *  of the combo is your water beat their fire). FireBreath is excluded by design. */
+  #updateFireWaterSteamCombo(): void {
+    if (!this.#player?.spellCastingComponent?.spellGroup) return;
+    const all = [
+      ...this.#player.spellCastingComponent.spellGroup.getChildren(),
+      ...(this.#remoteSpellGroup?.getChildren() ?? []),
+    ];
+    const fireBolts = all.filter(
+      (s): s is FireBolt => s instanceof FireBolt && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+    );
+    const fireAreas = all.filter(
+      (s): s is FireArea => s instanceof FireArea && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+    );
+    const waterSpells = all.filter(
+      (s): s is WaterSpike | WaterTornado =>
+        (s instanceof WaterSpike || s instanceof WaterTornado) &&
+        s.active &&
+        !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+    );
+    if (waterSpells.length === 0) return;
+
+    const spawnSteam = (x: number, y: number): void => {
+      const steam = new SteamBurst(this, x, y);
+      this.#player.spellCastingComponent.spellGroup.add(steam);
+    };
+
+    for (const bolt of fireBolts) {
+      for (const water of waterSpells) {
+        if (!this.physics.overlap(bolt, water)) continue;
+        spawnSteam(bolt.x, bolt.y);
+        bolt.explode();
+        break;
+      }
+    }
+
+    for (const area of fireAreas) {
+      if (area.getData('steamConsumed')) continue;
+      for (const water of waterSpells) {
+        if (!this.physics.overlap(area, water)) continue;
+        area.setData('steamConsumed', true);
+        spawnSteam(area.x, area.y);
+        area.destroy();
+        break;
+      }
+    }
+  }
+
+  /** ThunderStrike + FireArea combo — passive collision; both stay around, but a
+   *  lightning_strike_001 VFX fires once when a strike overlaps a fire area. */
+  #updateThunderFireAreaCombo(): void {
+    if (!this.#player?.spellCastingComponent?.spellGroup) return;
+    const all = [
+      ...this.#player.spellCastingComponent.spellGroup.getChildren(),
+      ...(this.#remoteSpellGroup?.getChildren() ?? []),
+    ];
+    const strikes = all.filter(
+      (s): s is ThunderStrike => s instanceof ThunderStrike && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+    );
+    const areas = all.filter(
+      (s): s is FireArea => s instanceof FireArea && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+    );
+    if (strikes.length === 0 || areas.length === 0) return;
+    for (const strike of strikes) {
+      if (strike.getData('thunderFireAreaCombo')) continue;
+      for (const area of areas) {
+        if (!this.physics.overlap(strike, area)) continue;
+        strike.setData('thunderFireAreaCombo', true);
+        const x = (strike.x + area.x) / 2;
+        const y = (strike.y + area.y) / 2;
+        const fx = new LightningStrikeCombo(this, x, y);
+        this.#player.spellCastingComponent.spellGroup.add(fx);
+        break;
+      }
+    }
+  }
+
+  /** EarthBump + EarthWall combo — pillars shatter on bump overlap and shoot
+   *  an EarthBolt "shard" away from the caster (down/horizontal vector matches
+   *  the bump's launch direction). */
+  #updateEarthBumpWallCombo(): void {
+    if (!this.#player?.spellCastingComponent?.spellGroup) return;
+    const bumps = this.#player.spellCastingComponent.spellGroup
+      .getChildren()
+      .filter((s): s is EarthBump => s instanceof EarthBump && s.active);
+    if (bumps.length === 0) return;
+    const pillars = this.#earthWallGroup.getChildren() as EarthWallPillar[];
+    if (pillars.length === 0) return;
+    for (const bump of bumps) {
+      if (this.#bumpsThatShattered.has(bump)) continue;
+      let hitAny = false;
+      // Vector from caster (local player) to bump centre — shards fly that way.
+      const dx = bump.x - this.#player.x;
+      const dy = bump.y - this.#player.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const nx = dx / len;
+      const ny = dy / len;
+      for (const pillar of pillars) {
+        if (!pillar.active || pillar.isBeingDestroyed) continue;
+        if (!this.physics.overlap(bump, pillar)) continue;
+        hitAny = true;
+        const px = pillar.x;
+        const py = pillar.y;
+        pillar.shatter();
+        // Spawn the shard slightly ahead of the pillar so it doesn't immediately collide.
+        const shardX = px + nx * 12;
+        const shardY = py + ny * 12;
+        const shard = new EarthBolt(this, shardX, shardY, shardX + nx * 200, shardY + ny * 200);
+        this.#player.spellCastingComponent.spellGroup.add(shard);
+      }
+      if (hitAny) this.#bumpsThatShattered.add(bump);
+    }
+  }
+
+  /** FireBreath damages EarthWall pillars while the beam is active. Damage is light per
+   *  tick so a single pillar takes several seconds to crumble under sustained fire. */
+  #updateFireBreathVsEarthWall(): void {
+    const breath = this.#activeFireBreath;
+    if (!breath?.active || breath.isEnding) return;
+    const pillars = this.#earthWallGroup.getChildren() as EarthWallPillar[];
+    for (const pillar of pillars) {
+      if (!pillar.active || pillar.isBeingDestroyed) continue;
+      if (breath.isEnemyInBreath(pillar.x, pillar.y)) {
+        // Apply 1 HP per frame is too much; only every ~250ms tick we apply 1.
+        // Use a simple timestamp-keyed throttle stored on the pillar.
+        const now = this.time.now;
+        const last = (pillar.getData('lastBreathTickAt') as number | undefined) ?? 0;
+        if (now - last >= 200) {
+          pillar.setData('lastBreathTickAt', now);
+          pillar.takeDamage(1);
+        }
+      }
+    }
   }
 
   #handleRadialMenuInput(): void {
@@ -253,8 +629,9 @@ export class GameScene extends Phaser.Scene {
     // Phase 9.3 (Plan 03): D-11 dead-player input suppression.
     if (this.#deathLockActive) return;
     if (!this.#player?.active) return;
-    // When Earth element is active, key 3 casts EarthWall — skip fire breath
-    if (ElementManager.instance.activeElement === ELEMENT.EARTH) return;
+    // FireBreath is the FIRE-element key-3 spell. For every other element, key 3 either
+    // does nothing (default) or is handled by an element-specific handler (e.g. EarthWall).
+    if (ElementManager.instance.activeElement !== ELEMENT.FIRE) return;
 
     const controls = this.#controls;
     const isHolding = controls.isSpell3KeyDown;
@@ -591,9 +968,20 @@ export class GameScene extends Phaser.Scene {
 
     if (!this.#earthWallDrawingMode) return;
 
-    // Phase 2: place a pillar whenever the cursor moves far enough from the last one
-    const tx = this.#controls.mouseWorldX;
-    const ty = this.#controls.mouseWorldY;
+    // Phase 2: place a pillar whenever the cursor moves far enough from the last one.
+    // Clamp the placement to the player's attack range so pillars cannot be drawn anywhere
+    // on the map (parity with SpellCastingComponent.castSpell — bug-6 attack-range fix).
+    let tx = this.#controls.mouseWorldX;
+    let ty = this.#controls.mouseWorldY;
+    const range = RUNTIME_CONFIG.PLAYER_ATTACK_RANGE_PX;
+    const ax = tx - this.#player.x;
+    const ay = ty - this.#player.y;
+    const adistSq = ax * ax + ay * ay;
+    if (adistSq > range * range) {
+      const adist = Math.sqrt(adistSq);
+      tx = this.#player.x + (ax * range) / adist;
+      ty = this.#player.y + (ay * range) / adist;
+    }
 
     const dx = tx - this.#earthWallLastPlacedX;
     const dy = ty - this.#earthWallLastPlacedY;
@@ -802,6 +1190,26 @@ export class GameScene extends Phaser.Scene {
               spellObj.hitEnemy(enemyGameObject);
               return;
             }
+
+            // DarkBolt — persistent darkness orb. Damage is applied as ticks from inside
+            // the orb itself (see DarkBolt.#applyTickDamage); here we just track which
+            // enemies are currently overlapping so the tick loop knows who to hit.
+            if (spellObj instanceof DarkBolt) {
+              spellObj.addEnemyInArea(enemyGameObject);
+              return;
+            }
+
+            // Lightning combo VFX — both variants expose hitEnemy with internal de-dup.
+            if (spellObj instanceof LightningBurstCombo || spellObj instanceof LightningStrikeCombo) {
+              spellObj.hitEnemy(enemyGameObject);
+              return;
+            }
+
+            // Steam puff from a fire+water combo — small chip damage, once per enemy.
+            if (spellObj instanceof SteamBurst) {
+              spellObj.hitEnemy(enemyGameObject);
+              return;
+            }
           },
         );
 
@@ -869,6 +1277,9 @@ export class GameScene extends Phaser.Scene {
         spellObj.explode();
       }
       if (spellObj instanceof WindBolt) {
+        spellObj.explode();
+      }
+      if (spellObj instanceof DarkBolt) {
         spellObj.explode();
       }
     });
@@ -1256,16 +1667,11 @@ export class GameScene extends Phaser.Scene {
       const centerX = cam.width / 2;
       const centerY = cam.height / 2;
       this.#countdownText = this.add
-        .text(centerX, centerY, '', {
-          fontFamily: '"Press Start 2P"',
-          fontSize: '48px',
-          color: '#ffdd55',
-          stroke: '#000000',
-          strokeThickness: 4,
-        })
+        .bitmapText(centerX, centerY, 'press_start_2p', '', 32)
         .setOrigin(0.5)
         .setScrollFactor(0)
-        .setDepth(1000);
+        .setDepth(1000)
+        .setTint(0xffdd55);
     }
     this.#countdownText.setVisible(true).setText('');
   }
@@ -1357,8 +1763,11 @@ export class GameScene extends Phaser.Scene {
       // this.children to undefined. Calling clear() here would crash. Phaser already
       // cleans up the group and its EarthWallPillar children via scene lifecycle.
 
-      // Return to menu music when leaving gameplay.
-      MusicManager.instance.playMenu(this);
+      // Do NOT switch to menu music here. The scene shuts down on every cross-level
+      // room transition (which restarts GameScene), and switching to menu here meant
+      // the next GameScene.create() re-called playGameplay() → music restarted from
+      // the beginning every time you left a dungeon. Destinations that actually want
+      // menu music (GameOverScene, MainMenuScene) call playMenu() themselves.
     });
   }
 
@@ -2100,26 +2509,48 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    const spell = factory(
+    // Spawn the ghost telegraph immediately (so the local player sees their opponent's
+    // wind-up) and delay the real spell spawn by SPELL_GHOST_LEAD_MS — mirrors the
+    // local cast path in SpellCastingComponent.castSpell so PvP timing is symmetric.
+    const direction = payload.direction as import('../common/types').Direction;
+    const factoryKeyId = payload.spellType as import('../common/types').SpellId;
+    const ghosted = maybeSpawnGhost(
       this,
+      factoryKeyId,
       payload.x,
       payload.y,
       payload.targetX,
       payload.targetY,
-      payload.direction as import('../common/types').Direction,
+      direction,
     );
+    const delay = ghosted ? RUNTIME_CONFIG.SPELL_GHOST_LEAD_MS : 0;
 
-    this.#remoteSpellGroup.add(spell.gameObject);
+    const spawn = (): void => {
+      if (!this.scene.isActive()) return;
+      const spell = factory(
+        this,
+        payload.x,
+        payload.y,
+        payload.targetX as number,
+        payload.targetY as number,
+        direction,
+      );
 
-    // Phase 9.3 (Plan 03): tag the remote spell so NETWORK_SPELL_DESTROYED + cross-player
-    // overlap callbacks can match by spellId (the per-cast UUID).
-    spell.gameObject.setData('spellId', payload.spellId);
-    spell.gameObject.setData('casterId', payload.playerId);
-    spell.gameObject.setData('spellType', payload.spellType);
+      this.#remoteSpellGroup.add(spell.gameObject);
 
-    spell.gameObject.once(Phaser.GameObjects.Events.DESTROY, () => {
-      this.#remoteSpellGroup.remove(spell.gameObject, false, false);
-    });
+      // Phase 9.3 (Plan 03): tag the remote spell so NETWORK_SPELL_DESTROYED + cross-player
+      // overlap callbacks can match by spellId (the per-cast UUID).
+      spell.gameObject.setData('spellId', payload.spellId);
+      spell.gameObject.setData('casterId', payload.playerId);
+      spell.gameObject.setData('spellType', payload.spellType);
+
+      spell.gameObject.once(Phaser.GameObjects.Events.DESTROY, () => {
+        this.#remoteSpellGroup.remove(spell.gameObject, false, false);
+      });
+    };
+
+    if (delay > 0) this.time.delayedCall(delay, spawn);
+    else spawn();
   };
 
   #onRemoteBreathStart = (payload: BreathStartBroadcast): void => {
@@ -2173,14 +2604,11 @@ export class GameScene extends Phaser.Scene {
       this.#remotePlayers.delete(payload.playerId);
     }
     const msg = this.add
-      .text(this.cameras.main.centerX, this.cameras.main.centerY - 40, 'A player disconnected', {
-        fontFamily: '"Press Start 2P"',
-        fontSize: '8px',
-        color: '#ff4444',
-      })
+      .bitmapText(this.cameras.main.centerX, this.cameras.main.centerY - 40, 'press_start_2p', 'A PLAYER DISCONNECTED', 8)
       .setOrigin(0.5)
       .setScrollFactor(0)
-      .setDepth(999);
+      .setDepth(999)
+      .setTint(0xff4444);
     this.time.delayedCall(3000, () => msg.destroy());
   };
 }

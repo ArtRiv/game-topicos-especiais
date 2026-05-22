@@ -83,15 +83,29 @@ export class MusicManager {
   // Called from GameScene.create().
   // ---------------------------------------------------------------------------
   playGameplay(scene: Phaser.Scene): void {
-    if (this.#currentTrack === 'gameplay') return;
-    this.#stopAll();
+    // If we already think gameplay is the active track AND it's still actually playing,
+    // skip — this is the room-transition hot path. Without the isPlaying re-check, a
+    // previously-destroyed Sound instance (Phaser kills scene-bound sounds on shutdown)
+    // would leave us in a "thinks it's playing but silent" state on the next room.
+    if (this.#currentTrack === 'gameplay' && this.#gameplayMusic?.isPlaying) return;
     if (!scene.cache.audio.has(ASSET_KEYS.GAMEPLAY_MUSIC)) return;
 
+    // Only stop the menu track; do NOT stop a gameplay sound that's already playing
+    // through a room transition (prevents the "music restarts on room change" bug).
+    if (this.#menuMusic?.isPlaying) this.#menuMusic.stop();
+
+    // If the cached Sound was destroyed by the prior scene shutdown, drop the dead ref
+    // and re-add against the new scene's sound manager.
+    if (this.#gameplayMusic && (this.#gameplayMusic as unknown as { pendingRemove?: boolean }).pendingRemove) {
+      this.#gameplayMusic = null;
+    }
     if (!this.#gameplayMusic) {
       this.#gameplayMusic = scene.sound.add(ASSET_KEYS.GAMEPLAY_MUSIC, { loop: true, volume: GAMEPLAY_VOLUME });
     }
     this.#currentTrack = 'gameplay';
-    this.#playOrDefer(scene, this.#gameplayMusic, 'gameplay');
+    if (!this.#gameplayMusic.isPlaying) {
+      this.#playOrDefer(scene, this.#gameplayMusic, 'gameplay');
+    }
   }
 
   // ---------------------------------------------------------------------------

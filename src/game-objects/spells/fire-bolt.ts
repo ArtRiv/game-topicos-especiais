@@ -39,9 +39,17 @@ export class FireBolt extends Phaser.Physics.Arcade.Sprite implements ActiveSpel
 
     this.setDepth(3);
 
-    // Keep collider tight around the visible flame core.
+    // Origin shift puts the rotation pivot on the flame's visual centre (it sits below
+    // the geometric centre of the 48x48 frame), so the rotated sprite stays aligned with
+    // the world-space hitbox in every aim direction. See FIRE_BOLT_SPRITE_ORIGIN_Y.
+    this.setOrigin(RUNTIME_CONFIG.FIRE_BOLT_SPRITE_ORIGIN_X, RUNTIME_CONFIG.FIRE_BOLT_SPRITE_ORIGIN_Y);
+
+    // Keep collider tight around the visible flame core, centred on (this.x, this.y).
+    // Because we shifted the origin we must compute the body offset manually rather than
+    // using setSize(..., true) — that helper assumes the default centred origin.
     const body = this.body as Phaser.Physics.Arcade.Body;
-    body.setSize(4, 4, true);
+    body.setSize(16, 16);
+    body.setOffset(this.displayOriginX - 8, this.displayOriginY - 8);
 
     // calculate velocity towards target
     const angle = Phaser.Math.Angle.Between(x, y, targetX, targetY);
@@ -79,6 +87,16 @@ export class FireBolt extends Phaser.Physics.Arcade.Sprite implements ActiveSpel
 
     this.#overlappingAreas.add(area);
     this.setVisible(false);
+
+    // Spawn a single-play impact VFX at the entry point so the player gets a clear
+    // visual cue that the FireBolt-into-FireArea combo just fired (the bolt itself
+    // goes invisible while it's inside the area, which otherwise looked like it just
+    // disappeared into the puddle). Placeholder asset — easy to swap (see assets.ts).
+    const impact = this.scene.add.sprite(this.x, this.y, ASSET_KEYS.FIRE_BOLT_AREA_IMPACT);
+    impact.setDepth(this.depth + 1);
+    impact.setRotation(this.rotation);
+    impact.play(ASSET_KEYS.FIRE_BOLT_AREA_IMPACT);
+    impact.once(`animationcomplete-${ASSET_KEYS.FIRE_BOLT_AREA_IMPACT}`, () => impact.destroy());
 
     if (!this.#isEmpowered) {
       this.#empowerFromFireArea();
@@ -138,9 +156,7 @@ export class FireBolt extends Phaser.Physics.Arcade.Sprite implements ActiveSpel
     // Keep rotation facing the direction the bolt was traveling
     this.setRotation(impactAngle);
     this.setVisible(true);
-    this.setScale(
-      this.#isEmpowered ? FIRE_BOLT_FIRE_AREA_IMPACT_SCALE_MULTIPLIER : 1,
-    );
+    this.setScale(this.#isEmpowered ? FIRE_BOLT_FIRE_AREA_IMPACT_SCALE_MULTIPLIER : 1);
     this.play(ASSET_KEYS.FIRE_BOLT_IMPACT);
     this.once(`animationcomplete-${ASSET_KEYS.FIRE_BOLT_IMPACT}`, () => {
       this.destroy();

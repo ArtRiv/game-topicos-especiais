@@ -236,12 +236,16 @@ export class Player extends CharacterGameObject {
   #spawnDashVfx(nx: number, ny: number): void {
     const cfg = RUNTIME_CONFIG;
 
-    // Smoke puff at dash origin, behind the player. Slight offset opposite to dash direction
-    // so it sits where the feet "kicked off" from.
-    const smokeX = this.x - 12 -  nx * 2;
+    // Smoke puff at dash origin, behind the player. The base puff art is drawn trailing to
+    // the right (assumes a rightward dash). For leftward dashes we mirror it across X and
+    // mirror the offset so the puff sits behind the feet instead of in front of them.
+    const dashLeft = nx < 0;
+    const horizontalOffset = dashLeft ? 12 : -12;
+    const smokeX = this.x + horizontalOffset - nx * 2;
     const smokeY = this.y + 14 - ny * 4;
     const smoke = this.scene.add.sprite(smokeX, smokeY, ASSET_KEYS.DASH_SMOKE, 0);
     smoke.setOrigin(0.5, 0.75);
+    smoke.setFlipX(dashLeft);
     // Same depth as player; added before the roll sprite so the roll renders on top.
     smoke.setDepth(this.depth);
     smoke.setAlpha(cfg.DASH_SMOKE_ALPHA);

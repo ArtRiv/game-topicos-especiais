@@ -1,6 +1,6 @@
 import * as Phaser from 'phaser';
 import { ASSET_KEYS } from '../../common/assets';
-import { EARTH_WALL_PILLAR_HP, EARTH_WALL_HIT_FLASH_DURATION } from '../../common/config';
+import { EARTH_WALL_PILLAR_HP, EARTH_WALL_HIT_FLASH_DURATION, EARTH_WALL_DURATION } from '../../common/config';
 
 /**
  * A static earth-element barrier pillar placed by the EarthWall spell.
@@ -38,6 +38,15 @@ export class EarthWallPillar extends Phaser.Physics.Arcade.Sprite {
         this.play(`${ASSET_KEYS.EARTH_WALL}_IDLE`);
       }
     });
+
+    // Auto-collapse after EARTH_WALL_DURATION ms so abandoned walls don't litter the map.
+    // shatter() (combo path) and takeDamage() (HP-driven) skip the auto timer naturally
+    // since both call #crumble() which guards on isBeingDestroyed.
+    scene.time.delayedCall(EARTH_WALL_DURATION, () => {
+      if (this.active && !this.#isBeingDestroyed) {
+        this.#crumble();
+      }
+    });
   }
 
   /** Apply damage to this pillar. Flashes white on hit; plays death anim when HP reaches 0. */
@@ -59,6 +68,16 @@ export class EarthWallPillar extends Phaser.Physics.Arcade.Sprite {
     if (this.#currentHp <= 0) {
       this.#crumble();
     }
+  }
+
+  /**
+   * EarthBump + EarthWall combo path: instantly crumble the pillar regardless of HP.
+   * Caller is responsible for spawning the shard projectile.
+   */
+  public shatter(): void {
+    if (this.#isBeingDestroyed || !this.active) return;
+    this.#currentHp = 0;
+    this.#crumble();
   }
 
   #crumble(): void {

@@ -39,6 +39,7 @@ export const ELEMENT = {
   WIND: 'WIND',
   THUNDER: 'THUNDER',
   WATER: 'WATER',
+  DARKNESS: 'DARKNESS',
 } as const;
 
 export const SPELL_TYPE = {
@@ -58,6 +59,7 @@ export const SPELL_ID = {
   ICE_SHARD: 'ICE_SHARD',
   WIND_BOLT: 'WIND_BOLT',
   THUNDER_STRIKE: 'THUNDER_STRIKE',
+  DARK_BOLT: 'DARK_BOLT',
 } as const;
 
 export const DEFAULT_UI_TEXT_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {

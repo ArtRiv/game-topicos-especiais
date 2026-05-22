@@ -43,15 +43,27 @@ export class WaterSpike extends Phaser.Physics.Arcade.Sprite implements ActiveSp
     scene.add.existing(this);
     scene.physics.add.existing(this);
 
-    this.setDepth(3);
+    // Y-based depth sort: the spike's "base" sits at world Y = y (the cast target).
+    // Characters set their depth to this.y in their update loop, so any character whose
+    // Y is smaller than the spike's base (i.e. drawn higher on screen, conceptually
+    // "behind" the spike in a side-on view) renders underneath the spike.
+    this.setDepth(y);
     this.setVisible(false);
 
     const body = this.body as Phaser.Physics.Arcade.Body;
-    // Circle centred on the sprite with default origin (0.5, 0.5)
-    body.setCircle(WATER_SPIKE_BODY_RADIUS, 32 - WATER_SPIKE_BODY_RADIUS, 40 - WATER_SPIKE_BODY_RADIUS);
+    // Circle centred horizontally on the sprite, but moved DOWN by 25px so the hitbox
+    // sits near the base of the spike (was too high — a mage standing right at its base
+    // wasn't getting damaged). The offset is relative to the texture's top-left and
+    // ignores the sprite origin.
+    const r = WATER_SPIKE_BODY_RADIUS;
+    body.setCircle(r, 32 - r, 40 - r + 25);
     body.setImmovable(true);
     body.setAllowGravity(false);
     body.enable = false;
+    // Hide the disabled startup body from the Arcade debug overlay so the only circle
+    // visible during the startup puddle phase is *no circle* — the puddle is a pure
+    // visual tell. The body is re-shown when the spike rises (see #activateBody).
+    body.debugShowBody = false;
 
     // Startup sprite — plain sprite, setOrigin works fine here (no physics body)
     this.#startupSprite = scene.add.sprite(x, y, ASSET_KEYS.WATER_SPIKE_STARTUP);
@@ -94,6 +106,7 @@ export class WaterSpike extends Phaser.Physics.Arcade.Sprite implements ActiveSp
 
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.enable = true;
+    body.debugShowBody = true;
 
     this.play(`${ASSET_KEYS.WATER_SPIKE}_RISE`);
     this.once(`animationcomplete-${ASSET_KEYS.WATER_SPIKE}_RISE`, () => {

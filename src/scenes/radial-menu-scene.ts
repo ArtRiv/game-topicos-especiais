@@ -6,7 +6,15 @@ import { ElementManager } from '../common/element-manager';
 import { Element } from '../common/types';
 
 // Elements shown in the radial menu, ordered clockwise from top
-const ELEMENTS: Element[] = [ELEMENT.FIRE, ELEMENT.THUNDER, ELEMENT.EARTH, ELEMENT.ICE, ELEMENT.WIND, ELEMENT.WATER];
+const ELEMENTS: Element[] = [
+  ELEMENT.FIRE,
+  ELEMENT.THUNDER,
+  ELEMENT.EARTH,
+  ELEMENT.ICE,
+  ELEMENT.WIND,
+  ELEMENT.WATER,
+  ELEMENT.DARKNESS,
+];
 
 const ELEMENT_COLORS: Record<Element, number> = {
   FIRE: 0xff5500,
@@ -15,6 +23,7 @@ const ELEMENT_COLORS: Record<Element, number> = {
   ICE: 0x22ccff,
   WIND: 0x44ff99,
   WATER: 0x0088ff,
+  DARKNESS: 0x884bb6,
 };
 
 const ELEMENT_LABELS: Record<Element, string> = {
@@ -24,6 +33,7 @@ const ELEMENT_LABELS: Record<Element, string> = {
   ICE: 'ICE',
   WIND: 'WIND',
   WATER: 'WATER',
+  DARKNESS: 'DARK',
 };
 
 // Layout constants (all values in game-space pixels, game is 480×320)
@@ -60,8 +70,11 @@ export class RadialMenuScene extends Phaser.Scene {
     this.#selectedElement = ElementManager.instance.activeElement;
     this.#hoveredElement = this.#selectedElement;
 
-    // Close and commit selection the moment Ctrl is released (fires exactly once)
-    this.input.keyboard.once('keyup-CTRL', () => {
+    // Close and commit selection the moment SPACE is released (fires exactly once).
+    // SPACE is the radial-menu hold-key (D-17, Phase 9.3); releasing it commits whatever
+    // slice the mouse is currently hovering — including a slice the player just moved to
+    // while still holding the key.
+    this.input.keyboard.once('keyup-SPACE', () => {
       ElementManager.instance.setElement(this.#selectedElement);
       this.scene.stop();
     });

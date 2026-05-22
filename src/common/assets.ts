@@ -61,6 +61,18 @@ export const ASSET_KEYS = {
   PLAYER_ROLL_4: 'PLAYER_ROLL_4',
   PLAYER_ROLL_5: 'PLAYER_ROLL_5',
   DASH_SMOKE: 'DASH_SMOKE',
+  // --- Combo VFX (Phase: dark/lightning extension) ---
+  LIGHTNING_BURST_002: 'LIGHTNING_BURST_002',
+  LIGHTNING_BURST_003: 'LIGHTNING_BURST_003',
+  LIGHTNING_STRIKE_001: 'LIGHTNING_STRIKE_001',
+  THUNDER_STRIKE_ALT: 'THUNDER_STRIKE_ALT',
+  DARK_BOLT: 'DARK_BOLT',
+  // Impact VFX shown where a FireBolt first overlaps a FireArea (signals the player
+  // that the bolt-into-area combo is firing). Spritesheet: 336x48 = 7 frames @ 48x48.
+  FIRE_BOLT_AREA_IMPACT: 'FIRE_BOLT_AREA_IMPACT',
+  // Directional smoke burst used as the steam puff for fire-vs-water combos.
+  // Per-frame PNGs (21 frames, large white variant).
+  STEAM_BURST: 'STEAM_BURST',
 } as const;
 
 export const DASH_ANIMATION_KEYS = {

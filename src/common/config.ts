@@ -2,11 +2,90 @@ export const ENABLE_LOGGING = false;
 export const ENABLE_DEBUG_ZONE_AREA = false;
 export const DEBUG_COLLISION_ALPHA = 0;
 
+// Spell "ghost" telegraph — a dimmed preview of the real spell that fires immediately
+// on cast and lands SPELL_GHOST_LEAD_MS before the real one, so the opposing mage gets
+// a reaction window to dodge. Set ENABLED=false to play without telegraphs (e.g. to
+// gate behind a future powerup pickup).
+//
+//   LEAD_MS   = how far ahead of the real spell the ghost lands. 150ms is roughly a
+//               human reaction floor; tune up (200) for "easy" or down (100) for "fair".
+//   TINT      = ghost color multiplier. Light cyan reads as "not real, but threatening".
+//   ALPHA     = ghost opacity. 0.4 is visible but obviously not the real spell.
+export const SPELL_GHOST_PREVIEW_ENABLED = false;
+export const SPELL_GHOST_LEAD_MS = 250;
+export const SPELL_GHOST_TINT = 0x88ddff;
+export const SPELL_GHOST_ALPHA = 0.4;
+
+// DEV shortcut: skip the splash → main-menu → lobby → loading chain and jump
+// straight into PreloadScene → GameScene with the DataManager defaults. Useful
+// when iterating on gameplay tweaks and reloading the page constantly.
+// IMPORTANT: leave this false when committing/shipping — multiplayer / match
+// setup is bypassed entirely, so this is single-player only.
+export const DEV_SKIP_TO_GAMEPLAY = true;
+
 export const PLAYER_SPEED = 80;
 export const PLAYER_INVULNERABLE_AFTER_HIT_DURATION = 1000;
 export const PLAYER_HURT_PUSH_BACK_SPEED = 50;
 export const PLAYER_START_MAX_HEALTH = 6;
 export const PLAYER_ATTACK_DAMAGE = 1;
+// Max distance (px) the cast target can be from the caster. Targets farther than this
+// are clamped along the aim direction. Affects both projectile cast points and AOE placement.
+export const PLAYER_ATTACK_RANGE_PX = 120;
+
+// If the cursor's horizontal/vertical offset from the caster is smaller than this many
+// pixels, snap the matching axis to 0 so up/down/left/right casts go exactly cardinal.
+// Fixes the "straight-up cast drifts slightly left/right" feel when the player is hovering
+// near the caster's centre line.
+export const AIM_SNAP_THRESHOLD_PX = 6;
+
+// Show a faded circle at the attack range so the player can see their reach.
+export const SHOW_PLAYER_ATTACK_RANGE = true;
+export const PLAYER_ATTACK_RANGE_RING_COLOR = 0xffffff;
+export const PLAYER_ATTACK_RANGE_RING_ALPHA = 0.18;
+
+// Lightning sprite variant: 'CURRENT' = Thunder Effect 02 sheet; 'MAGIC_PACK_9' = the
+// alternative Lightning frames in Magic Pack 9 files (used by ThunderStrike when set).
+export const LIGHTNING_SPRITE_VARIANT: 'CURRENT' | 'MAGIC_PACK_9' = 'CURRENT';
+
+// Lightning burst variant for the FireBolt + ThunderStrike combo. Switch via debug panel.
+export const LIGHTNING_BURST_VARIANT: '002' | '003' = '003';
+
+// Damage values for the new combo spells.
+export const LIGHTNING_BURST_COMBO_DAMAGE = 8;     // FireBolt + ThunderStrike
+export const LIGHTNING_STRIKE_COMBO_DAMAGE = 6;    // ThunderStrike + FireArea
+export const LIGHTNING_BURST_COMBO_BODY_RADIUS = 28;
+export const LIGHTNING_STRIKE_COMBO_BODY_RADIUS = 26;
+
+// Dark Bolt (darkness orb — was a projectile, now a long-lived ground orb).
+// Damage model: tick damage every DARK_BOLT_TICK_INTERVAL ms to enemies inside the orb.
+// Player i-frames (PLAYER_INVULNERABLE_AFTER_HIT_DURATION) naturally throttle re-hits.
+export const DARK_BOLT_DAMAGE = 1; // legacy "instant" damage — unused under the tick model
+export const DARK_BOLT_DAMAGE_PER_TICK = 1;
+export const DARK_BOLT_TICK_INTERVAL = 600; // ms between damage ticks
+export const DARK_BOLT_MANA_COST = 6; // up from 2 — 8s persistent orb is a heavy commit
+export const DARK_BOLT_COOLDOWN = 4000; // ms — up from 650; orb stays for 8s, can't spam
+export const DARK_BOLT_SPEED = 650; // legacy (projectile speed) — kept for back-compat with any debug-panel binding
+export const DARK_BOLT_LIFETIME = 2200; // legacy (projectile lifetime) — see DARK_BOLT_ORB_HOLD_MS
+export const DARK_BOLT_ORB_HOLD_MS = 8000; // how long the orb persists after the build-up animation finishes
+
+// Dark Bolt orb ping-pong loop range. Frames are indices into lightning_burst_003
+// (0..9). The orb builds up 0 → HIGH, then ping-pongs between LOW and HIGH for
+// DARK_BOLT_ORB_HOLD_MS, then dissipates through any frames after HIGH up to 9.
+//
+//   Build-up: 0 → 1 → ... → HIGH                       (plays once)
+//   Loop:     HIGH-1, HIGH-2, ..., LOW, LOW+1, ..., HIGH  (cycle, repeated)
+//   Dissipate: HIGH+1, HIGH+2, ..., 9                  (plays once at end)
+//
+// Constraints: 0 ≤ LOW < HIGH ≤ 9. Wider gap = more dramatic pulsing.
+// Try (1, 7), (0, 7), (2, 8), etc. to taste — the loop anim is rebuilt at cast
+// time so changes take effect on the next cast (no rebuild needed).
+export const DARK_BOLT_LOOP_FRAME_LOW = 1;
+export const DARK_BOLT_LOOP_FRAME_HIGH = 7;
+
+// Cursor hotspot offset tuning. Browser CSS cursor uses these as the hotspot pixel
+// coordinates within /assets/cursor/cursor.png. Increase X to move hotspot right, Y to move down.
+export const CURSOR_HOTSPOT_X = 35;
+export const CURSOR_HOTSPOT_Y = 35;
 
 export const ENEMY_SPIDER_SPEED = 80;
 export const ENEMY_SPIDER_CHANGE_DIRECTION_DELAY_MIN = 500;
@@ -54,7 +133,9 @@ export const ROOM_TRANSITION_CAMERA_ANIMATION_DELAY = 500;
 export const PLAYER_MAX_MANA = 100;
 export const PLAYER_MANA_REGEN_RATE = 5; // per second
 
-// Earth Bolt (projectile)
+// Earth Bolt (projectile) — sprite origin tuning, same rationale as FIRE_BOLT_SPRITE_ORIGIN_Y.
+export const EARTH_BOLT_SPRITE_ORIGIN_X = 0.5;
+export const EARTH_BOLT_SPRITE_ORIGIN_Y = 0.5;
 export const EARTH_BOLT_DAMAGE = 1;
 export const EARTH_BOLT_MANA_COST = 1;
 export const EARTH_BOLT_COOLDOWN = 600; // ms - slightly slower than fire bolt
@@ -90,12 +171,18 @@ export const EARTH_WALL_FIREBOLT_SPLASH_RADIUS = 24; // px — FireBolt hit dama
 export const EARTH_BUMP_DAMAGE = 1;
 export const EARTH_BUMP_MANA_COST = 1;
 export const EARTH_BUMP_COOLDOWN = 1000; // ms
-export const EARTH_BUMP_DURATION = 800; // time it stays active
+export const EARTH_BUMP_DURATION = 250; // time it stays "fully out" before sinking (was 800)
 export const EARTH_BUMP_BODY_RADIUS = 16;
 export const EARTH_BUMP_KNOCKBACK_FORCE = 300;
 export const EARTH_BUMP_KNOCKBACK_DURATION = 300;
 
 // Fire Bolt (projectile)
+// Sprite-vs-hitbox alignment: the visible flame sits below the geometric centre of the
+// 48x48 frame. Setting origin.y > 0.5 moves the rotation pivot down to the flame so the
+// hitbox (kept centred on the projectile's world position) stays under the flame in every
+// aim direction. Tune if a different fire-bolt spritesheet replaces the current one.
+export const FIRE_BOLT_SPRITE_ORIGIN_X = 0.5;
+export const FIRE_BOLT_SPRITE_ORIGIN_Y = 0.67;
 export const FIRE_BOLT_DAMAGE = 1;
 export const FIRE_BOLT_MANA_COST = 1;
 export const FIRE_BOLT_COOLDOWN = 500; // ms
@@ -140,7 +227,7 @@ export const WATER_SPIKE_DAMAGE = 2;
 export const WATER_SPIKE_MANA_COST = 2;
 export const WATER_SPIKE_COOLDOWN = 800; // ms
 export const WATER_SPIKE_LOOP_DURATION = 300; // ms the spike stays active (damage window)
-export const WATER_SPIKE_BODY_RADIUS = 20; // AoE circle radius in px
+export const WATER_SPIKE_BODY_RADIUS = 10; // AoE circle radius in px
 
 // Water Tornado (water blast spell)
 export const WATER_TORNADO_DAMAGE = 3;
@@ -150,7 +237,6 @@ export const WATER_TORNADO_COOLDOWN = 1500; // ms
 export const WATER_TORNADO_DURATION = 2000; // time it stays alive in ms
 export const WATER_TORNADO_TICK_INTERVAL = 300; // damage tick interval
 export const WATER_TORNADO_BODY_RADIUS = 24;
-
 
 // ICE_SHARD (projectile)
 export const ICE_SHARD_DAMAGE = 1;
@@ -190,15 +276,15 @@ export const PLAUSIBILITY_STALE_MS = 200;
 export const MAX_SPELL_DAMAGE = 50;
 
 // Phase 9.3 — Dash tunables (D-13). All values overridable via RUNTIME_CONFIG (debug panel).
-export const DASH_COOLDOWN_MS = 800;            // ms between dashes
-export const DASH_DISTANCE_TILES = 1;            // dash distance in tiles (96 px at 32 px/tile)
-export const DASH_DURATION_MS = 150;             // dash motion duration → velocity = 640 px/s (RESEARCH.md §3)
-export const DASH_IFRAMES_ENABLED = false;       // i-frames during dash (off by default)
-export const DASH_IFRAMES_MS = 150;              // i-frame window when enabled
-export const DASH_CANCELS_CAST = true;           // pressing Shift mid-cast aborts the cast
+export const DASH_COOLDOWN_MS = 1500; // ms between dashes
+export const DASH_DISTANCE_TILES = 1; // dash distance in tiles (96 px at 32 px/tile)
+export const DASH_DURATION_MS = 150; // dash motion duration → velocity = 640 px/s (RESEARCH.md §3)
+export const DASH_IFRAMES_ENABLED = false; // i-frames during dash (off by default)
+export const DASH_IFRAMES_MS = 150; // i-frame window when enabled
+export const DASH_CANCELS_CAST = false; // pressing Shift mid-cast aborts the cast
 export const DASH_INTERRUPTABLE_BY_CAST = false; // pressing 1/2/3 mid-dash is ignored
 
 // Dash VFX tunables — adjust live via RUNTIME_CONFIG / debug panel.
-export const DASH_SMOKE_ALPHA = 0.7;             // smoke puff opacity (0..1)
-export const DASH_SMOKE_SCALE = 1.0;             // smoke puff size multiplier
-export const DASH_ROLL_SCALE = 1.0;              // roll sprite size multiplier (Role frames are already 16x16, matching the in-frame character size)
+export const DASH_SMOKE_ALPHA = 0.5; // smoke puff opacity (0..1)
+export const DASH_SMOKE_SCALE = 0.7; // smoke puff size multiplier
+export const DASH_ROLL_SCALE = 1.0; // roll sprite size multiplier (Role frames are already 16x16, matching the in-frame character size)

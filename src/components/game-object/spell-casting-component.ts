@@ -7,6 +7,7 @@ import { ManaComponent } from './mana-component';
 import { ActiveSpell } from '../../game-objects/spells/base-spell';
 import { ElementManager } from '../../common/element-manager';
 import { SPELL_SLOT_REGISTRY, SPELL_CONFIG, SPELL_FACTORY_REGISTRY } from '../../game-objects/spells/spell-registry';
+import { maybeSpawnGhost } from '../../game-objects/spells/spell-ghost';
 import { RUNTIME_CONFIG } from '../../common/runtime-config';
 import { NetworkManager } from '../../networking/network-manager';
 
@@ -70,6 +71,29 @@ export class SpellCastingComponent extends BaseGameObjectComponent {
     this.#manaComponent.consume(manaCost);
     this.#lastCastTime[slotIndex] = this.#scene.time.now;
 
+    // Cardinal-axis snap: when the cursor is within a few pixels of the caster's centre
+    // line, force the matching axis to 0 so straight-up / straight-down / horizontal casts
+    // travel exactly along that axis instead of drifting slightly off-cardinal because of
+    // sub-pixel cursor positioning.
+    const snap = RUNTIME_CONFIG.AIM_SNAP_THRESHOLD_PX;
+    if (Math.abs(targetX - casterX) <= snap) targetX = casterX;
+    if (Math.abs(targetY - casterY) <= snap) targetY = casterY;
+
+    // Clamp the requested target to the caster's attack range. Targets farther than
+    // PLAYER_ATTACK_RANGE_PX are projected back along the aim vector so projectiles
+    // still fly in the requested direction but AOE spells (FireArea, ThunderStrike,
+    // EarthBump, …) cannot be placed arbitrarily far from the caster.
+    const range = RUNTIME_CONFIG.PLAYER_ATTACK_RANGE_PX;
+    const rawDx = targetX - casterX;
+    const rawDy = targetY - casterY;
+    const distSq = rawDx * rawDx + rawDy * rawDy;
+    if (distSq > range * range) {
+      const dist = Math.sqrt(distSq);
+      const scale = range / dist;
+      targetX = casterX + rawDx * scale;
+      targetY = casterY + rawDy * scale;
+    }
+
     // Derive 4-way direction from caster → target for spells that need it
     const dx = targetX - casterX;
     const dy = targetY - casterY;
@@ -88,32 +112,53 @@ export class SpellCastingComponent extends BaseGameObjectComponent {
       return undefined;
     }
 
-    const spell = factory(this.#scene, casterX, casterY, targetX, targetY, direction);
-
-    this.#activeSpells.push(spell);
-    this.#spellGroup.add(spell.gameObject);
-
-    // Phase 9.3 (Plan 03): tag the spell gameObject with a unique per-cast UUID and the casterId
-    // so cross-player overlap callbacks can identify the spell over the wire (D-01..D-04).
+    // Pre-allocate the UUID and emit SPELL_CAST immediately so the player cast animation,
+    // sound, and network broadcast all fire at PRESS time — the only thing that lags is
+    // the actual spell game-object spawn (delayed by SPELL_GHOST_LEAD_MS when a ghost is
+    // available, so the telegraph lands ahead of the real spell).
     const spellInstanceId = Phaser.Math.RND.uuid();
-    spell.gameObject.setData('spellId', spellInstanceId);
-    spell.gameObject.setData('spellType', spellId);
-    try {
-      const localId = NetworkManager.getInstance().localPlayerId;
-      if (localId) spell.gameObject.setData('casterId', localId);
-    } catch {
-      /* offline / single-player — no casterId needed */
-    }
-
-    spell.gameObject.once(Phaser.GameObjects.Events.DESTROY, () => {
-      this.#activeSpells = this.#activeSpells.filter((s) => s !== spell);
-    });
-
-    // SPELL_CAST payload now carries BOTH the per-cast UUID (spellInstanceId, NEW)
-    // and the SPELL_ID type constant (spellId — preserved for back-compat).
     EVENT_BUS.emit(CUSTOM_EVENTS.SPELL_CAST, { spellInstanceId, spellId, slotIndex, casterX, casterY, targetX, targetY });
 
-    return spell;
+    // Spawn ghost telegraph (if registered). Returns true when a ghost was spawned, in
+    // which case the real spell is delayed by SPELL_GHOST_LEAD_MS so the ghost arrives
+    // first (projectiles travel at matching speed → flight times equal → ghost lands
+    // exactly LEAD_MS before the real spell).
+    const ghosted = maybeSpawnGhost(this.#scene, spellId, casterX, casterY, targetX, targetY, direction);
+    const delay = ghosted ? RUNTIME_CONFIG.SPELL_GHOST_LEAD_MS : 0;
+
+    const spawn = (): ActiveSpell | undefined => {
+      // Scene may have shut down during the delay (room transition, etc.).
+      if (!this.#scene?.scene?.isActive?.()) return undefined;
+      const spell = factory(this.#scene, casterX, casterY, targetX, targetY, direction);
+
+      this.#activeSpells.push(spell);
+      this.#spellGroup.add(spell.gameObject);
+
+      // Phase 9.3 (Plan 03): tag the spell gameObject with a unique per-cast UUID and the casterId
+      // so cross-player overlap callbacks can identify the spell over the wire (D-01..D-04).
+      spell.gameObject.setData('spellId', spellInstanceId);
+      spell.gameObject.setData('spellType', spellId);
+      try {
+        const localId = NetworkManager.getInstance().localPlayerId;
+        if (localId) spell.gameObject.setData('casterId', localId);
+      } catch {
+        /* offline / single-player — no casterId needed */
+      }
+
+      spell.gameObject.once(Phaser.GameObjects.Events.DESTROY, () => {
+        this.#activeSpells = this.#activeSpells.filter((s) => s !== spell);
+      });
+
+      return spell;
+    };
+
+    if (delay > 0) {
+      this.#scene.time.delayedCall(delay, spawn);
+      // Caller can't get back a synchronous spell ref when telegraphed — return undefined.
+      // No existing caller relies on the return value past fire-and-forget animation hooks.
+      return undefined;
+    }
+    return spawn();
   }
 
   public getCooldownPercent(slotIndex: number): number {

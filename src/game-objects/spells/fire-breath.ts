@@ -252,13 +252,16 @@ export class FireBreath extends Phaser.GameObjects.Container implements ActiveSp
 
     const hitWorldPosition = this.#impact.point.clone().add(this.#impact.normal.clone().scale(FIRE_BREATH_HIT_SURFACE_OFFSET));
     const hitLocalPosition = hitWorldPosition.subtract(new Phaser.Math.Vector2(this.x, this.y)).rotate(-this.rotation);
-    const tangentAngle = Math.atan2(this.#impact.normal.x, -this.#impact.normal.y);
-    const hitEffectWorldRotation = tangentAngle - Math.PI / 2;
 
+    // Face the impact sprite along the beam direction (same convention as FireBolt's
+    // impact). Local rotation 0 means it inherits the container's beam rotation. The
+    // previous tangent-to-wall-surface math made the splash face along the wall
+    // (e.g. "straight left" when hitting a tree on the upper-right) which read wrong.
     this.#hitEffectSprite
       .setVisible(true)
       .setPosition(hitLocalPosition.x, hitLocalPosition.y)
-      .setRotation(hitEffectWorldRotation - this.rotation);
+      .setRotation(0)
+      .setFlipY(this.#facingDirection === DIRECTION.LEFT);
   }
 
   #getSourcePosition(

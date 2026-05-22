@@ -3,6 +3,7 @@ import { SCENE_KEYS } from './scene-keys';
 import { ASSET_KEYS, ASSET_PACK_KEYS, DASH_ANIMATION_KEYS } from '../common/assets';
 import { LevelData } from '../common/types';
 import { DataManager } from '../common/data-manager';
+import { MusicManager } from '../common/music-manager';
 
 export class PreloadScene extends Phaser.Scene {
   constructor() {
@@ -27,6 +28,11 @@ export class PreloadScene extends Phaser.Scene {
     // load asset pack that has assets for the rest of the game
     this.load.pack(ASSET_PACK_KEYS.MAIN, 'assets/data/assets.json');
 
+    // Ensure music tracks are queued in case we boot via the DEV_SKIP_TO_GAMEPLAY
+    // shortcut (which bypasses SplashScene, where loadTracks normally runs).
+    // loadTracks is idempotent — no-op if the audio is already cached.
+    MusicManager.instance.loadTracks(this);
+
     // Explicit lobby thumbnail loads. The MAP_THUMB_* entries inside the
     // levels/world and levels/dungeon_1 sub-packs in assets.json are not
     // resolved by the MAIN-keyed pack load (Phaser only fetches entries
@@ -40,6 +46,62 @@ export class PreloadScene extends Phaser.Scene {
       ASSET_KEYS.MAP_THUMB_DUNGEON_1,
       'assets/images/levels/dungeon_1/thumbnail.png',
     );
+
+    // Combo / new-spell sprites added in the dark/lightning extension.
+    // Lightning bursts and lightning strike are shipped as per-frame PNGs (frameNNNN.png),
+    // so we load them individually and assemble the animation from the same-prefix keys.
+    const loadFrameSeries = (baseKey: string, basePath: string, count: number): void => {
+      for (let i = 0; i < count; i++) {
+        const padded = `frame${i.toString().padStart(4, '0')}`;
+        this.load.image(`${baseKey}_${i}`, `${basePath}/${padded}.png`);
+      }
+    };
+
+    loadFrameSeries(
+      ASSET_KEYS.LIGHTNING_BURST_002,
+      'assets/spells/Lightning/lightning_burst_002/lightning_burst_002_large_violet',
+      9,
+    );
+    loadFrameSeries(
+      ASSET_KEYS.LIGHTNING_BURST_003,
+      'assets/spells/Lightning/lightning_burst_003/lightning_burst_003_large_violet',
+      10,
+    );
+    loadFrameSeries(
+      ASSET_KEYS.LIGHTNING_STRIKE_001,
+      'assets/spells/Lightning/lightning_strike_001/lightning_strike_001_large_violet',
+      7,
+    );
+
+    // FireBolt-into-FireArea impact (placeholder: Hit Effect 01 sheet 1). 336x48 sheet,
+    // 48x48 per frame = 7 frames. We use sheet 1 first per request; sheets 2 and 3 exist
+    // for easy swapping if the placeholder doesn't read well.
+    this.load.spritesheet(
+      ASSET_KEYS.FIRE_BOLT_AREA_IMPACT,
+      'assets/spells/Hit Effect 01/Hit Effect 01 1.png',
+      { frameWidth: 48, frameHeight: 48 },
+    );
+
+    // Steam burst (fire + water combo) — per-frame PNGs, 21 frames, large white.
+    loadFrameSeries(
+      ASSET_KEYS.STEAM_BURST,
+      'assets/spells/Smoke Bursts/directional_smoke_burst_001/directional_smoke_burst_001_large_white',
+      21,
+    );
+
+    // Dark Bolt / alternative Lightning — load individual frames (sheet packing is uneven).
+    for (let i = 1; i <= 12; i++) {
+      this.load.image(
+        `${ASSET_KEYS.DARK_BOLT}_${i - 1}`,
+        `assets/spells/Magic Pack 9 files/Magic Pack 9 files/sprites/DarkBolt/Dark-Bolt${i}.png`,
+      );
+    }
+    for (let i = 1; i <= 11; i++) {
+      this.load.image(
+        `${ASSET_KEYS.THUNDER_STRIKE_ALT}_${i - 1}`,
+        `assets/spells/Magic Pack 9 files/Magic Pack 9 files/sprites/Lightning/Lightning${i}.png`,
+      );
+    }
   }
 
   public create(): void {
@@ -183,23 +245,26 @@ export class PreloadScene extends Phaser.Scene {
       hideOnComplete: true,
     });
 
-    // Earth Bump animations
+    // Earth Bump animations (per spec: frame 0 empty, 1-3 rising, 4-6 fully out,
+    // 7-12 ending, 13-15 empty). The new flow plays everything ONCE at a high frame
+    // rate so the bump pops out, holds briefly, then sinks — no back-and-forth caused
+    // by the previous STARTUP→LOOP transition reusing frame 3.
     this.anims.create({
       key: `${ASSET_KEYS.EARTH_BUMP}_STARTUP`,
-      frames: this.anims.generateFrameNumbers(ASSET_KEYS.EARTH_BUMP, { start: 1, end: 2 }),
-      frameRate: 10,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.EARTH_BUMP, { start: 1, end: 3 }),
+      frameRate: 24,
       repeat: 0,
     });
     this.anims.create({
       key: `${ASSET_KEYS.EARTH_BUMP}_LOOP`,
-      frames: this.anims.generateFrameNumbers(ASSET_KEYS.EARTH_BUMP, { start: 3, end: 6 }),
-      frameRate: 10,
-      repeat: -1,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.EARTH_BUMP, { start: 4, end: 6 }),
+      frameRate: 16,
+      repeat: 0,
     });
     this.anims.create({
       key: `${ASSET_KEYS.EARTH_BUMP}_END`,
-      frames: this.anims.generateFrameNumbers(ASSET_KEYS.EARTH_BUMP, { start: 7, end: 15 }),
-      frameRate: 10,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.EARTH_BUMP, { start: 7, end: 12 }),
+      frameRate: 24,
       repeat: 0,
       hideOnComplete: true,
     });
@@ -304,10 +369,13 @@ export class PreloadScene extends Phaser.Scene {
       hideOnComplete: true,
     });
 
-    // Ice Shard projectile animation (all 15 frames, looping)
+    // Ice Shard projectile animation. The spritesheet has 15 frames, but the back half
+    // (frames 8+) shows the shard fading/dispersing — visually wrong for an in-flight loop.
+    // Limit the loop to the first half (full-strength shard) so the projectile looks solid
+    // the whole time it's traveling. Hit/explode handled by ICE_SHARD_HIT separately.
     this.anims.create({
       key: ASSET_KEYS.ICE_SHARD,
-      frames: this.anims.generateFrameNumbers(ASSET_KEYS.ICE_SHARD, { start: 0, end: 14 }),
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.ICE_SHARD, { start: 0, end: 6 }),
       frameRate: 15,
       repeat: -1,
     });
@@ -377,5 +445,40 @@ export class PreloadScene extends Phaser.Scene {
       repeat: 0,
       hideOnComplete: true,
     });
+
+    // Per-frame composite animations (assets loaded as N individual images).
+    const makeSeriesAnim = (animKey: string, baseKey: string, count: number, frameRate: number): void => {
+      const frames: Phaser.Types.Animations.AnimationFrame[] = [];
+      for (let i = 0; i < count; i++) frames.push({ key: `${baseKey}_${i}` });
+      this.anims.create({ key: animKey, frames, frameRate, repeat: 0, hideOnComplete: true });
+    };
+
+    makeSeriesAnim(ASSET_KEYS.LIGHTNING_BURST_002, ASSET_KEYS.LIGHTNING_BURST_002, 9, 18);
+    makeSeriesAnim(ASSET_KEYS.LIGHTNING_BURST_003, ASSET_KEYS.LIGHTNING_BURST_003, 10, 18);
+    makeSeriesAnim(ASSET_KEYS.LIGHTNING_STRIKE_001, ASSET_KEYS.LIGHTNING_STRIKE_001, 7, 18);
+    makeSeriesAnim(ASSET_KEYS.STEAM_BURST, ASSET_KEYS.STEAM_BURST, 21, 20);
+
+    // Dark Bolt orb animations are built lazily in dark-bolt.ts based on the current
+    // DARK_BOLT_LOOP_FRAME_LOW / _HIGH config values (so the loop range can be tuned
+    // without changing this file). Cached in Phaser's anim system after first cast.
+
+    // FireBolt-into-FireArea impact: 7 frames @ 48x48 from the Hit Effect 01 sheet.
+    this.anims.create({
+      key: ASSET_KEYS.FIRE_BOLT_AREA_IMPACT,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.FIRE_BOLT_AREA_IMPACT, { start: 0, end: 6 }),
+      frameRate: 22,
+      repeat: 0,
+      hideOnComplete: true,
+    });
+
+    // Dark Bolt projectile — 12 frames, looping.
+    const darkBoltFrames: Phaser.Types.Animations.AnimationFrame[] = [];
+    for (let i = 0; i < 12; i++) darkBoltFrames.push({ key: `${ASSET_KEYS.DARK_BOLT}_${i}` });
+    this.anims.create({ key: ASSET_KEYS.DARK_BOLT, frames: darkBoltFrames, frameRate: 16, repeat: -1 });
+
+    // Magic Pack 9 alternative Lightning — 11 frames, play once.
+    const thunderAltFrames: Phaser.Types.Animations.AnimationFrame[] = [];
+    for (let i = 0; i < 11; i++) thunderAltFrames.push({ key: `${ASSET_KEYS.THUNDER_STRIKE_ALT}_${i}` });
+    this.anims.create({ key: ASSET_KEYS.THUNDER_STRIKE_ALT, frames: thunderAltFrames, frameRate: 18, repeat: 0 });
   }
 }

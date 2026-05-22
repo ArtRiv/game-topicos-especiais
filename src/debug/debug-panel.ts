@@ -135,7 +135,7 @@ const PANEL_CSS = `
 
 export class DebugPanel {
   #panel: HTMLDivElement;
-  #defaultValues: Record<string, number | boolean>;
+  #defaultValues: Record<string, number | boolean | string>;
 
   constructor() {
     this.#defaultValues = Object.fromEntries(
@@ -194,6 +194,35 @@ export class DebugPanel {
     });
     panel.appendChild(spawnObeliskBtn);
 
+    // Lightning burst variant toggle (002 vs 003) — applied to the FireBolt+ThunderStrike
+    // combo on the next cast. Click cycles through the two values.
+    const burstBtn = document.createElement('button');
+    burstBtn.className = 'action-btn';
+    const refreshBurstLabel = (): void => {
+      burstBtn.textContent = `LIGHTNING BURST: ${RUNTIME_CONFIG.LIGHTNING_BURST_VARIANT}`;
+    };
+    refreshBurstLabel();
+    burstBtn.addEventListener('click', () => {
+      RUNTIME_CONFIG.LIGHTNING_BURST_VARIANT =
+        RUNTIME_CONFIG.LIGHTNING_BURST_VARIANT === '002' ? '003' : '002';
+      refreshBurstLabel();
+    });
+    panel.appendChild(burstBtn);
+
+    // Thunder-strike sprite-variant toggle (Thunder Effect 02 vs Magic Pack 9 Lightning).
+    const sprBtn = document.createElement('button');
+    sprBtn.className = 'action-btn';
+    const refreshSprLabel = (): void => {
+      sprBtn.textContent = `THUNDER SPRITE: ${RUNTIME_CONFIG.LIGHTNING_SPRITE_VARIANT}`;
+    };
+    refreshSprLabel();
+    sprBtn.addEventListener('click', () => {
+      RUNTIME_CONFIG.LIGHTNING_SPRITE_VARIANT =
+        RUNTIME_CONFIG.LIGHTNING_SPRITE_VARIANT === 'CURRENT' ? 'MAGIC_PACK_9' : 'CURRENT';
+      refreshSprLabel();
+    });
+    panel.appendChild(sprBtn);
+
     return panel;
   }
 
@@ -220,7 +249,7 @@ export class DebugPanel {
 
     slider.addEventListener('input', () => {
       const parsed = parseFloat(slider.value);
-      (RUNTIME_CONFIG as Record<string, number | boolean>)[param.key] = parsed;
+      (RUNTIME_CONFIG as Record<string, number | boolean | string>)[param.key] = parsed;
       valueDisplay.textContent = String(parsed);
     });
 
@@ -232,7 +261,7 @@ export class DebugPanel {
 
   #resetAll(panel: HTMLDivElement): void {
     for (const [key, val] of Object.entries(this.#defaultValues)) {
-      (RUNTIME_CONFIG as Record<string, number | boolean>)[key] = val;
+      (RUNTIME_CONFIG as Record<string, number | boolean | string>)[key] = val;
     }
 
     panel.querySelectorAll<HTMLInputElement>('input[type=range]').forEach((slider) => {

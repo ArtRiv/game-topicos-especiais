@@ -60,9 +60,9 @@
         overflow: hidden;
         /* Black background: letterbox bars are invisible against the game. */
         background: #000000;
-        cursor:
-          url('/assets/cursor/cursor.png') 16 16,
-          crosshair;
+        /* Cursor hotspot is applied at runtime from RUNTIME_CONFIG (CURSOR_HOTSPOT_X/Y)
+           via src/common/cursor.ts so the offset can be tuned live with Ctrl+Arrows. */
+        cursor: crosshair;
       }
 
       #game-container {
