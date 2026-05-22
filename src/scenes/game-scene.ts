@@ -60,6 +60,7 @@ import { ThunderStrike } from '../game-objects/spells/thunder-strike';
 import { DarkBolt } from '../game-objects/spells/dark-bolt';
 import { LightningBurstCombo, LightningStrikeCombo } from '../game-objects/spells/lightning-combo';
 import { SteamBurst } from '../game-objects/spells/steam-burst';
+import { Puddle } from '../game-objects/spells/puddle';
 import { SPELL_FACTORY_REGISTRY } from '../game-objects/spells/spell-registry';
 import { maybeSpawnGhost } from '../game-objects/spells/spell-ghost';
 import { ElementManager } from '../common/element-manager';
@@ -206,6 +207,7 @@ export class GameScene extends Phaser.Scene {
     this.#updateEarthWallSpell();
     this.#updateFireBoltThunderCombo();
     this.#updateThunderFireAreaCombo();
+    this.#updateThunderStrikePuddleCombo();
     this.#updateFireWaterSteamCombo();
     this.#updateDarkBoltCombos(delta);
     this.#updateEarthBumpWallCombo();
@@ -514,6 +516,56 @@ export class GameScene extends Phaser.Scene {
         const fx = new LightningStrikeCombo(this, x, y);
         this.#player.spellCastingComponent.spellGroup.add(fx);
         break;
+      }
+    }
+  }
+
+  /** ThunderStrike + Puddle combo — a strike whose damage body overlaps any active
+   *  puddle plays a Pixelart Splash at the strike's centre (the cursor / cast point)
+   *  and electrifies every overlapping puddle. Re-striking an already-electrified
+   *  puddle refreshes its charge to 100. Each strike triggers at most once. */
+  #updateThunderStrikePuddleCombo(): void {
+    if (!this.#player?.spellCastingComponent?.spellGroup) return;
+    if (Puddle.all.size === 0) return;
+    const all = [
+      ...this.#player.spellCastingComponent.spellGroup.getChildren(),
+      ...(this.#remoteSpellGroup?.getChildren() ?? []),
+    ];
+    const strikes = all.filter(
+      (s): s is ThunderStrike =>
+        s instanceof ThunderStrike && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+    );
+    if (strikes.length === 0) return;
+
+    for (const strike of strikes) {
+      if (strike.getData('puddleComboTriggered')) continue;
+      const hit: Puddle[] = [];
+      for (const p of Puddle.all) {
+        if (!p.active) continue;
+        if (this.physics.overlap(strike, p)) hit.push(p);
+      }
+      if (hit.length === 0) continue;
+      strike.setData('puddleComboTriggered', true);
+
+      // One splash anchored at the strike's centre (= cursor / cast point), even if
+      // multiple puddles got electrified — the splash is the "lightning hit water"
+      // feedback, not a per-puddle effect. X/Y offset tunables let you nudge the
+      // sprite when the artwork's pivot isn't at the centre of its frame.
+      const splashX = strike.x + RUNTIME_CONFIG.THUNDER_PUDDLE_SPLASH_X_OFFSET_PX;
+      const splashY = strike.y + RUNTIME_CONFIG.THUNDER_PUDDLE_SPLASH_Y_OFFSET_PX;
+      const splash = this.add.sprite(splashX, splashY, ASSET_KEYS.PIXELART_SPLASH, 0);
+      // Above puddles (depth 1.5), under most spell VFX (3+).
+      splash.setDepth(2.5);
+      splash.play(ASSET_KEYS.PIXELART_SPLASH);
+      splash.once(`animationcomplete-${ASSET_KEYS.PIXELART_SPLASH}`, () => splash.destroy());
+
+      const localId = this.#safeNetworkManager()?.localPlayerId;
+      for (const p of hit) {
+        p.electrify(
+          RUNTIME_CONFIG.ELEC_PUDDLE_CHARGE_MAX,
+          this.#player.spellCastingComponent.spellGroup,
+          localId,
+        );
       }
     }
   }
@@ -1216,6 +1268,14 @@ export class GameScene extends Phaser.Scene {
             // Steam puff from a fire+water combo — small chip damage, once per enemy.
             if (spellObj instanceof SteamBurst) {
               spellObj.hitEnemy(enemyGameObject);
+              return;
+            }
+
+            // Electrified puddle — track enemies in area, internal #damageTimer ticks them.
+            // Puddles are only in spellGroup while electrified (added/removed in electrify/
+            // #endElectrification), so this branch is only reached during the active window.
+            if (spellObj instanceof Puddle) {
+              spellObj.addEnemyInArea(enemyGameObject);
               return;
             }
           },

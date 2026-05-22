@@ -21,15 +21,15 @@ export const SPELL_GHOST_ALPHA = 0.4;
 // when iterating on gameplay tweaks and reloading the page constantly.
 // IMPORTANT: leave this false when committing/shipping — multiplayer / match
 // setup is bypassed entirely, so this is single-player only.
-export const DEV_SKIP_TO_GAMEPLAY = true;
+export const DEV_SKIP_TO_GAMEPLAY = false;
 
 export const PLAYER_SPEED = 80;
-export const PLAYER_INVULNERABLE_AFTER_HIT_DURATION = 1000;
+export const PLAYER_INVULNERABLE_AFTER_HIT_DURATION = 500;
 export const PLAYER_HURT_PUSH_BACK_SPEED = 50;
 // Health is stored in half-heart units (1 heart = 2 HP). 20 = 10 hearts on the HUD —
 // gives more visible granularity per spell hit, useful for damage tuning + PvP testing.
 // Drop back to 6 for the original "Zelda-feel" later if desired.
-export const PLAYER_START_MAX_HEALTH = 20;
+export const PLAYER_START_MAX_HEALTH = 10;
 export const PLAYER_ATTACK_DAMAGE = 1;
 // Max distance (px) the cast target can be from the caster. Targets farther than this
 // are clamped along the aim direction. Affects both projectile cast points and AOE placement.
@@ -44,7 +44,7 @@ export const AIM_SNAP_THRESHOLD_PX = 6;
 // Show a faded circle at the attack range so the player can see their reach.
 export const SHOW_PLAYER_ATTACK_RANGE = true;
 export const PLAYER_ATTACK_RANGE_RING_COLOR = 0xffffff;
-export const PLAYER_ATTACK_RANGE_RING_ALPHA = 0.18;
+export const PLAYER_ATTACK_RANGE_RING_ALPHA = 0.05;
 
 // Lightning sprite variant: 'CURRENT' = Thunder Effect 02 sheet; 'MAGIC_PACK_9' = the
 // alternative Lightning frames in Magic Pack 9 files (used by ThunderStrike when set).
@@ -312,6 +312,71 @@ export const THUNDER_STRIKE_MANA_COST = 3;
 export const THUNDER_STRIKE_COOLDOWN = 1200; // ms
 export const THUNDER_STRIKE_LOOP_DURATION = 400; // ms body stays active
 export const THUNDER_STRIKE_BODY_RADIUS = 20; // px
+// Vanilla ThunderStrike alignment + timing tunables (the dark-empowered variant
+// keeps its own DARK_EMPOWERED_Y_OFFSET_PX inside thunder-strike.ts and is unaffected).
+//   SPRITE_Y_OFFSET_PX: positive pushes the visible bolt + hitbox DOWN together. Use
+//     this when the bolt's bottom-of-frame anchor doesn't land exactly on the cursor.
+//   HITBOX_Y_OFFSET_PX: positive shifts ONLY the hitbox down (sprite stays put). Use
+//     when the visible bolt looks right but damage registers above the strike point.
+//     With the current sheet the body sits r=20 px above the strike point — setting
+//     this to ~20 centres the body on the strike point.
+//   ANIM_TIMESCALE: playback speed multiplier applied to the strike-down animation.
+//     1 = native 18 fps (~720 ms total); 2 halves the descent, 3 thirds it.
+//   REACTION_BUFFER_MS: gap between the animation ending and the damage window
+//     opening. 120 = original; drop to 0 for instant damage on strike.
+export const THUNDER_STRIKE_SPRITE_Y_OFFSET_PX = 0;
+export const THUNDER_STRIKE_HITBOX_Y_OFFSET_PX = 0;
+export const THUNDER_STRIKE_ANIM_TIMESCALE = 1;
+export const THUNDER_STRIKE_REACTION_BUFFER_MS = 120;
+
+// Lightning + Puddle combo splash placement. The Pixelart Splash sprite is anchored
+// at the strike's centre (= cursor position). Use these to nudge it if the artwork's
+// pivot isn't at the centre of its 32×32 frame.
+//   X_OFFSET_PX: positive → right.
+//   Y_OFFSET_PX: positive → down, negative → up.
+export const THUNDER_PUDDLE_SPLASH_X_OFFSET_PX = 0;
+export const THUNDER_PUDDLE_SPLASH_Y_OFFSET_PX = 0;
+
+// Electrified Puddle (ThunderStrike on a Puddle combo).
+//
+// Lightning striking a wet puddle leaves it "electrified" with a charge bar that
+// decays over time. Tick damage to anything standing in it, plus visible electric
+// sparks spawned at random points inside the puddle — spark frequency and which
+// frames are favoured both scale with charge.
+//
+//   CHARGE_MAX          ceiling for the bar. 100 reads as a "%".
+//   DECAY_PER_SEC       charge drained per second. 25 → ~4s to clear from full.
+//   DAMAGE_PER_TICK     hp removed per damage tick (LavaPool pattern).
+//   TICK_INTERVAL_MS    ms between damage ticks.
+//   SPARK_TICK_MS       ms between "maybe spawn sparks" evaluations.
+//   SPARK_QTY_AT_FULL   expected sparks per tick at charge=MAX (can be fractional).
+//   SPARK_QTY_AT_LOW    expected sparks per tick at charge≈0.
+//   SPARK_LIFETIME_MS   how long each spark sprite stays before destroying.
+//   SPARK_SCALE         display scale for the 48x48 spark sprite.
+//   SPARK_FRAME_HI/MID/LO  THUNDER_SPLASH frame indices (0..13). HI is the
+//                          "powerful" frame shown more at high charge; LO is the
+//                          weak frame favoured as charge runs out.
+//   SPARK_WEIGHT_*_AT_FULL / _AT_LOW  per-frame relative weights at charge=MAX and
+//                          charge=0. Linearly interpolated between them. Tweak in
+//                          the debug panel via RUNTIME_CONFIG.
+export const ELEC_PUDDLE_CHARGE_MAX = 100;
+export const ELEC_PUDDLE_DECAY_PER_SEC = 25;
+export const ELEC_PUDDLE_DAMAGE_PER_TICK = 1;
+export const ELEC_PUDDLE_TICK_INTERVAL_MS = 400;
+export const ELEC_PUDDLE_SPARK_TICK_MS = 80;
+export const ELEC_PUDDLE_SPARK_QTY_AT_FULL = 2.2;
+export const ELEC_PUDDLE_SPARK_QTY_AT_LOW = 0.25;
+export const ELEC_PUDDLE_SPARK_LIFETIME_MS = 160;
+export const ELEC_PUDDLE_SPARK_SCALE = 0.7;
+export const ELEC_PUDDLE_SPARK_FRAME_HI = 9;
+export const ELEC_PUDDLE_SPARK_FRAME_MID = 11;
+export const ELEC_PUDDLE_SPARK_FRAME_LO = 13;
+export const ELEC_PUDDLE_SPARK_WEIGHT_HI_AT_FULL = 7;
+export const ELEC_PUDDLE_SPARK_WEIGHT_MID_AT_FULL = 2;
+export const ELEC_PUDDLE_SPARK_WEIGHT_LO_AT_FULL = 1;
+export const ELEC_PUDDLE_SPARK_WEIGHT_HI_AT_LOW = 1;
+export const ELEC_PUDDLE_SPARK_WEIGHT_MID_AT_LOW = 2;
+export const ELEC_PUDDLE_SPARK_WEIGHT_LO_AT_LOW = 7;
 
 // Networking (Phase 1: LAN Foundation)
 export const NETWORK_SERVER_URL = 'http://localhost';
@@ -329,7 +394,8 @@ export const MAX_SPELL_DAMAGE = 50;
 
 // Phase 9.3 — Dash tunables (D-13). All values overridable via RUNTIME_CONFIG (debug panel).
 export const DASH_COOLDOWN_MS = 1500; // ms between dashes
-export const DASH_DISTANCE_TILES = 1; // dash distance in tiles (96 px at 32 px/tile)
+export const DASH_DISTANCE_TILES = 1;
+; // dash distance in tiles (96 px at 32 px/tile)
 export const DASH_DURATION_MS = 150; // dash motion duration → velocity = 640 px/s (RESEARCH.md §3)
 export const DASH_IFRAMES_ENABLED = false; // i-frames during dash (off by default)
 export const DASH_IFRAMES_MS = 150; // i-frame window when enabled

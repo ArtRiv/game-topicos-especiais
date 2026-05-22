@@ -452,6 +452,15 @@ export class PreloadScene extends Phaser.Scene {
       hideOnComplete: true,
     });
 
+    // Pixelart Splash (lightning-on-puddle splash VFX). 6 frames @ 32x32, play once then hide.
+    this.anims.create({
+      key: ASSET_KEYS.PIXELART_SPLASH,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.PIXELART_SPLASH, { start: 0, end: 5 }),
+      frameRate: 20,
+      repeat: 0,
+      hideOnComplete: true,
+    });
+
     // Dash roll animation — 5 separate 16x16 images. Frame rate ≈ 5 frames / DASH_DURATION_MS (150 ms) = 33 fps.
     this.anims.create({
       key: DASH_ANIMATION_KEYS.ROLL,

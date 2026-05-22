@@ -324,6 +324,17 @@
     ]
   },
   {
+    "path": "assets/spells/Pixelart Spells/PNG Files",
+    "files": [
+      {
+        "type": "spritesheet",
+        "key": "PIXELART_SPLASH",
+        "url": "Splash.png",
+        "frameConfig": { "frameWidth": 32, "frameHeight": 32 }
+      }
+    ]
+  },
+  {
     "path": "assets/images/levels/dungeon_1",
     "files": [
       {

@@ -8,6 +8,10 @@ import {
   PUDDLE_TINT,
   PUDDLE_HIGHLIGHT_TINT,
 } from '../../common/config';
+import { ASSET_KEYS } from '../../common/assets';
+import { RUNTIME_CONFIG } from '../../common/runtime-config';
+import { DIRECTION } from '../../common/common';
+import type { CharacterGameObject } from '../common/character-game-object';
 
 /**
  * Wet-floor / puddle marker spawned by water-element spells. Future combos read these
@@ -84,6 +88,17 @@ export class Puddle extends Phaser.GameObjects.Graphics {
   #destroyTimer: Phaser.Time.TimerEvent | undefined;
   #fadeTween: Phaser.Tweens.Tween | undefined;
 
+  // Electrified state (ThunderStrike + Puddle combo). All inactive by default — the
+  // puddle is a plain wet-floor unless electrify() flips it on.
+  #charge: number = 0;
+  #electrified: boolean = false;
+  #electrifiedSpellId: string | undefined;
+  #sparkTimer: Phaser.Time.TimerEvent | undefined;
+  #damageTimer: Phaser.Time.TimerEvent | undefined;
+  #lastSparkUpdateMs: number = 0;
+  #spellGroup: Phaser.GameObjects.Group | undefined;
+  #enemiesInArea: Set<CharacterGameObject> = new Set();
+
   constructor(scene: Phaser.Scene, x: number, y: number, amount = 1, lifetimeMs = PUDDLE_DEFAULT_LIFETIME_MS) {
     super(scene, { x, y });
     scene.add.existing(this);
@@ -114,6 +129,79 @@ export class Puddle extends Phaser.GameObjects.Graphics {
     this.#fadeTween?.stop();
     this.setAlpha(1);
     this.#scheduleFade(lifetimeMs);
+  }
+
+  /**
+   * Bump the puddle to "electrified" state with `initialCharge` charge. Re-calling on
+   * an already-electrified puddle ratchets the charge up (never down) and rotates the
+   * spellId so PvP cross-player damage (deduped by spellId in GameScene) can hit again.
+   *
+   * The puddle is added to `spellGroup` (if provided) so it participates in:
+   *   - spellGroup vs enemy overlap → enemies tracked in #enemiesInArea → tick damage.
+   *   - spellGroup vs remote players (cross-player overlap B in game-scene.ts) →
+   *     sendSpellHit fires with spellId/casterId/baseDamage from setData.
+   */
+  electrify(
+    initialCharge: number = RUNTIME_CONFIG.ELEC_PUDDLE_CHARGE_MAX,
+    spellGroup?: Phaser.GameObjects.Group,
+    casterId?: string,
+  ): void {
+    const cap = RUNTIME_CONFIG.ELEC_PUDDLE_CHARGE_MAX;
+    const charge = Math.max(0, Math.min(cap, initialCharge));
+    this.#charge = Math.max(this.#charge, charge);
+
+    // New spellId every strike → PvP damage dedupe (game-scene.ts:1497) doesn't lock
+    // the remote player out forever; they can be re-zapped on a fresh strike.
+    this.#electrifiedSpellId = `elec-puddle-${Math.random().toString(36).slice(2, 10)}-${this.scene.time.now}`;
+    this.setData('spellId', this.#electrifiedSpellId);
+    if (casterId !== undefined) this.setData('casterId', casterId);
+    this.setData('spellType', 'ElectrifiedPuddle');
+    this.setData('baseDamage', RUNTIME_CONFIG.ELEC_PUDDLE_DAMAGE_PER_TICK);
+    this.setData('electrified', true);
+
+    if (this.#electrified) return; // already running — just refreshed charge + id
+    this.#electrified = true;
+    this.#lastSparkUpdateMs = this.scene.time.now;
+
+    if (spellGroup && !spellGroup.contains(this)) {
+      this.#spellGroup = spellGroup;
+      spellGroup.add(this);
+    }
+
+    this.#sparkTimer = this.scene.time.addEvent({
+      delay: RUNTIME_CONFIG.ELEC_PUDDLE_SPARK_TICK_MS,
+      callback: this.#tickSparks,
+      callbackScope: this,
+      loop: true,
+    });
+    this.#damageTimer = this.scene.time.addEvent({
+      delay: RUNTIME_CONFIG.ELEC_PUDDLE_TICK_INTERVAL_MS,
+      callback: this.#tickDamage,
+      callbackScope: this,
+      loop: true,
+    });
+  }
+
+  get charge(): number {
+    return this.#charge;
+  }
+
+  get isElectrified(): boolean {
+    return this.#electrified;
+  }
+
+  /** Read by `baseDamage` consumers in game-scene cross-player overlap. */
+  get baseDamage(): number {
+    return RUNTIME_CONFIG.ELEC_PUDDLE_DAMAGE_PER_TICK;
+  }
+
+  /** Called by the spellGroup-vs-enemy overlap dispatcher in GameScene. */
+  addEnemyInArea(enemy: CharacterGameObject): void {
+    this.#enemiesInArea.add(enemy);
+  }
+
+  removeEnemyFromArea(enemy: CharacterGameObject): void {
+    this.#enemiesInArea.delete(enemy);
   }
 
   /** Remove water (future fire+water combo would call this). Destroys at 0. */
@@ -162,6 +250,99 @@ export class Puddle extends Phaser.GameObjects.Graphics {
     this.fillEllipse(-r * 0.18, -r * 0.22, r * 0.55, r * 0.22);
   }
 
+  #tickDamage(): void {
+    if (!this.#electrified) return;
+    const dmg = RUNTIME_CONFIG.ELEC_PUDDLE_DAMAGE_PER_TICK;
+    for (const enemy of this.#enemiesInArea) {
+      // LavaPool pattern (lava-pool.ts:91) — guard against stale references.
+      if (enemy.active && !enemy.isDefeated) {
+        enemy.hit(DIRECTION.DOWN, dmg);
+      }
+    }
+  }
+
+  #tickSparks(): void {
+    if (!this.#electrified) return;
+    const now = this.scene.time.now;
+    const dtSec = Math.max(0, (now - this.#lastSparkUpdateMs) / 1000);
+    this.#lastSparkUpdateMs = now;
+
+    this.#charge -= RUNTIME_CONFIG.ELEC_PUDDLE_DECAY_PER_SEC * dtSec;
+    if (this.#charge <= 0) {
+      this.#charge = 0;
+      this.#endElectrification();
+      return;
+    }
+
+    const cap = RUNTIME_CONFIG.ELEC_PUDDLE_CHARGE_MAX;
+    const t = Math.max(0, Math.min(1, this.#charge / cap));
+
+    const lerp = (a: number, b: number): number => a + (b - a) * t;
+    const qtyExpected = lerp(
+      RUNTIME_CONFIG.ELEC_PUDDLE_SPARK_QTY_AT_LOW,
+      RUNTIME_CONFIG.ELEC_PUDDLE_SPARK_QTY_AT_FULL,
+    );
+    const wHi = lerp(
+      RUNTIME_CONFIG.ELEC_PUDDLE_SPARK_WEIGHT_HI_AT_LOW,
+      RUNTIME_CONFIG.ELEC_PUDDLE_SPARK_WEIGHT_HI_AT_FULL,
+    );
+    const wMid = lerp(
+      RUNTIME_CONFIG.ELEC_PUDDLE_SPARK_WEIGHT_MID_AT_LOW,
+      RUNTIME_CONFIG.ELEC_PUDDLE_SPARK_WEIGHT_MID_AT_FULL,
+    );
+    const wLo = lerp(
+      RUNTIME_CONFIG.ELEC_PUDDLE_SPARK_WEIGHT_LO_AT_LOW,
+      RUNTIME_CONFIG.ELEC_PUDDLE_SPARK_WEIGHT_LO_AT_FULL,
+    );
+
+    // qtyExpected is fractional — floor + Bernoulli for the remainder gives the
+    // right average without "always rounded up" bias.
+    const whole = Math.floor(qtyExpected);
+    const frac = qtyExpected - whole;
+    const count = whole + (Math.random() < frac ? 1 : 0);
+
+    for (let i = 0; i < count; i++) this.#spawnSpark(wHi, wMid, wLo);
+  }
+
+  #spawnSpark(wHi: number, wMid: number, wLo: number): void {
+    const totalW = wHi + wMid + wLo;
+    if (totalW <= 0) return;
+    const roll = Math.random() * totalW;
+    let frameIdx: number;
+    if (roll < wHi) frameIdx = RUNTIME_CONFIG.ELEC_PUDDLE_SPARK_FRAME_HI;
+    else if (roll < wHi + wMid) frameIdx = RUNTIME_CONFIG.ELEC_PUDDLE_SPARK_FRAME_MID;
+    else frameIdx = RUNTIME_CONFIG.ELEC_PUDDLE_SPARK_FRAME_LO;
+
+    // Uniform random point inside the puddle disc (sqrt for area-uniform — without
+    // it sparks would clump at the centre).
+    const r = Math.sqrt(Math.random()) * this.radius;
+    const a = Math.random() * Math.PI * 2;
+    const sx = this.x + Math.cos(a) * r;
+    const sy = this.y + Math.sin(a) * r;
+
+    const spark = this.scene.add.sprite(sx, sy, ASSET_KEYS.THUNDER_SPLASH, frameIdx);
+    spark.setScale(RUNTIME_CONFIG.ELEC_PUDDLE_SPARK_SCALE);
+    spark.setDepth(this.depth + 0.5);
+    this.scene.time.delayedCall(RUNTIME_CONFIG.ELEC_PUDDLE_SPARK_LIFETIME_MS, () => {
+      if (spark.active) spark.destroy();
+    });
+  }
+
+  #endElectrification(): void {
+    this.#electrified = false;
+    this.#charge = 0;
+    this.#sparkTimer?.destroy();
+    this.#sparkTimer = undefined;
+    this.#damageTimer?.destroy();
+    this.#damageTimer = undefined;
+    this.#enemiesInArea.clear();
+    this.setData('electrified', false);
+    if (this.#spellGroup && this.#spellGroup.contains(this)) {
+      this.#spellGroup.remove(this);
+    }
+    this.#spellGroup = undefined;
+  }
+
   #scheduleFade(lifetimeMs: number): void {
     const fadeMs = Math.min(1500, Math.floor(lifetimeMs * 0.15));
     this.#destroyTimer = this.scene.time.delayedCall(lifetimeMs - fadeMs, () => {
@@ -178,6 +359,12 @@ export class Puddle extends Phaser.GameObjects.Graphics {
   destroy(fromScene?: boolean): void {
     this.#destroyTimer?.destroy();
     this.#fadeTween?.stop();
+    this.#sparkTimer?.destroy();
+    this.#damageTimer?.destroy();
+    this.#enemiesInArea.clear();
+    if (this.#spellGroup && this.#spellGroup.contains(this)) {
+      this.#spellGroup.remove(this);
+    }
     Puddle.all.delete(this);
     super.destroy(fromScene);
   }

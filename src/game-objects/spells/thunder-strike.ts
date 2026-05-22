@@ -44,7 +44,7 @@ export class ThunderStrike extends Phaser.Physics.Arcade.Sprite implements Activ
   }
 
   #damageMultiplier: number;
-  #reactionBufferMs: number = 120;
+  #reactionBufferMs: number;
 
   constructor(scene: Phaser.Scene, x: number, y: number, options?: { darkEmpowered?: boolean }) {
     const darkEmpowered = options?.darkEmpowered === true;
@@ -58,7 +58,10 @@ export class ThunderStrike extends Phaser.Physics.Arcade.Sprite implements Activ
       : useAlt
         ? `${ASSET_KEYS.THUNDER_STRIKE_ALT}_0`
         : ASSET_KEYS.THUNDER_STRIKE;
-    super(scene, x, y + (darkEmpowered ? DARK_EMPOWERED_Y_OFFSET_PX : 0), initialTextureKey);
+    // Vanilla strike gets a runtime-tunable Y offset (config). Dark-empowered keeps its
+    // dedicated DARK_EMPOWERED_Y_OFFSET_PX constant — they're independent knobs.
+    const vanillaSpriteYOffset = RUNTIME_CONFIG.THUNDER_STRIKE_SPRITE_Y_OFFSET_PX;
+    super(scene, x, y + (darkEmpowered ? DARK_EMPOWERED_Y_OFFSET_PX : vanillaSpriteYOffset), initialTextureKey);
     scene.add.existing(this);
     scene.physics.add.existing(this);
     this.setDepth(3);
@@ -82,13 +85,17 @@ export class ThunderStrike extends Phaser.Physics.Arcade.Sprite implements Activ
 
     // Empowered cast deals more damage per the user's spec.
     this.#damageMultiplier = darkEmpowered ? 1.75 : 1;
-    // Empowered variant uses a much shorter reaction buffer — the lightning_strike_001
-    // animation is only ~390ms long, so a 120ms buffer (the default) ate most of the
-    // damage window. 50ms is just enough to register that the bolt arrived.
-    this.#reactionBufferMs = darkEmpowered ? 50 : 120;
+    // Reaction buffer is now a single tunable (RUNTIME_CONFIG.THUNDER_STRIKE_REACTION_BUFFER_MS).
+    // The dark-empowered variant used to bake in a separate 50ms (its anim was shorter),
+    // but we now share one knob — tune via debug panel.
+    this.#reactionBufferMs = RUNTIME_CONFIG.THUNDER_STRIKE_REACTION_BUFFER_MS;
 
     const body = this.body as Phaser.Physics.Arcade.Body;
     const r = darkEmpowered ? 26 : THUNDER_STRIKE_BODY_RADIUS;
+    // Tunable hitbox Y offset (vanilla only). Positive value shifts the body DOWN
+    // relative to the strike point — useful when the visible bolt looks correct but
+    // damage registers above where the lightning lands.
+    const vanillaHitboxYOffset = RUNTIME_CONFIG.THUNDER_STRIKE_HITBOX_Y_OFFSET_PX;
     if (darkEmpowered) {
       // lightning_strike_001 is 128x128 with the strike point near the bottom of the
       // frame. With origin (0.5, 1) the sprite's bottom-center anchors at the cast
@@ -101,7 +108,7 @@ export class ThunderStrike extends Phaser.Physics.Arcade.Sprite implements Activ
       // setCircle offset is from the texture's top-left (it ignores origin). With the bolt's
       // strike point at frame coordinate (32, 64), the circle's top-left for centring is
       // (32 - r, 64 - 2r). Diameter cap = 32 keeps the body inside the frame on Y.
-      body.setCircle(r, 32 - r, 64 - 2 * r);
+      body.setCircle(r, 32 - r, 64 - 2 * r + vanillaHitboxYOffset);
     }
     body.setImmovable(true);
     body.setAllowGravity(false);
@@ -120,6 +127,10 @@ export class ThunderStrike extends Phaser.Physics.Arcade.Sprite implements Activ
         ? ASSET_KEYS.THUNDER_STRIKE_ALT
         : ASSET_KEYS.THUNDER_STRIKE;
     this.play(animKey);
+    // Animation playback speed multiplier. 1 = native frame rate; 2 halves the descent;
+    // 3 thirds it. The animation has to finish before damage activates, so this is the
+    // single biggest knob if the strike feels too slow.
+    this.anims.timeScale = RUNTIME_CONFIG.THUNDER_STRIKE_ANIM_TIMESCALE;
     this.once(`animationcomplete-${animKey}`, () => {
       if (!this.active) return;
       this.#activateBody();
@@ -143,10 +154,10 @@ export class ThunderStrike extends Phaser.Physics.Arcade.Sprite implements Activ
   #activateBody(): void {
     if (!this.active) return;
 
-    // Small reaction buffer between the bolt animation ending and the damage window
-    // opening — tuned via #reactionBufferMs. 120ms for vanilla, 50ms for the dark-
-    // empowered variant (its animation is much shorter and a longer buffer would eat
-    // most of the damage window).
+    // Reaction buffer between the bolt animation ending and the damage window opening,
+    // tunable via RUNTIME_CONFIG.THUNDER_STRIKE_REACTION_BUFFER_MS. Set to 0 for instant
+    // damage on strike (the animation duration itself is the bigger delay — adjust
+    // RUNTIME_CONFIG.THUNDER_STRIKE_ANIM_TIMESCALE for that).
     this.#loopTimer = this.scene.time.delayedCall(this.#reactionBufferMs, () => {
       if (!this.active) return;
       this.#damageActive = true;
