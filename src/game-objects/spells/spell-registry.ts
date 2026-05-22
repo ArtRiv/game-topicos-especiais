@@ -10,6 +10,7 @@ import {
   WATER_SPIKE_MANA_COST, WATER_SPIKE_COOLDOWN,
   WATER_TORNADO_MANA_COST, WATER_TORNADO_COOLDOWN,
   DARK_BOLT_MANA_COST, DARK_BOLT_COOLDOWN,
+  WATER_BALL_MANA_COST, WATER_BALL_COOLDOWN,
 } from '../../common/config';
 
 export type SpellFactory = (
@@ -21,15 +22,18 @@ export type SpellFactory = (
   direction: Direction,
 ) => ActiveSpell;
 
-/** Maps element → [primarySpellId (slot 0), secondarySpellId (slot 1) | null] */
-export const SPELL_SLOT_REGISTRY: Record<Element, readonly [SpellId | null, SpellId | null]> = {
-  [ELEMENT.FIRE]:    [SPELL_ID.FIRE_BOLT,      SPELL_ID.FIRE_AREA],
-  [ELEMENT.EARTH]:   [SPELL_ID.EARTH_BOLT,     SPELL_ID.EARTH_BUMP],
-  [ELEMENT.WATER]:   [SPELL_ID.WATER_SPIKE,    SPELL_ID.WATER_TORNADO],
-  [ELEMENT.ICE]:     [SPELL_ID.ICE_SHARD,      null],
-  [ELEMENT.WIND]:    [SPELL_ID.WIND_BOLT,      null],
-  [ELEMENT.THUNDER]: [SPELL_ID.THUNDER_STRIKE, null],
-  [ELEMENT.DARKNESS]: [SPELL_ID.DARK_BOLT, null],
+/** Maps element → [slot0 (key 1), slot1 (key 2), slot2 (key 3) | null per slot]. Slot 2
+ *  is reserved for "third spell" castable via key 3. Elements where key 3 is owned by a
+ *  special handler (FireBreath = channeled, EarthWall = draw-mode) leave slot 2 = null —
+ *  the slot-cast path then no-ops and the special handler takes over. */
+export const SPELL_SLOT_REGISTRY: Record<Element, readonly [SpellId | null, SpellId | null, SpellId | null]> = {
+  [ELEMENT.FIRE]:     [SPELL_ID.FIRE_BOLT,      SPELL_ID.FIRE_AREA,       null], // key 3 = FireBreath (held, channeled)
+  [ELEMENT.EARTH]:    [SPELL_ID.EARTH_BOLT,     SPELL_ID.EARTH_BUMP,      null], // key 3 = EarthWall (draw-mode)
+  [ELEMENT.WATER]:    [SPELL_ID.WATER_BALL,     SPELL_ID.WATER_TORNADO,   SPELL_ID.WATER_SPIKE],
+  [ELEMENT.ICE]:      [SPELL_ID.ICE_SHARD,      null,                     null],
+  [ELEMENT.WIND]:     [SPELL_ID.WIND_BOLT,      null,                     null],
+  [ELEMENT.THUNDER]:  [SPELL_ID.THUNDER_STRIKE, null,                     null],
+  [ELEMENT.DARKNESS]: [SPELL_ID.DARK_BOLT,      null,                     null],
 };
 
 /** Mana cost and cooldown (ms) per spell — only source of truth for these values in the component. */
@@ -46,6 +50,7 @@ export const SPELL_CONFIG: Record<SpellId, { manaCost: number; cooldown: number 
   [SPELL_ID.WIND_BOLT]:      { manaCost: RUNTIME_CONFIG.WIND_BOLT_MANA_COST,      cooldown: RUNTIME_CONFIG.WIND_BOLT_COOLDOWN },
   [SPELL_ID.THUNDER_STRIKE]: { manaCost: RUNTIME_CONFIG.THUNDER_STRIKE_MANA_COST, cooldown: RUNTIME_CONFIG.THUNDER_STRIKE_COOLDOWN },
   [SPELL_ID.DARK_BOLT]:      { manaCost: DARK_BOLT_MANA_COST,      cooldown: DARK_BOLT_COOLDOWN },
+  [SPELL_ID.WATER_BALL]:     { manaCost: WATER_BALL_MANA_COST,     cooldown: WATER_BALL_COOLDOWN },
 };
 
 /**

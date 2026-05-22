@@ -6,6 +6,8 @@ import { CollidingObjectsComponent } from '../../../game-object/colliding-object
 import { InteractiveObjectComponent } from '../../../game-object/interactive-object-component';
 import { InputComponent } from '../../../input/input-component';
 import { BaseMoveState } from './base-move-state';
+import { SPELL_SLOT_REGISTRY } from '../../../../game-objects/spells/spell-registry';
+import { ElementManager } from '../../../../common/element-manager';
 
 export class MoveState extends BaseMoveState {
   constructor(gameObject: CharacterGameObject) {
@@ -28,6 +30,17 @@ export class MoveState extends BaseMoveState {
     // if spell 2 key was pressed, cast spell from slot 1
     if (controls.isSpell2KeyJustDown) {
       this._stateMachine.setState(CHARACTER_STATES.CASTING_STATE, 1, controls.mouseWorldX, controls.mouseWorldY);
+      return;
+    }
+
+    // Only read isSpell3KeyJustDown when slot 2 is non-null — Phaser's JustDown is
+    // consumed on first call, and unconditionally reading it would steal the just-down
+    // event from GameScene's FireBreath/EarthWall handlers (key 3 for FIRE / EARTH).
+    if (
+      SPELL_SLOT_REGISTRY[ElementManager.instance.activeElement]?.[2] != null &&
+      controls.isSpell3KeyJustDown
+    ) {
+      this._stateMachine.setState(CHARACTER_STATES.CASTING_STATE, 2, controls.mouseWorldX, controls.mouseWorldY);
       return;
     }
 

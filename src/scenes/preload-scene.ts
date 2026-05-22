@@ -319,11 +319,14 @@ export class PreloadScene extends Phaser.Scene {
       repeat: 0,
     });
 
-    // Water Spike rise phase (frames 0-3, play once)
+    // Water Spike rise phase (frames 0-3, play once). 30fps matches the in-file preview
+    // the user prefers — the spike snaps up rather than rising lazily, giving the spell
+    // visual punch. The slow STARTUP anim (the dodge-window puddle) is intentionally
+    // unchanged so opposing mages still have a fair window to react before the spike.
     this.anims.create({
       key: `${ASSET_KEYS.WATER_SPIKE}_RISE`,
       frames: this.anims.generateFrameNumbers(ASSET_KEYS.WATER_SPIKE, { start: 0, end: 3 }),
-      frameRate: 12,
+      frameRate: 30,
       repeat: 0,
     });
 
@@ -360,6 +363,32 @@ export class PreloadScene extends Phaser.Scene {
       repeat: -1,
     });
 
+    // Water Ball — startup sheet is 5x5 grid (25 frames, 64x64 each):
+    //   0..3   = form-up
+    //   4..20  = infinite loop band (17 frames)
+    //   21..24 = empty (skipped — user noted these are blank in the source sheet)
+    this.anims.create({
+      key: `${ASSET_KEYS.WATER_BALL_STARTUP}_START`,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.WATER_BALL_STARTUP, { start: 0, end: 3 }),
+      frameRate: 14,
+      repeat: 0,
+    });
+    this.anims.create({
+      key: `${ASSET_KEYS.WATER_BALL_STARTUP}_LOOP`,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.WATER_BALL_STARTUP, { start: 4, end: 20 }),
+      frameRate: 18,
+      repeat: -1,
+    });
+
+    // Water Ball impact — 4x4 grid (16 frames, 64x64 each), play once then hide.
+    this.anims.create({
+      key: ASSET_KEYS.WATER_BALL_IMPACT,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.WATER_BALL_IMPACT, { start: 0, end: 15 }),
+      frameRate: 24,
+      repeat: 0,
+      hideOnComplete: true,
+    });
+
     // Water Tornado end phase (frames 0-8 of the End spritesheet)
     this.anims.create({
       key: `${ASSET_KEYS.WATER_TORNADO_END}_END`,
@@ -369,21 +398,21 @@ export class PreloadScene extends Phaser.Scene {
       hideOnComplete: true,
     });
 
-    // Ice Shard projectile animation. The spritesheet has 15 frames, but the back half
-    // (frames 8+) shows the shard fading/dispersing — visually wrong for an in-flight loop.
-    // Limit the loop to the first half (full-strength shard) so the projectile looks solid
-    // the whole time it's traveling. Hit/explode handled by ICE_SHARD_HIT separately.
+    // Ice Shard projectile animation — Ice VFX 1 Start.png is a 1x3 sheet (48x32 per
+    // frame): the shard forms over 3 frames then holds on the last frame for the rest
+    // of its flight. `repeat: 0` means Phaser stops on the last frame and stays there
+    // until something else (explode → ICE_SHARD_HIT) replaces the anim.
     this.anims.create({
       key: ASSET_KEYS.ICE_SHARD,
-      frames: this.anims.generateFrameNumbers(ASSET_KEYS.ICE_SHARD, { start: 0, end: 6 }),
-      frameRate: 15,
-      repeat: -1,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.ICE_SHARD, { start: 0, end: 2 }),
+      frameRate: 14,
+      repeat: 0,
     });
 
-    // Ice Shard hit/explode animation (all 12 frames, play once then hide)
+    // Ice Shard hit/explode animation — Ice VFX 1 Hit.png is a 1x8 sheet (48x32).
     this.anims.create({
       key: ASSET_KEYS.ICE_SHARD_HIT,
-      frames: this.anims.generateFrameNumbers(ASSET_KEYS.ICE_SHARD_HIT, { start: 0, end: 11 }),
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.ICE_SHARD_HIT, { start: 0, end: 7 }),
       frameRate: 18,
       repeat: 0,
       hideOnComplete: true,

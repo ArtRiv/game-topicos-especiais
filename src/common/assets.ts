@@ -73,6 +73,9 @@ export const ASSET_KEYS = {
   // Directional smoke burst used as the steam puff for fire-vs-water combos.
   // Per-frame PNGs (21 frames, large white variant).
   STEAM_BURST: 'STEAM_BURST',
+  // WaterBall spell — 4x4 spritesheets, 80x80 per startup frame, 64x64 per impact frame.
+  WATER_BALL_STARTUP: 'WATER_BALL_STARTUP',
+  WATER_BALL_IMPACT: 'WATER_BALL_IMPACT',
 } as const;
 
 export const DASH_ANIMATION_KEYS = {

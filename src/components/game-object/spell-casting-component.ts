@@ -14,8 +14,8 @@ import { NetworkManager } from '../../networking/network-manager';
 export class SpellCastingComponent extends BaseGameObjectComponent {
   #manaComponent: ManaComponent;
   #activeSpells: ActiveSpell[];
-  // [slot0LastCast, slot1LastCast] timestamps in scene.time.now ms
-  #lastCastTime: [number, number] = [0, 0];
+  // [slot0LastCast, slot1LastCast, slot2LastCast] timestamps in scene.time.now ms
+  #lastCastTime: [number, number, number] = [0, 0, 0];
   #scene: Phaser.Scene;
   #spellGroup: Phaser.GameObjects.Group;
 
@@ -36,7 +36,7 @@ export class SpellCastingComponent extends BaseGameObjectComponent {
   }
 
   public canCast(slotIndex: number): boolean {
-    if (slotIndex !== 0 && slotIndex !== 1) return false;
+    if (slotIndex !== 0 && slotIndex !== 1 && slotIndex !== 2) return false;
     // Phase 9.3 — DASH_INTERRUPTABLE_BY_CAST guard (D-13). When false, an active
     // dash refuses new casts (1/2/3). Player.isDashing is the duck-typed flag.
     if (
@@ -162,7 +162,7 @@ export class SpellCastingComponent extends BaseGameObjectComponent {
   }
 
   public getCooldownPercent(slotIndex: number): number {
-    if (slotIndex !== 0 && slotIndex !== 1) return 0;
+    if (slotIndex !== 0 && slotIndex !== 1 && slotIndex !== 2) return 0;
     const element = ElementManager.instance.activeElement;
     const spellId = SPELL_SLOT_REGISTRY[element]?.[slotIndex];
     if (!spellId) return 1;

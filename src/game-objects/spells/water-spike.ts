@@ -11,6 +11,7 @@ import {
 } from '../../common/config';
 import { RUNTIME_CONFIG } from '../../common/runtime-config';
 import { CharacterGameObject } from '../common/character-game-object';
+import { Puddle } from './puddle';
 
 type WaterSpikePhase = 'startup' | 'rise' | 'loop' | 'fade';
 
@@ -108,6 +109,19 @@ export class WaterSpike extends Phaser.Physics.Arcade.Sprite implements ActiveSp
     body.enable = true;
     body.debugShowBody = true;
 
+    // Lay the puddle down NOW (during the rise animation) instead of waiting for the
+    // spike to fade — the water is already on the ground from the moment the spike
+    // erupts. Cluster spawn → multiple small puddles within the spike's base radius,
+    // which merge naturally into 1-3 larger pools.
+    Puddle.spawnCluster(
+      this.scene,
+      this.x,
+      this.y + 40, // spike base (sprite origin sits 40px above the cast target)
+      RUNTIME_CONFIG.WATER_SPIKE_PUDDLE_COUNT,
+      RUNTIME_CONFIG.WATER_SPIKE_PUDDLE_SPREAD,
+      RUNTIME_CONFIG.WATER_SPIKE_PUDDLE_AMOUNT_EACH,
+    );
+
     this.play(`${ASSET_KEYS.WATER_SPIKE}_RISE`);
     this.once(`animationcomplete-${ASSET_KEYS.WATER_SPIKE}_RISE`, () => {
       if (this.active) this.#startLoop();
@@ -134,6 +148,7 @@ export class WaterSpike extends Phaser.Physics.Arcade.Sprite implements ActiveSp
 
     this.play(`${ASSET_KEYS.WATER_SPIKE}_FADE`);
     this.once(`animationcomplete-${ASSET_KEYS.WATER_SPIKE}_FADE`, () => {
+      // Puddles already laid down during #startRise — nothing extra to spawn here.
       this.destroy();
     });
   }

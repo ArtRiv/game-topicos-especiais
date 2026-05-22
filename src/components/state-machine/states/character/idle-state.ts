@@ -3,6 +3,8 @@ import { CHARACTER_STATES } from './character-states';
 import { CharacterGameObject } from '../../../../game-objects/common/character-game-object';
 import { HeldGameObjectComponent } from '../../../game-object/held-game-object-component';
 import { ThrowableObjectComponent } from '../../../game-object/throwable-object-component';
+import { SPELL_SLOT_REGISTRY } from '../../../../game-objects/spells/spell-registry';
+import { ElementManager } from '../../../../common/element-manager';
 
 export class IdleState extends BaseCharacterState {
   constructor(gameObject: CharacterGameObject) {
@@ -44,6 +46,19 @@ export class IdleState extends BaseCharacterState {
     // if spell 2 key was pressed, cast spell from slot 1
     if (controls.isSpell2KeyJustDown) {
       this._stateMachine.setState(CHARACTER_STATES.CASTING_STATE, 1, controls.mouseWorldX, controls.mouseWorldY);
+      return;
+    }
+
+    // Only read isSpell3KeyJustDown when the current element actually has a slot 2 spell.
+    // Phaser's JustDown is "consumed" on first read — if idle-state polls it for an
+    // element with slot 2 = null (FIRE/EARTH, whose key 3 is owned by GameScene's
+    // FireBreath / EarthWall handlers), it eats the just-down event before those
+    // handlers can see it. Gating on the slot map keeps the press available downstream.
+    if (
+      SPELL_SLOT_REGISTRY[ElementManager.instance.activeElement]?.[2] != null &&
+      controls.isSpell3KeyJustDown
+    ) {
+      this._stateMachine.setState(CHARACTER_STATES.CASTING_STATE, 2, controls.mouseWorldX, controls.mouseWorldY);
       return;
     }
 

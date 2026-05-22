@@ -12,6 +12,7 @@ import {
 } from '../../common/config';
 import { RUNTIME_CONFIG } from '../../common/runtime-config';
 import { CharacterGameObject } from '../common/character-game-object';
+import { Puddle } from './puddle';
 
 type WaterTornadoPhase = 'startup' | 'loop' | 'end';
 
@@ -95,6 +96,21 @@ export class WaterTornado extends Phaser.Physics.Arcade.Sprite implements Active
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.enable = true;
 
+    // Drop puddles around the tornado's base RIGHT when the loop begins — the water is
+    // visibly on the ground while the tornado is still spinning, not magically after.
+    // Cluster spawn → 7 small puddles within ~48px of the base merge into a natural
+    // 2-3 larger pool footprint matching the tornado's reach.
+    Puddle.spawnCluster(
+      this.scene,
+      this.x,
+      this.y + 48, // tornado base (sprite origin sits 48px above the cast target)
+      RUNTIME_CONFIG.WATER_TORNADO_PUDDLE_COUNT,
+      RUNTIME_CONFIG.WATER_TORNADO_PUDDLE_SPREAD,
+      RUNTIME_CONFIG.WATER_TORNADO_PUDDLE_AMOUNT_EACH,
+      undefined, // lifetimeMs — use default
+      RUNTIME_CONFIG.WATER_TORNADO_PUDDLE_STAGGER_MS, // drip in gradually over the loop
+    );
+
     this.play(`${ASSET_KEYS.WATER_TORNADO_STARTUP_LOOP}_LOOP`);
 
     // Tick damage every WATER_TORNADO_TICK_INTERVAL ms
@@ -126,6 +142,7 @@ export class WaterTornado extends Phaser.Physics.Arcade.Sprite implements Active
     // Play end animation
     this.play(`${ASSET_KEYS.WATER_TORNADO_END}_END`);
     this.once(`animationcomplete-${ASSET_KEYS.WATER_TORNADO_END}_END`, () => {
+      // Puddles already laid during #startLoop — nothing extra here.
       this.destroy();
     });
   }

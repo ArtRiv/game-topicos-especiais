@@ -251,19 +251,36 @@
     ]
   },
   {
+    "path": "assets/spells/Water Effect 2/Water Ball - Spritesheet",
+    "files": [
+      {
+        "type": "spritesheet",
+        "key": "WATER_BALL_STARTUP",
+        "url": "WaterBall - Startup and Infinite.png",
+        "frameConfig": { "frameWidth": 64, "frameHeight": 64 }
+      },
+      {
+        "type": "spritesheet",
+        "key": "WATER_BALL_IMPACT",
+        "url": "WaterBall - Impact.png",
+        "frameConfig": { "frameWidth": 64, "frameHeight": 64 }
+      }
+    ]
+  },
+  {
     "path": "assets/spells/Ice Effect 01/Ice VFX 1",
     "files": [
       {
         "type": "spritesheet",
         "key": "ICE_SHARD",
-        "url": "IceVFX 1 Repeatable.png",
-        "frameConfig": { "frameWidth": 32, "frameHeight": 32 }
+        "url": "Ice VFX 1 Start.png",
+        "frameConfig": { "frameWidth": 48, "frameHeight": 32 }
       },
       {
         "type": "spritesheet",
         "key": "ICE_SHARD_HIT",
         "url": "Ice VFX 1 Hit.png",
-        "frameConfig": { "frameWidth": 32, "frameHeight": 32 }
+        "frameConfig": { "frameWidth": 48, "frameHeight": 32 }
       }
     ]
   },

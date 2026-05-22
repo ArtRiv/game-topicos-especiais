@@ -52,6 +52,7 @@ import { LavaPool } from '../game-objects/spells/lava-pool';
 import { EarthWallPillar } from '../game-objects/spells/earth-wall-pillar';
 import { WaterSpike } from '../game-objects/spells/water-spike';
 import { WaterTornado } from '../game-objects/spells/water-tornado';
+import { WaterBall } from '../game-objects/spells/water-ball';
 import { EarthBump } from '../game-objects/spells/earth-bump';
 import { IceShard } from '../game-objects/spells/ice-shard';
 import { WindBolt } from '../game-objects/spells/wind-bolt';
@@ -1161,6 +1162,13 @@ export class GameScene extends Phaser.Scene {
               spellObj.addEnemyInArea(enemyGameObject);
             }
 
+            // WaterBall projectile — single hit + explode (FireBolt pattern).
+            if (spellObj instanceof WaterBall) {
+              enemyGameObject.hit(DIRECTION.DOWN, spellObj.baseDamage);
+              spellObj.explode();
+              return;
+            }
+
             // WaterSpike — damages each enemy once during the active phase
             if (spellObj instanceof WaterSpike) {
               spellObj.hitEnemy(enemyGameObject);
@@ -1282,6 +1290,9 @@ export class GameScene extends Phaser.Scene {
       if (spellObj instanceof DarkBolt) {
         spellObj.explode();
       }
+      if (spellObj instanceof WaterBall) {
+        spellObj.explode();
+      }
     });
 
     // Remote spells also explode on walls
@@ -1296,6 +1307,9 @@ export class GameScene extends Phaser.Scene {
         spellObj.explode();
       }
       if (spellObj instanceof WindBolt) {
+        spellObj.explode();
+      }
+      if (spellObj instanceof WaterBall) {
         spellObj.explode();
       }
     });
@@ -1314,6 +1328,7 @@ export class GameScene extends Phaser.Scene {
           if (spellObj instanceof WindBolt) { enemyGameObject.hit(DIRECTION.DOWN, spellObj.baseDamage); spellObj.explode(); return; }
           if (spellObj instanceof FireBolt) { enemyGameObject.hit(DIRECTION.DOWN, spellObj.baseDamage); spellObj.explode(); return; }
           if (spellObj instanceof EarthBolt) { enemyGameObject.hit(DIRECTION.DOWN, spellObj.baseDamage); spellObj.explode(); return; }
+          if (spellObj instanceof WaterBall) { enemyGameObject.hit(DIRECTION.DOWN, spellObj.baseDamage); spellObj.explode(); return; }
           if (spellObj instanceof ThunderStrike) { spellObj.hitEnemy(enemyGameObject); return; }
           if (spellObj instanceof WaterSpike) { spellObj.hitEnemy(enemyGameObject); return; }
         },

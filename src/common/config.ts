@@ -21,7 +21,7 @@ export const SPELL_GHOST_ALPHA = 0.4;
 // when iterating on gameplay tweaks and reloading the page constantly.
 // IMPORTANT: leave this false when committing/shipping — multiplayer / match
 // setup is bypassed entirely, so this is single-player only.
-export const DEV_SKIP_TO_GAMEPLAY = false;
+export const DEV_SKIP_TO_GAMEPLAY = true;
 
 export const PLAYER_SPEED = 80;
 export const PLAYER_INVULNERABLE_AFTER_HIT_DURATION = 1000;
@@ -231,6 +231,55 @@ export const WATER_SPIKE_MANA_COST = 2;
 export const WATER_SPIKE_COOLDOWN = 800; // ms
 export const WATER_SPIKE_LOOP_DURATION = 300; // ms the spike stays active (damage window)
 export const WATER_SPIKE_BODY_RADIUS = 10; // AoE circle radius in px
+
+// Water Ball — projectile (FireBolt-like). Plays the 4-frame startup once at the
+// caster's position, then loops the "infinite" middle band (frames 4..11) while flying
+// to the target. On wall/enemy contact plays the 16-frame impact burst and splashes a
+// cluster of puddles.
+//   Startup sheet: 4x4 grid, 80x80 per frame → 16 frames total.
+//     0..3   = form-up (play once at spawn)
+//     4..11  = infinite loop band (8 frames, looped during flight)
+//     12..15 = empty (do not use)
+//   Impact sheet: 4x4 grid, 64x64 per frame → 16 frames (all used).
+export const WATER_BALL_DAMAGE = 2;
+export const WATER_BALL_MANA_COST = 4;
+export const WATER_BALL_COOLDOWN = 1500; // ms
+export const WATER_BALL_SPEED = 500; // px/s — slower than FireBolt (750), water is heavy
+export const WATER_BALL_LIFETIME = 2200; // ms before auto-destroy if it never hits anything
+export const WATER_BALL_BODY_RADIUS = 14;
+// Impact sprite is drawn as a horizontal splash; rotating by 90° from flight angle
+// makes it perpendicular to flight (matches EarthBolt's behavior). When aiming up the
+// splash extends horizontally, hitting right extends vertically, etc. — physically
+// correct "water splashes sideways off the surface it hits" read.
+export const WATER_BALL_IMPACT_ROTATION_OFFSET = Math.PI / 2;
+
+// Puddle (wet-floor mechanic) — left behind by water spells, future combos read these.
+export const PUDDLE_DEFAULT_LIFETIME_MS = 18000;
+export const PUDDLE_MERGE_RADIUS = 16; // a new puddle within this distance of an existing one merges instead
+export const PUDDLE_MAX_AMOUNT = 4;
+export const PUDDLE_BASE_RADIUS_PX = 12;
+export const PUDDLE_AMOUNT_RADIUS_PX = 6; // per unit of amount added to base
+export const PUDDLE_TINT = 0x3a6fd6;
+export const PUDDLE_HIGHLIGHT_TINT = 0xaaddff;
+
+// Per-spell puddle spawn tuning. COUNT = how many individual puddles spawned per cast.
+// SPREAD = max radius (px) from cast center where puddles can land. AMOUNT_EACH = puddle
+// "wetness" — bigger = bigger blob + longer-feeling lifetime when stacked via merging.
+// Puddles within PUDDLE_MERGE_RADIUS of each other merge instead of overlapping, so
+// COUNT × AMOUNT_EACH gives you total water dropped; SPREAD controls how dispersed it is.
+export const WATER_SPIKE_PUDDLE_COUNT = 5;
+export const WATER_SPIKE_PUDDLE_SPREAD = 14;
+export const WATER_SPIKE_PUDDLE_AMOUNT_EACH = 0.5;
+export const WATER_TORNADO_PUDDLE_COUNT = 14;
+export const WATER_TORNADO_PUDDLE_SPREAD = 24;
+export const WATER_TORNADO_PUDDLE_AMOUNT_EACH = 0.5;
+// Tornado puddles drip in gradually over the tornado's loop — 200ms between each
+// puddle reads as "the tornado is sloshing water around" instead of "14 puddles popped
+// into existence at once". WaterSpike (fast spell) intentionally has no stagger.
+export const WATER_TORNADO_PUDDLE_STAGGER_MS = 200;
+export const WATER_BALL_PUDDLE_COUNT = 4;
+export const WATER_BALL_PUDDLE_SPREAD = 32;
+export const WATER_BALL_PUDDLE_AMOUNT_EACH = 0.6;
 
 // Water Tornado (water blast spell)
 export const WATER_TORNADO_DAMAGE = 3;

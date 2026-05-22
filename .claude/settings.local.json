@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git checkout:*)",
+      "Skill(gsd-do)",
+      "Skill(gsd-new-milestone)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(rm -f .planning/research/SUMMARY.md.part1)",
+      "Bash(node -e ':*)"
+    ]
+  }
+}

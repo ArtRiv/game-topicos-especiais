@@ -35,7 +35,10 @@ export class IceShard extends Phaser.Physics.Arcade.Sprite implements ActiveSpel
     this.setDepth(3);
 
     const body = this.body as Phaser.Physics.Arcade.Body;
-    body.setSize(4, 4, true);
+    // Match the FireBolt body footprint (16x16, centered on the projectile) so the
+    // shard reads as a similarly-threatening hitbox in PvP. The previous 4x4 body
+    // visibly missed enemies it should've hit.
+    body.setSize(16, 16, true);
 
     const angle = Phaser.Math.Angle.Between(x, y, targetX, targetY);
     body.setVelocity(
