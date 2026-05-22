@@ -21,12 +21,15 @@ export const SPELL_GHOST_ALPHA = 0.4;
 // when iterating on gameplay tweaks and reloading the page constantly.
 // IMPORTANT: leave this false when committing/shipping — multiplayer / match
 // setup is bypassed entirely, so this is single-player only.
-export const DEV_SKIP_TO_GAMEPLAY = true;
+export const DEV_SKIP_TO_GAMEPLAY = false;
 
 export const PLAYER_SPEED = 80;
 export const PLAYER_INVULNERABLE_AFTER_HIT_DURATION = 1000;
 export const PLAYER_HURT_PUSH_BACK_SPEED = 50;
-export const PLAYER_START_MAX_HEALTH = 6;
+// Health is stored in half-heart units (1 heart = 2 HP). 20 = 10 hearts on the HUD —
+// gives more visible granularity per spell hit, useful for damage tuning + PvP testing.
+// Drop back to 6 for the original "Zelda-feel" later if desired.
+export const PLAYER_START_MAX_HEALTH = 20;
 export const PLAYER_ATTACK_DAMAGE = 1;
 // Max distance (px) the cast target can be from the caster. Targets farther than this
 // are clamped along the aim direction. Affects both projectile cast points and AOE placement.

@@ -1491,13 +1491,33 @@ export class GameScene extends Phaser.Scene {
       if (this.time.now < this.#player.iFrameUntil) {
         return;
       }
-      this.#player.lifeComponent.takeDamage(payload.amount);
+      // Route through hit() instead of lifeComponent.takeDamage() directly — hit() ALSO
+      // calls DataManager.updatePlayerCurrentHealth (→ emits PLAYER_HEALTH_UPDATED → HUD
+      // refresh), plays the hurt animation, and runs the post-hit invulnerability gate.
+      // Without this, PvP damage silently mutated HP but the HUD never changed and the
+      // hurt animation never played, making it look like nothing happened.
+      this.#player.hit(DIRECTION.DOWN, payload.amount);
       return;
     }
 
     const remote = this.#remotePlayers.get(payload.targetId);
     if (remote) {
+      // Inline-replicate hit() WITHOUT the DataManager.updatePlayerCurrentHealth call.
+      // remote.hit() updates DataManager because Player instances are constructed with
+      // isPlayer:true, but DataManager is a per-client singleton — calling it for a
+      // remote would overwrite the LOCAL player's HUD with the remote's HP, making it
+      // look like the caster was taking damage too. The visual hurt animation + life
+      // decrement still need to fire so the caster gets "yes, that hit landed" feedback.
+      if (remote.isDefeated) return;
+      if (remote.invulnerableComponent.invulnerable) return;
       remote.lifeComponent.takeDamage(payload.amount);
+      if (remote.lifeComponent.life === 0) {
+        // Death is server-authoritative (NETWORK_ELIMINATION) — the local state we set
+        // here is a best-guess that will be overridden when the elimination broadcast lands.
+        remote.stateMachine.setState(CHARACTER_STATES.DEATH_STATE, DIRECTION.DOWN);
+      } else {
+        remote.stateMachine.setState(CHARACTER_STATES.HURT_STATE, DIRECTION.DOWN);
+      }
     }
   };
 
@@ -2416,7 +2436,12 @@ export class GameScene extends Phaser.Scene {
         const currentState = remote.stateMachine.currentStateName;
         const stateChanged = target.state !== currentState;
         if (stateChanged) {
-          remote.stateMachine.setState(target.state);
+          // Pass the remote's current direction as the state arg — HURT_STATE and
+          // DEATH_STATE both call exhaustiveGuard on their direction arg in onEnter(),
+          // so a setState call without args crashes the caster's client the moment
+          // their target's HURT state propagates over the wire. Most other states
+          // ignore the arg, so this is harmless for them.
+          remote.stateMachine.setState(target.state, remote.direction);
         }
 
         // MoveState has no onEnter and its onUpdate is blocked by isMovementLocked,
