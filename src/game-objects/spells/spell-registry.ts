@@ -11,6 +11,8 @@ import {
   WATER_TORNADO_MANA_COST, WATER_TORNADO_COOLDOWN,
   DARK_BOLT_MANA_COST, DARK_BOLT_COOLDOWN,
   WATER_BALL_MANA_COST, WATER_BALL_COOLDOWN,
+  THUNDER_SPLASH_MANA_COST, THUNDER_SPLASH_COOLDOWN,
+  AIR_BURST_MANA_COST, AIR_BURST_COOLDOWN,
 } from '../../common/config';
 
 export type SpellFactory = (
@@ -20,6 +22,10 @@ export type SpellFactory = (
   targetX: number,
   targetY: number,
   direction: Direction,
+  // Optional reference to the GameObject that's casting. Spells that affect the caster
+  // (AirBurst's super-dash, future self-buffs) need this to distinguish a local cast
+  // from a remote cast — the registry path is shared but the caster is not.
+  caster?: Phaser.GameObjects.GameObject,
 ) => ActiveSpell;
 
 /** Maps element → [slot0 (key 1), slot1 (key 2), slot2 (key 3) | null per slot]. Slot 2
@@ -28,11 +34,11 @@ export type SpellFactory = (
  *  the slot-cast path then no-ops and the special handler takes over. */
 export const SPELL_SLOT_REGISTRY: Record<Element, readonly [SpellId | null, SpellId | null, SpellId | null]> = {
   [ELEMENT.FIRE]:     [SPELL_ID.FIRE_BOLT,      SPELL_ID.FIRE_AREA,       null], // key 3 = FireBreath (held, channeled)
-  [ELEMENT.EARTH]:    [SPELL_ID.EARTH_BOLT,     SPELL_ID.EARTH_BUMP,      null], // key 3 = EarthWall (draw-mode)
-  [ELEMENT.WATER]:    [SPELL_ID.WATER_BALL,     SPELL_ID.WATER_TORNADO,   SPELL_ID.WATER_SPIKE],
+  [ELEMENT.EARTH]:    [SPELL_ID.EARTH_BUMP,     null,                     null], // key 3 = EarthWall (draw-mode); EarthBolt deprecated from radial flow
+  [ELEMENT.WATER]:    [SPELL_ID.WATER_TORNADO,  SPELL_ID.WATER_SPIKE,     null], // WaterBall still registered but unbound
   [ELEMENT.ICE]:      [SPELL_ID.ICE_SHARD,      null,                     null],
-  [ELEMENT.WIND]:     [SPELL_ID.WIND_BOLT,      null,                     null],
-  [ELEMENT.THUNDER]:  [SPELL_ID.THUNDER_STRIKE, null,                     null],
+  [ELEMENT.WIND]:     [SPELL_ID.WIND_BOLT,      SPELL_ID.AIR_BURST,       null],
+  [ELEMENT.THUNDER]:  [SPELL_ID.THUNDER_STRIKE, SPELL_ID.THUNDER_SPLASH,  null],
   [ELEMENT.DARKNESS]: [SPELL_ID.DARK_BOLT,      null,                     null],
 };
 
@@ -49,8 +55,10 @@ export const SPELL_CONFIG: Record<SpellId, { manaCost: number; cooldown: number 
   [SPELL_ID.ICE_SHARD]:      { manaCost: RUNTIME_CONFIG.ICE_SHARD_MANA_COST,      cooldown: RUNTIME_CONFIG.ICE_SHARD_COOLDOWN },
   [SPELL_ID.WIND_BOLT]:      { manaCost: RUNTIME_CONFIG.WIND_BOLT_MANA_COST,      cooldown: RUNTIME_CONFIG.WIND_BOLT_COOLDOWN },
   [SPELL_ID.THUNDER_STRIKE]: { manaCost: RUNTIME_CONFIG.THUNDER_STRIKE_MANA_COST, cooldown: RUNTIME_CONFIG.THUNDER_STRIKE_COOLDOWN },
+  [SPELL_ID.THUNDER_SPLASH]: { manaCost: THUNDER_SPLASH_MANA_COST, cooldown: THUNDER_SPLASH_COOLDOWN },
   [SPELL_ID.DARK_BOLT]:      { manaCost: DARK_BOLT_MANA_COST,      cooldown: DARK_BOLT_COOLDOWN },
   [SPELL_ID.WATER_BALL]:     { manaCost: WATER_BALL_MANA_COST,     cooldown: WATER_BALL_COOLDOWN },
+  [SPELL_ID.AIR_BURST]:      { manaCost: AIR_BURST_MANA_COST,      cooldown: AIR_BURST_COOLDOWN },
 };
 
 /**

@@ -461,6 +461,40 @@ export class PreloadScene extends Phaser.Scene {
       hideOnComplete: true,
     });
 
+    // Thunder Splash spell — slow lightning projectile cast with the THUNDER_SPLASH sheet
+    // (14 frames @ 48x48). Three animation phases, each pinned to a fixed slice of frames:
+    //   _CHARGE  frames 0..1  — stationary windup at the caster
+    //   _TRAVEL  frames 2..6  — slowly drifts toward the target
+    //   _LAND    frames 7..13 — plays out at the landing point, hides on complete
+    this.anims.create({
+      key: `${ASSET_KEYS.THUNDER_SPLASH}_CHARGE`,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.THUNDER_SPLASH, { start: 0, end: 1 }),
+      frameRate: 8,
+      repeat: 0,
+    });
+    this.anims.create({
+      key: `${ASSET_KEYS.THUNDER_SPLASH}_TRAVEL`,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.THUNDER_SPLASH, { start: 2, end: 6 }),
+      frameRate: 8,
+      repeat: 0,
+    });
+    this.anims.create({
+      key: `${ASSET_KEYS.THUNDER_SPLASH}_LAND`,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.THUNDER_SPLASH, { start: 7, end: 13 }),
+      frameRate: 14,
+      repeat: 0,
+      hideOnComplete: true,
+    });
+
+    // Air Burst — wind super-dash VFX (3x3 grid → 9 frames @ 48x48).
+    this.anims.create({
+      key: ASSET_KEYS.AIR_BURST,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.AIR_BURST, { start: 0, end: 8 }),
+      frameRate: 24,
+      repeat: 0,
+      hideOnComplete: true,
+    });
+
     // Dash roll animation — 5 separate 16x16 images. Frame rate ≈ 5 frames / DASH_DURATION_MS (150 ms) = 33 fps.
     this.anims.create({
       key: DASH_ANIMATION_KEYS.ROLL,

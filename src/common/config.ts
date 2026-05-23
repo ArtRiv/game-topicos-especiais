@@ -306,12 +306,37 @@ export const WIND_BOLT_SPEED = 900;
 export const WIND_BOLT_LIFETIME = 1800; // ms
 export const WIND_BOLT_IMPACT_FORWARD_OFFSET = 8;
 
+// AIR_BURST (wind super-dash spell). Reuses Player.dash() with overridden distance and
+// duration — see Player.dashSuper(). The VFX is the 3x3 Air Burst sheet anchored behind
+// the caster relative to the dash direction.
+export const AIR_BURST_MANA_COST = 4;
+export const AIR_BURST_COOLDOWN = 2500; // ms — longer than regular dash so it's a deliberate ability
+export const AIR_BURST_DISTANCE_TILES = 3; // ~3x the regular dash distance (regular is 1)
+export const AIR_BURST_DURATION_MS = 220; // slightly longer than regular dash (150) so the dash reads as bigger
+export const AIR_BURST_VFX_OFFSET_PX = 14; // px the burst sprite sits behind the player along the dash axis
+export const AIR_BURST_VFX_SCALE = 1.0; // sprite scale multiplier
+
 // THUNDER_STRIKE (area)
 export const THUNDER_STRIKE_DAMAGE = 3;
 export const THUNDER_STRIKE_MANA_COST = 3;
 export const THUNDER_STRIKE_COOLDOWN = 1200; // ms
 export const THUNDER_STRIKE_LOOP_DURATION = 400; // ms body stays active
 export const THUNDER_STRIKE_BODY_RADIUS = 20; // px
+
+// THUNDER_SPLASH (slow lightning projectile, lingers at impact site).
+// Frame phases mapped in preload-scene.ts:
+//   CHARGE_MS  duration of the stationary windup at caster (frames 0..1 @ 8fps ≈ 250 ms)
+//   TRAVEL_MS  how long the orb takes to drift to the landing point (frames 2..6 @ 8fps ≈ 625 ms)
+//   LAND_MS    duration of the landing pose before destroying (frames 7..13 @ 14fps ≈ 500 ms)
+// Total lifetime ≈ CHARGE + TRAVEL + LAND. The animation framerates above are the
+// visual cadence; these constants are the timing source of truth for damage/destroy.
+export const THUNDER_SPLASH_DAMAGE = 2;
+export const THUNDER_SPLASH_MANA_COST = 2;
+export const THUNDER_SPLASH_COOLDOWN = 1000; // ms
+export const THUNDER_SPLASH_CHARGE_MS = 250;
+export const THUNDER_SPLASH_TRAVEL_MS = 650;
+export const THUNDER_SPLASH_LAND_MS = 500;
+export const THUNDER_SPLASH_BODY_RADIUS = 14; // px — hitbox while landed
 // Vanilla ThunderStrike alignment + timing tunables (the dark-empowered variant
 // keeps its own DARK_EMPOWERED_Y_OFFSET_PX inside thunder-strike.ts and is unaffected).
 //   SPRITE_Y_OFFSET_PX: positive pushes the visible bolt + hitbox DOWN together. Use

@@ -324,6 +324,17 @@
     ]
   },
   {
+    "path": "assets/spells/Wind Effect 02",
+    "files": [
+      {
+        "type": "spritesheet",
+        "key": "AIR_BURST",
+        "url": "Air Burst.png",
+        "frameConfig": { "frameWidth": 48, "frameHeight": 48 }
+      }
+    ]
+  },
+  {
     "path": "assets/spells/Pixelart Spells/PNG Files",
     "files": [
       {

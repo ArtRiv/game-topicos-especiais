@@ -77,6 +77,8 @@ export const ASSET_KEYS = {
   // WaterBall spell — 4x4 spritesheets, 80x80 per startup frame, 64x64 per impact frame.
   WATER_BALL_STARTUP: 'WATER_BALL_STARTUP',
   WATER_BALL_IMPACT: 'WATER_BALL_IMPACT',
+  // AirBurst — wind super-dash VFX (3x3 grid, 144x144 total → 48x48 per frame).
+  AIR_BURST: 'AIR_BURST',
 } as const;
 
 export const DASH_ANIMATION_KEYS = {

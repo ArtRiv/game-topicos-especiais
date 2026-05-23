@@ -10,6 +10,10 @@ import {
   PLAYER_SPEED,
   PLAYER_MAX_MANA,
   PLAYER_MANA_REGEN_RATE,
+  AIR_BURST_DISTANCE_TILES,
+  AIR_BURST_DURATION_MS,
+  AIR_BURST_VFX_OFFSET_PX,
+  AIR_BURST_VFX_SCALE,
 } from '../../common/config';
 import { AnimationConfig } from '../../components/game-object/animation-component';
 import { ASSET_KEYS, DASH_ANIMATION_KEYS, PLAYER_ANIMATION_KEYS } from '../../common/assets';
@@ -170,9 +174,32 @@ export class Player extends CharacterGameObject {
    * naturally without tunneling. Direction = current WASD vector, fallback to last-faced direction.
    */
   public dash(): void {
+    this.#performDash({});
+  }
+
+  /**
+   * AirBurst — wind super-dash. Bypasses the regular DASH_COOLDOWN_MS (mana cost + spell
+   * cooldown gate it via SpellCastingComponent instead) and uses the AIR_BURST_* tunables
+   * for distance/duration, then spawns the Air Burst sheet trailing behind the mage.
+   */
+  public dashSuper(): void {
+    this.#performDash({
+      ignoreCooldown: true,
+      distanceTiles: AIR_BURST_DISTANCE_TILES,
+      durationMs: AIR_BURST_DURATION_MS,
+      extraVfx: (nx, ny) => this.#spawnAirBurstVfx(nx, ny),
+    });
+  }
+
+  #performDash(opts: {
+    ignoreCooldown?: boolean;
+    distanceTiles?: number;
+    durationMs?: number;
+    extraVfx?: (nx: number, ny: number) => void;
+  }): void {
     const cfg = RUNTIME_CONFIG;
     const now = this.scene.time.now;
-    if (now - this.#lastDashTime < cfg.DASH_COOLDOWN_MS) return;
+    if (!opts.ignoreCooldown && now - this.#lastDashTime < cfg.DASH_COOLDOWN_MS) return;
 
     // Direction vector (D-14): WASD first, fallback to last-faced direction.
     let dx = 0;
@@ -203,7 +230,9 @@ export class Player extends CharacterGameObject {
 
     // TILE_SIZE = 32 (project-wide; no exported constant).
     const TILE_SIZE = 32;
-    const speed = (cfg.DASH_DISTANCE_TILES * TILE_SIZE) / (cfg.DASH_DURATION_MS / 1000);
+    const distanceTiles = opts.distanceTiles ?? cfg.DASH_DISTANCE_TILES;
+    const durationMs = opts.durationMs ?? cfg.DASH_DURATION_MS;
+    const speed = (distanceTiles * TILE_SIZE) / (durationMs / 1000);
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.setVelocity(nx * speed, ny * speed);
 
@@ -216,10 +245,11 @@ export class Player extends CharacterGameObject {
       this.iFrameUntil = now + cfg.DASH_IFRAMES_MS;
     }
 
-    this.#spawnDashVfx(nx, ny);
+    this.#spawnDashVfx(nx, ny, durationMs);
+    opts.extraVfx?.(nx, ny);
 
     // End dash: zero velocity, unlock movement, clear dashing flag.
-    this.scene.time.delayedCall(cfg.DASH_DURATION_MS, () => {
+    this.scene.time.delayedCall(durationMs, () => {
       // Guard against player being destroyed mid-dash (e.g. respawn).
       if (!this.active || !this.body) return;
       (this.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
@@ -233,8 +263,9 @@ export class Player extends CharacterGameObject {
    * and a one-shot smoke puff at the dash origin, drawn behind the player. Opacity/size are
    * read from RUNTIME_CONFIG each cast so the debug panel can tune them live.
    */
-  #spawnDashVfx(nx: number, ny: number): void {
+  #spawnDashVfx(nx: number, ny: number, durationMs?: number): void {
     const cfg = RUNTIME_CONFIG;
+    const dashMs = durationMs ?? cfg.DASH_DURATION_MS;
 
     // Smoke puff at dash origin, behind the player. The base puff art is drawn trailing to
     // the right (assumes a rightward dash). For leftward dashes we mirror it across X and
@@ -280,9 +311,29 @@ export class Player extends CharacterGameObject {
 
     roll.once(Phaser.Animations.Events.ANIMATION_COMPLETE, cleanup);
     // Safety net: ensure the roll is cleaned up if the animation event never fires
-    // (e.g. scene shutdown or player destroyed mid-dash).
-    this.scene.time.delayedCall(cfg.DASH_DURATION_MS + 50, () => {
+    // (e.g. scene shutdown or player destroyed mid-dash). The longer of roll-animation
+    // duration vs the actual dash duration covers super-dashes that outlast the roll.
+    this.scene.time.delayedCall(dashMs + 50, () => {
       if (roll.active) cleanup();
     });
+  }
+
+  /**
+   * Air Burst VFX — the 3x3 wind sheet anchored slightly behind the mage along the dash
+   * axis, rotated so the burst's leading edge points the same way the mage is moving.
+   * Sprite is drawn one layer below the player so it reads as a trail rather than a mask.
+   */
+  #spawnAirBurstVfx(nx: number, ny: number): void {
+    const angle = Math.atan2(ny, nx);
+    const offset = AIR_BURST_VFX_OFFSET_PX;
+    const bx = this.x - nx * offset;
+    const by = this.y - ny * offset;
+    const burst = this.scene.add.sprite(bx, by, ASSET_KEYS.AIR_BURST, 0);
+    burst.setOrigin(0.5, 0.5);
+    burst.setDepth(this.depth - 1);
+    burst.setRotation(angle);
+    burst.setScale(AIR_BURST_VFX_SCALE);
+    burst.play(ASSET_KEYS.AIR_BURST);
+    burst.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => burst.destroy());
   }
 }

@@ -129,7 +129,7 @@ export class SpellCastingComponent extends BaseGameObjectComponent {
     const spawn = (): ActiveSpell | undefined => {
       // Scene may have shut down during the delay (room transition, etc.).
       if (!this.#scene?.scene?.isActive?.()) return undefined;
-      const spell = factory(this.#scene, casterX, casterY, targetX, targetY, direction);
+      const spell = factory(this.#scene, casterX, casterY, targetX, targetY, direction, this.gameObject as Phaser.GameObjects.GameObject);
 
       this.#activeSpells.push(spell);
       this.#spellGroup.add(spell.gameObject);

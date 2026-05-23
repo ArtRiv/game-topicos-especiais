@@ -57,6 +57,8 @@ import { EarthBump } from '../game-objects/spells/earth-bump';
 import { IceShard } from '../game-objects/spells/ice-shard';
 import { WindBolt } from '../game-objects/spells/wind-bolt';
 import { ThunderStrike } from '../game-objects/spells/thunder-strike';
+import { ThunderSplash } from '../game-objects/spells/thunder-splash';
+import { AirBurst } from '../game-objects/spells/air-burst';
 import { DarkBolt } from '../game-objects/spells/dark-bolt';
 import { LightningBurstCombo, LightningStrikeCombo } from '../game-objects/spells/lightning-combo';
 import { SteamBurst } from '../game-objects/spells/steam-burst';
@@ -1251,6 +1253,13 @@ export class GameScene extends Phaser.Scene {
               return;
             }
 
+            // ThunderSplash — slow lightning projectile. Damage is gated by its internal
+            // isDamageActive flag (only the LAND phase damages); hitEnemy handles dedup.
+            if (spellObj instanceof ThunderSplash) {
+              spellObj.hitEnemy(enemyGameObject);
+              return;
+            }
+
             // DarkBolt — persistent darkness orb. Damage is applied as ticks from inside
             // the orb itself (see DarkBolt.#applyTickDamage); here we just track which
             // enemies are currently overlapping so the tick loop knows who to hit.
@@ -1390,6 +1399,7 @@ export class GameScene extends Phaser.Scene {
           if (spellObj instanceof EarthBolt) { enemyGameObject.hit(DIRECTION.DOWN, spellObj.baseDamage); spellObj.explode(); return; }
           if (spellObj instanceof WaterBall) { enemyGameObject.hit(DIRECTION.DOWN, spellObj.baseDamage); spellObj.explode(); return; }
           if (spellObj instanceof ThunderStrike) { spellObj.hitEnemy(enemyGameObject); return; }
+          if (spellObj instanceof ThunderSplash) { spellObj.hitEnemy(enemyGameObject); return; }
           if (spellObj instanceof WaterSpike) { spellObj.hitEnemy(enemyGameObject); return; }
         },
       );
@@ -2627,6 +2637,9 @@ export class GameScene extends Phaser.Scene {
 
     const spawn = (): void => {
       if (!this.scene.isActive()) return;
+      // Pass the remote Player as the caster so spells that affect the caster (AirBurst)
+      // can distinguish "remote dashed → only show VFX" from "local dashed → also move me".
+      const remoteCaster = this.#remotePlayers.get(payload.playerId);
       const spell = factory(
         this,
         payload.x,
@@ -2634,6 +2647,7 @@ export class GameScene extends Phaser.Scene {
         payload.targetX as number,
         payload.targetY as number,
         direction,
+        remoteCaster,
       );
 
       this.#remoteSpellGroup.add(spell.gameObject);

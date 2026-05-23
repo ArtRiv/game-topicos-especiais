@@ -5,15 +5,15 @@ import { ASSET_KEYS } from '../common/assets';
 import { ElementManager } from '../common/element-manager';
 import { Element } from '../common/types';
 
-// Elements shown in the radial menu, ordered clockwise from top
+// Elements shown in the radial menu, ordered clockwise from top.
+// ICE / DARKNESS are intentionally hidden — the underlying spells are still registered,
+// they're just unselectable until reintroduced.
 const ELEMENTS: Element[] = [
   ELEMENT.FIRE,
   ELEMENT.THUNDER,
   ELEMENT.EARTH,
-  ELEMENT.ICE,
   ELEMENT.WIND,
   ELEMENT.WATER,
-  ELEMENT.DARKNESS,
 ];
 
 const ELEMENT_COLORS: Record<Element, number> = {
@@ -28,7 +28,7 @@ const ELEMENT_COLORS: Record<Element, number> = {
 
 const ELEMENT_LABELS: Record<Element, string> = {
   FIRE: 'FIRE',
-  THUNDER: 'THUNDER',
+  THUNDER: 'LIGHTNING',
   EARTH: 'EARTH',
   ICE: 'ICE',
   WIND: 'WIND',
@@ -67,7 +67,10 @@ export class RadialMenuScene extends Phaser.Scene {
       return;
     }
 
-    this.#selectedElement = ElementManager.instance.activeElement;
+    // If the player's active element was hidden from the radial menu (ICE / DARKNESS),
+    // fall back to the first visible slice so the highlight always lines up.
+    const active = ElementManager.instance.activeElement;
+    this.#selectedElement = ELEMENTS.includes(active) ? active : ELEMENTS[0];
     this.#hoveredElement = this.#selectedElement;
 
     // Close and commit selection the moment SPACE is released (fires exactly once).
