@@ -77,6 +77,15 @@ export const ASSET_KEYS = {
   // WaterBall spell — 4x4 spritesheets, 80x80 per startup frame, 64x64 per impact frame.
   WATER_BALL_STARTUP: 'WATER_BALL_STARTUP',
   WATER_BALL_IMPACT: 'WATER_BALL_IMPACT',
+  // Spell cooldown HUD icons (32x32 PNGs from public/assets/spell-ico/)
+  SPELL_ICO_FIRE: 'SPELL_ICO_FIRE',
+  SPELL_ICO_ROCK: 'SPELL_ICO_ROCK',
+  SPELL_ICO_WATER: 'SPELL_ICO_WATER',
+  SPELL_ICO_WIND: 'SPELL_ICO_WIND',
+  SPELL_ICO_DARK: 'SPELL_ICO_DARK',
+  // Lightning and Ice are generated programmatically in UiScene (no PNG available)
+  SPELL_ICO_LIGHTNING: 'SPELL_ICO_LIGHTNING',
+  SPELL_ICO_ICE: 'SPELL_ICO_ICE',
 } as const;
 
 export const DASH_ANIMATION_KEYS = {

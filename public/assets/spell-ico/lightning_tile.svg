@@ -1,0 +1,39 @@
+<svg width="100%" viewBox="0 0 680 680" role="img" xmlns="http://www.w3.org/2000/svg" style="">
+<title style="fill:rgb(0, 0, 0);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto">Lightning tile icon</title>
+<desc style="fill:rgb(0, 0, 0);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto">A game-style tile icon with a yellow lightning bolt on a dark circular background</desc>
+
+<defs>
+  <radialGradient id="bgGlow" cx="50%" cy="50%" r="50%">
+    <stop offset="0%" stop-color="#2a2a3a"/>
+    <stop offset="100%" stop-color="#111118"/>
+  </radialGradient>
+  <radialGradient id="innerGlow" cx="50%" cy="45%" r="50%">
+    <stop offset="0%" stop-color="#3a3520"/>
+    <stop offset="100%" stop-color="#1a180a"/>
+  </radialGradient>
+  <filter id="softBlur">
+    <feGaussianBlur stdDeviation="3"/>
+  </filter>
+</defs>
+
+<circle cx="340" cy="340" r="310" fill="url(#bgGlow)" style="stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+
+<circle cx="340" cy="340" r="240" fill="url(#innerGlow)" opacity="0.8" style="stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:0.8;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+
+<circle cx="340" cy="340" r="295" fill="none" stroke="#2a2830" stroke-width="10" style="fill:none;stroke:rgb(42, 40, 48);color:rgb(0, 0, 0);stroke-width:10px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+<circle cx="340" cy="340" r="305" fill="none" stroke="#1a1825" stroke-width="6" style="fill:none;stroke:rgb(26, 24, 37);color:rgb(0, 0, 0);stroke-width:6px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+
+<ellipse cx="340" cy="360" rx="90" ry="90" fill="#f5d020" opacity="0.12" filter="url(#softBlur)" style="fill:rgb(245, 208, 32);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:0.12;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+
+<polygon points="&#xA;  380,120&#xA;  290,370&#xA;  345,370&#xA;  300,560&#xA;  430,300&#xA;  368,300&#xA;  410,120&#xA;" fill="#f0c500" opacity="0.25" style="fill:rgb(240, 197, 0);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:0.25;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+
+<polygon points="&#xA;  378,130&#xA;  292,365&#xA;  348,365&#xA;  302,555&#xA;  428,295&#xA;  366,295&#xA;  408,130&#xA;" fill="#ffe234" style="fill:rgb(255, 226, 52);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+
+<polygon points="&#xA;  378,130&#xA;  292,365&#xA;  348,365&#xA;  302,555&#xA;  428,295&#xA;  366,295&#xA;  408,130&#xA;" fill="none" stroke="#fff9c4" stroke-width="2" opacity="0.5" style="fill:none;stroke:rgb(255, 249, 196);color:rgb(0, 0, 0);stroke-width:2px;stroke-linecap:butt;stroke-linejoin:miter;opacity:0.5;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+
+<polygon points="&#xA;  385,145&#xA;  310,345&#xA;  355,345&#xA;  318,490&#xA;  415,305&#xA;  370,305&#xA;  400,145&#xA;" fill="#fff5a0" opacity="0.5" style="fill:rgb(255, 245, 160);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:0.5;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+
+<polygon points="&#xA;  390,170&#xA;  330,325&#xA;  360,325&#xA;  336,445&#xA;  408,315&#xA;  372,315&#xA;  398,170&#xA;" fill="white" opacity="0.25" style="fill:rgb(255, 255, 255);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:0.25;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+
+<circle cx="340" cy="340" r="308" fill="none" stroke="#3d3a50" stroke-width="3" style="fill:none;stroke:rgb(61, 58, 80);color:rgb(0, 0, 0);stroke-width:3px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+</svg>

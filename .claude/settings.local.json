@@ -6,7 +6,13 @@
       "Skill(gsd-new-milestone)",
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(rm -f .planning/research/SUMMARY.md.part1)",
-      "Bash(node -e ':*)"
+      "Bash(node -e ':*)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); [print\\(k, '->', v.get\\('url',''\\) if isinstance\\(v,dict\\) else ''\\) for sec in d.values\\(\\) if isinstance\\(sec,list\\) for item in sec if isinstance\\(item,dict\\) for k,v in item.items\\(\\) if k in \\('key','url'\\)]\")",
+      "Bash(python3 -c ' *)",
+      "Bash(identify /home/aluno/Documentos/game-topicos-especiais/public/assets/spell-ico/fire.png)",
+      "Bash(xargs ls)",
+      "Bash(pnpm build *)",
+      "Bash(npx tsc *)"
     ]
   }
 }
