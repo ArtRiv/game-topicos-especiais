@@ -79,6 +79,15 @@ export const ASSET_KEYS = {
   WATER_BALL_IMPACT: 'WATER_BALL_IMPACT',
   // AirBurst — wind super-dash VFX (3x3 grid, 144x144 total → 48x48 per frame).
   AIR_BURST: 'AIR_BURST',
+  // Spell cooldown HUD icons (32x32 PNGs from public/assets/spell-ico/)
+  SPELL_ICO_FIRE: 'SPELL_ICO_FIRE',
+  SPELL_ICO_ROCK: 'SPELL_ICO_ROCK',
+  SPELL_ICO_WATER: 'SPELL_ICO_WATER',
+  SPELL_ICO_WIND: 'SPELL_ICO_WIND',
+  SPELL_ICO_DARK: 'SPELL_ICO_DARK',
+  // Lightning and Ice are generated programmatically in UiScene (no PNG available)
+  SPELL_ICO_LIGHTNING: 'SPELL_ICO_LIGHTNING',
+  SPELL_ICO_ICE: 'SPELL_ICO_ICE',
 } as const;
 
 export const DASH_ANIMATION_KEYS = {

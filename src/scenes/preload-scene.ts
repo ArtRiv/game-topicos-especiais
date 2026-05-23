@@ -89,6 +89,13 @@ export class PreloadScene extends Phaser.Scene {
       21,
     );
 
+    // Spell cooldown HUD icons
+    this.load.image(ASSET_KEYS.SPELL_ICO_FIRE,  'assets/spell-ico/fire.png');
+    this.load.image(ASSET_KEYS.SPELL_ICO_ROCK,  'assets/spell-ico/rock.png');
+    this.load.image(ASSET_KEYS.SPELL_ICO_WATER, 'assets/spell-ico/water.png');
+    this.load.image(ASSET_KEYS.SPELL_ICO_WIND,  'assets/spell-ico/wind.png');
+    this.load.image(ASSET_KEYS.SPELL_ICO_DARK,  'assets/spell-ico/dark.png');
+
     // Dark Bolt / alternative Lightning — load individual frames (sheet packing is uneven).
     for (let i = 1; i <= 12; i++) {
       this.load.image(

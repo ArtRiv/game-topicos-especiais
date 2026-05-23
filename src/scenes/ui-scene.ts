@@ -8,11 +8,30 @@ import {
   EVENT_BUS,
   PLAYER_HEALTH_UPDATE_TYPE,
   PlayerHealthUpdated,
+  SpellCastEventPayload,
 } from '../common/event-bus';
 import { DEFAULT_UI_TEXT_STYLE } from '../common/common';
 import { ManaUpdatedData } from '../components/game-object/mana-component';
 import { ElementManager } from '../common/element-manager';
-import { Element } from '../common/types';
+import { Element, SpellId } from '../common/types';
+import { SPELL_CONFIG } from '../game-objects/spells/spell-registry';
+
+type CooldownEntry = {
+  spellId: string;
+  startTime: number;
+  cooldownMs: number;
+  container: Phaser.GameObjects.Container;
+  barFill: Phaser.GameObjects.Rectangle;
+  fading: boolean;
+};
+
+// x=8 aligns with mana bar; y=30 sits just below the "MP" label (mana bar at y=14, h=6, text at y=22)
+const COOLDOWN_HUD_X = 8;
+const COOLDOWN_HUD_Y = 30;
+const COOLDOWN_ENTRY_H = 14; // icon 12px + 2px gap to next row
+const ICON_SIZE = 12;
+const BAR_W = 28;
+const BAR_H = 3;
 
 export class UiScene extends Phaser.Scene {
   #hudContainer!: Phaser.GameObjects.Container;
@@ -25,6 +44,7 @@ export class UiScene extends Phaser.Scene {
   #elementGem!: Phaser.GameObjects.Arc;
   #elementLabel!: Phaser.GameObjects.Text;
   #elementHintText!: Phaser.GameObjects.Text;
+  #cooldownEntries: CooldownEntry[] = [];
 
   constructor() {
     super({
@@ -33,6 +53,7 @@ export class UiScene extends Phaser.Scene {
   }
 
   public create(): void {
+    this.#generateSpellIcons();
     // create main hud
     this.#hudContainer = this.add.container(0, 0, []);
     this.#hearts = [];
@@ -105,13 +126,38 @@ export class UiScene extends Phaser.Scene {
     EVENT_BUS.on(CUSTOM_EVENTS.SHOW_DIALOG, this.showDialog, this);
     EVENT_BUS.on(CUSTOM_EVENTS.MANA_UPDATED, this.updateManaInHud, this);
     EVENT_BUS.on(CUSTOM_EVENTS.ELEMENT_CHANGED, this.#updateElementIndicator, this);
+    EVENT_BUS.on(CUSTOM_EVENTS.SPELL_CAST, this.#onSpellCast, this);
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       EVENT_BUS.off(CUSTOM_EVENTS.PLAYER_HEALTH_UPDATED, this.updateHealthInHud, this);
       EVENT_BUS.off(CUSTOM_EVENTS.SHOW_DIALOG, this.showDialog, this);
       EVENT_BUS.off(CUSTOM_EVENTS.MANA_UPDATED, this.updateManaInHud, this);
       EVENT_BUS.off(CUSTOM_EVENTS.ELEMENT_CHANGED, this.#updateElementIndicator, this);
+      EVENT_BUS.off(CUSTOM_EVENTS.SPELL_CAST, this.#onSpellCast, this);
     });
+  }
+
+  public update(): void {
+    const now = this.time.now;
+    for (const entry of this.#cooldownEntries) {
+      if (entry.fading) continue;
+      const progress = Math.min((now - entry.startTime) / entry.cooldownMs, 1);
+      entry.barFill.scaleX = progress;
+      if (progress >= 1) {
+        entry.fading = true;
+        this.tweens.add({
+          targets: entry.container,
+          alpha: 0,
+          duration: 200,
+          ease: 'Linear',
+          onComplete: () => {
+            entry.container.destroy();
+            this.#cooldownEntries = this.#cooldownEntries.filter((e) => e !== entry);
+            this.#repositionEntries();
+          },
+        });
+      }
+    }
   }
 
   public async updateHealthInHud(data: PlayerHealthUpdated): Promise<void> {
@@ -171,5 +217,123 @@ export class UiScene extends Phaser.Scene {
     this.#elementGem.setFillStyle(hexColor);
     this.#elementLabel.setText(data.element);
     this.#elementLabel.setColor(cssColor);
+  }
+
+  #generateSpellIcons(): void {
+    // Lightning — yellow zigzag bolt
+    if (!this.textures.exists(ASSET_KEYS.SPELL_ICO_LIGHTNING)) {
+      const g = this.add.graphics();
+      g.fillStyle(0xffdd00, 1);
+      g.fillPoints(
+        [
+          { x: 9, y: 0 },
+          { x: 4, y: 6 },
+          { x: 7, y: 6 },
+          { x: 2, y: 12 },
+          { x: 8, y: 7 },
+          { x: 5, y: 7 },
+        ],
+        true,
+      );
+      g.generateTexture(ASSET_KEYS.SPELL_ICO_LIGHTNING, 12, 12);
+      g.destroy();
+    }
+    // Ice — cyan diamond
+    if (!this.textures.exists(ASSET_KEYS.SPELL_ICO_ICE)) {
+      const g = this.add.graphics();
+      g.fillStyle(0x22ccff, 1);
+      g.fillPoints(
+        [
+          { x: 6, y: 0 },
+          { x: 12, y: 5 },
+          { x: 6, y: 12 },
+          { x: 0, y: 5 },
+        ],
+        true,
+      );
+      g.generateTexture(ASSET_KEYS.SPELL_ICO_ICE, 12, 12);
+      g.destroy();
+    }
+  }
+
+  #getSpellIconKey(spellId: string): string {
+    const map: Partial<Record<SpellId, string>> = {
+      FIRE_BOLT: ASSET_KEYS.SPELL_ICO_FIRE,
+      FIRE_AREA: ASSET_KEYS.SPELL_ICO_FIRE,
+      EARTH_BOLT: ASSET_KEYS.SPELL_ICO_ROCK,
+      EARTH_BUMP: ASSET_KEYS.SPELL_ICO_ROCK,
+      WATER_BALL: ASSET_KEYS.SPELL_ICO_WATER,
+      WATER_TORNADO: ASSET_KEYS.SPELL_ICO_WATER,
+      WATER_SPIKE: ASSET_KEYS.SPELL_ICO_WATER,
+      WIND_BOLT: ASSET_KEYS.SPELL_ICO_WIND,
+      THUNDER_STRIKE: ASSET_KEYS.SPELL_ICO_LIGHTNING,
+      ICE_SHARD: ASSET_KEYS.SPELL_ICO_ICE,
+      DARK_BOLT: ASSET_KEYS.SPELL_ICO_DARK,
+    };
+    return map[spellId as SpellId] ?? ASSET_KEYS.SPELL_ICO_FIRE;
+  }
+
+  #getSpellBarColor(spellId: string): number {
+    const map: Partial<Record<SpellId, number>> = {
+      FIRE_BOLT: 0xff5500,
+      FIRE_AREA: 0xff5500,
+      EARTH_BOLT: 0x886633,
+      EARTH_BUMP: 0x886633,
+      WATER_BALL: 0x0088ff,
+      WATER_TORNADO: 0x0088ff,
+      WATER_SPIKE: 0x0088ff,
+      WIND_BOLT: 0x44ff99,
+      THUNDER_STRIKE: 0xffdd00,
+      ICE_SHARD: 0x22ccff,
+      DARK_BOLT: 0x884bb6,
+    };
+    return map[spellId as SpellId] ?? 0xffffff;
+  }
+
+  #onSpellCast(payload: SpellCastEventPayload): void {
+    const { spellId } = payload;
+    const config = SPELL_CONFIG[spellId as SpellId];
+    if (!config || config.cooldown <= 0) return;
+
+    // If the same spell is already tracked (same-slot re-cast guard), reset the timer
+    const existing = this.#cooldownEntries.find((e) => e.spellId === spellId && !e.fading);
+    if (existing) {
+      existing.startTime = this.time.now;
+      existing.barFill.scaleX = 0;
+      return;
+    }
+
+    const iconKey = this.#getSpellIconKey(spellId);
+    const barColor = this.#getSpellBarColor(spellId);
+
+    // Icon centered at (ICON_SIZE/2, ICON_SIZE/2) within the container
+    const icon = this.add.image(ICON_SIZE / 2, ICON_SIZE / 2, iconKey)
+      .setDisplaySize(ICON_SIZE, ICON_SIZE)
+      .setOrigin(0.5);
+
+    // Bar positioned right of icon with 2px gap, vertically centered on the icon
+    const barX = ICON_SIZE + 2;
+    const barY = ICON_SIZE / 2;
+    const barBg = this.add.rectangle(barX, barY, BAR_W, BAR_H, 0x222222).setOrigin(0, 0.5);
+    const barFill = this.add.rectangle(barX, barY, BAR_W, BAR_H, barColor).setOrigin(0, 0.5);
+    barFill.scaleX = 0;
+
+    const entryY = COOLDOWN_HUD_Y + this.#cooldownEntries.length * COOLDOWN_ENTRY_H;
+    const container = this.add.container(COOLDOWN_HUD_X, entryY, [barBg, barFill, icon]);
+    container.setAlpha(0);
+    this.tweens.add({ targets: container, alpha: 1, duration: 150, ease: 'Linear' });
+
+    this.#cooldownEntries.push({ spellId, startTime: this.time.now, cooldownMs: config.cooldown, container, barFill, fading: false });
+  }
+
+  #repositionEntries(): void {
+    this.#cooldownEntries.forEach((entry, i) => {
+      this.tweens.add({
+        targets: entry.container,
+        y: COOLDOWN_HUD_Y + i * COOLDOWN_ENTRY_H,
+        duration: 150,
+        ease: 'Linear',
+      });
+    });
   }
 }
