@@ -22,7 +22,7 @@ export class LightningBurstCombo extends Phaser.Physics.Arcade.Sprite {
   }
 
   constructor(scene: Phaser.Scene, x: number, y: number, options?: { variant?: '002' | '003' }) {
-    // Optional per-cast override beats the global config (used by the FireBolt+DarkBolt
+    // Optional per-cast override beats the global config (used by the FireBolt+VoidOrb
     // combo which always wants the 002 sprite regardless of LIGHTNING_BURST_VARIANT).
     const variant = options?.variant ?? RUNTIME_CONFIG.LIGHTNING_BURST_VARIANT;
     const variantKey =

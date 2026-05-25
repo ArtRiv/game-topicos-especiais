@@ -9,6 +9,7 @@ import {
   EARTH_BUMP_COOLDOWN,
   EARTH_BUMP_DURATION,
   EARTH_BUMP_BODY_RADIUS,
+  EARTH_BUMP_CURSOR_Y_OFFSET,
 } from '../../common/config';
 import { RUNTIME_CONFIG } from '../../common/runtime-config';
 import { CharacterGameObject } from '../common/character-game-object';
@@ -45,7 +46,7 @@ export class EarthBump extends Phaser.Physics.Arcade.Sprite implements ActiveSpe
   }
 
   constructor(scene: Phaser.Scene, x: number, y: number, direction: Direction) {
-    super(scene, x, y - 24, ASSET_KEYS.EARTH_BUMP);
+    super(scene, x, y - EARTH_BUMP_CURSOR_Y_OFFSET, ASSET_KEYS.EARTH_BUMP);
     scene.add.existing(this);
     scene.physics.add.existing(this);
 

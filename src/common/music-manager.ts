@@ -17,6 +17,9 @@ import { ASSET_KEYS } from './assets';
 // ---------------------------------------------------------------------------
 
 const MENU_VOLUME = 0.05;
+// Default crossfade duration (ms) for switching tracks. Sub-menus, game-over,
+// and gameplay-entry all use this so transitions never hard-cut.
+const TRACK_FADE_MS = 400;
 // LOBBY_VOLUME is the ducked level used while LobbyScene is active (D-13).
 // Plan 03 will call setMenuVolume(LOBBY_VOLUME) on lobby entry; this constant
 // is declared here so the value lives next to MENU_VOLUME for easy tuning.
@@ -38,7 +41,8 @@ export class MusicManager {
 
   #menuMusic: Phaser.Sound.BaseSound | null = null;
   #gameplayMusic: Phaser.Sound.BaseSound | null = null;
-  #currentTrack: 'menu' | 'gameplay' | null = null;
+  #introMusic: Phaser.Sound.BaseSound | null = null;
+  #currentTrack: 'menu' | 'gameplay' | 'intro' | null = null;
 
   private constructor() {}
 
@@ -60,52 +64,164 @@ export class MusicManager {
     if (!scene.cache.audio.has(ASSET_KEYS.GAMEPLAY_MUSIC)) {
       scene.load.audio(ASSET_KEYS.GAMEPLAY_MUSIC, 'assets/audio/gameplay_music.ogg');
     }
-  }
-
-  // ---------------------------------------------------------------------------
-  // playMenu -- switch to (or keep) the menu track.
-  // No-op if the menu track is already the active one.
-  // ---------------------------------------------------------------------------
-  playMenu(scene: Phaser.Scene): void {
-    if (this.#currentTrack === 'menu') return;
-    this.#stopAll();
-    if (!scene.cache.audio.has(ASSET_KEYS.MENU_MUSIC)) return;
-
-    if (!this.#menuMusic) {
-      this.#menuMusic = scene.sound.add(ASSET_KEYS.MENU_MUSIC, { loop: true, volume: MENU_VOLUME });
+    // Intro track — played by IntroScene and continues into MainMenuScene.
+    if (!scene.cache.audio.has(ASSET_KEYS.INTRO_MUSIC)) {
+      scene.load.audio(ASSET_KEYS.INTRO_MUSIC, 'assets/audio/teste.mp3');
     }
-    this.#currentTrack = 'menu';
-    this.#playOrDefer(scene, this.#menuMusic, 'menu');
   }
 
   // ---------------------------------------------------------------------------
-  // playGameplay -- switch to the gameplay track.
-  // Called from GameScene.create().
+  // playIntro — start (or restart) the intro track. Used by IntroScene; the
+  // returned Sound lets the caller tween its volume independently. Sound is
+  // owned by MusicManager so it survives the IntroScene → MainMenuScene
+  // transition without being destroyed on scene shutdown.
+  //
+  // The opts.seek lets IntroScene jump past the long lead-in; opts.rate is
+  // used during calibration (PLAYBACK_RATE < 1). opts.loop = true by default
+  // so the song continues looping on the main menu after the intro finishes.
+  // ---------------------------------------------------------------------------
+  playIntro(
+    scene: Phaser.Scene,
+    opts: { seek?: number; rate?: number; volume?: number; loop?: boolean } = {},
+  ): Phaser.Sound.BaseSound | null {
+    if (!scene.cache.audio.has(ASSET_KEYS.INTRO_MUSIC)) return null;
+    this.#stopAll();
+    if (this.#introMusic && (this.#introMusic as unknown as { pendingRemove?: boolean }).pendingRemove) {
+      this.#introMusic = null;
+    }
+    if (!this.#introMusic) {
+      this.#introMusic = scene.sound.add(ASSET_KEYS.INTRO_MUSIC, {
+        loop: opts.loop ?? true,
+        volume: opts.volume ?? 0,
+      });
+    }
+    this.#currentTrack = 'intro';
+    const playCfg: Phaser.Types.Sound.SoundConfig = {};
+    if (typeof opts.seek === 'number') playCfg.seek = opts.seek;
+    if (typeof opts.rate === 'number') playCfg.rate = opts.rate;
+    this.#introMusic.play(playCfg);
+    if (!this.#introMusic.isPlaying) {
+      scene.sound.once('unlocked', () => {
+        if (this.#currentTrack === 'intro' && this.#introMusic && !this.#introMusic.isPlaying) {
+          this.#introMusic.play(playCfg);
+        }
+      });
+    }
+    return this.#introMusic;
+  }
+
+  // currentTrack — read-only accessor used by MainMenuScene to decide whether
+  // to switch to menu music or let the intro track keep playing.
+  currentTrack(): 'menu' | 'gameplay' | 'intro' | null {
+    return this.#currentTrack;
+  }
+
+  // stopIntro — used by IntroScene when the player skips early. Does NOT
+  // touch the menu/gameplay tracks.
+  stopIntro(): void {
+    if (this.#introMusic?.isPlaying) this.#introMusic.stop();
+    if (this.#currentTrack === 'intro') this.#currentTrack = null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // playMenu -- crossfade to the menu track. No-op if already active.
+  // opts.volume lets callers (e.g. LobbyScene) target the ducked level
+  // directly during the fade-in, avoiding a hard-set-vs-tween conflict.
+  // ---------------------------------------------------------------------------
+  playMenu(scene: Phaser.Scene, opts: { volume?: number } = {}): void {
+    if (this.#currentTrack === 'menu' && this.#menuMusic?.isPlaying) return;
+    this.#crossfadeTo('menu', scene, opts.volume ?? MENU_VOLUME);
+  }
+
+  // ---------------------------------------------------------------------------
+  // playGameplay -- crossfade to the gameplay track.
   // ---------------------------------------------------------------------------
   playGameplay(scene: Phaser.Scene): void {
-    // If we already think gameplay is the active track AND it's still actually playing,
-    // skip — this is the room-transition hot path. Without the isPlaying re-check, a
-    // previously-destroyed Sound instance (Phaser kills scene-bound sounds on shutdown)
-    // would leave us in a "thinks it's playing but silent" state on the next room.
     if (this.#currentTrack === 'gameplay' && this.#gameplayMusic?.isPlaying) return;
-    if (!scene.cache.audio.has(ASSET_KEYS.GAMEPLAY_MUSIC)) return;
+    this.#crossfadeTo('gameplay', scene, GAMEPLAY_VOLUME);
+  }
 
-    // Only stop the menu track; do NOT stop a gameplay sound that's already playing
-    // through a room transition (prevents the "music restarts on room change" bug).
-    if (this.#menuMusic?.isPlaying) this.#menuMusic.stop();
+  // ---------------------------------------------------------------------------
+  // #crossfadeTo -- shared track-switch path. Fades the currently-playing
+  // sound out, fades the target sound in, both over TRACK_FADE_MS. Handles
+  // the Phaser quirk where scene-shutdown destroys a sound and leaves a
+  // `pendingRemove` corpse in our slot (recreates the sound when detected).
+  // ---------------------------------------------------------------------------
+  #crossfadeTo(track: 'menu' | 'gameplay', scene: Phaser.Scene, targetVol: number): void {
+    const assetKey = track === 'menu' ? ASSET_KEYS.MENU_MUSIC : ASSET_KEYS.GAMEPLAY_MUSIC;
+    if (!scene.cache.audio.has(assetKey)) {
+      console.warn('[MusicManager] crossfadeTo: audio not in cache', assetKey);
+      return;
+    }
 
-    // If the cached Sound was destroyed by the prior scene shutdown, drop the dead ref
-    // and re-add against the new scene's sound manager.
-    if (this.#gameplayMusic && (this.#gameplayMusic as unknown as { pendingRemove?: boolean }).pendingRemove) {
-      this.#gameplayMusic = null;
+    // Fade out + stop whichever track is currently audible.
+    const prev = this.#activeSound();
+    console.log('[MusicManager] crossfadeTo', track, 'prev=', this.#currentTrack, 'prevPlaying=', prev?.isPlaying);
+    if (prev) {
+      // Kill any in-flight volume tween on this sound so it can't fight us.
+      scene.tweens.killTweensOf(prev);
+      if (prev.isPlaying) {
+        scene.tweens.add({
+          targets: prev as unknown as { volume: number },
+          volume: 0,
+          duration: TRACK_FADE_MS,
+          ease: 'Linear',
+          onComplete: () => {
+            if (prev.isPlaying) prev.stop();
+          },
+        });
+      }
+      // Hard-stop fallback — uses window.setTimeout (not scene.time) because
+      // scene timers die when the scene shuts down, which would orphan the
+      // previous track at low volume. The #activeSound() !== prev guard
+      // prevents stopping if the same track was re-entered meanwhile.
+      window.setTimeout(() => {
+        if (this.#activeSound() !== prev && prev.isPlaying) {
+          console.log('[MusicManager] hard-stop fallback firing for previous track');
+          prev.stop();
+        }
+      }, TRACK_FADE_MS + 100);
     }
-    if (!this.#gameplayMusic) {
-      this.#gameplayMusic = scene.sound.add(ASSET_KEYS.GAMEPLAY_MUSIC, { loop: true, volume: GAMEPLAY_VOLUME });
+
+    // Refresh the target slot — drop dead refs from prior scene shutdowns.
+    if (track === 'menu') {
+      if (this.#menuMusic && (this.#menuMusic as unknown as { pendingRemove?: boolean }).pendingRemove) {
+        this.#menuMusic = null;
+      }
+      if (!this.#menuMusic) {
+        this.#menuMusic = scene.sound.add(ASSET_KEYS.MENU_MUSIC, { loop: true, volume: 0 });
+      }
+    } else {
+      if (this.#gameplayMusic && (this.#gameplayMusic as unknown as { pendingRemove?: boolean }).pendingRemove) {
+        this.#gameplayMusic = null;
+      }
+      if (!this.#gameplayMusic) {
+        this.#gameplayMusic = scene.sound.add(ASSET_KEYS.GAMEPLAY_MUSIC, { loop: true, volume: 0 });
+      }
     }
-    this.#currentTrack = 'gameplay';
-    if (!this.#gameplayMusic.isPlaying) {
-      this.#playOrDefer(scene, this.#gameplayMusic, 'gameplay');
-    }
+    const next = track === 'menu' ? this.#menuMusic! : this.#gameplayMusic!;
+
+    this.#currentTrack = track;
+
+    // Start the new track at volume 0 (so the fade-in has somewhere to come
+    // from), then tween up to its target volume.
+    (next as unknown as { volume: number }).volume = 0;
+    this.#playOrDefer(scene, next, track);
+    scene.tweens.killTweensOf(next);
+    scene.tweens.add({
+      targets: next as unknown as { volume: number },
+      volume: targetVol,
+      duration: TRACK_FADE_MS,
+      ease: 'Linear',
+    });
+  }
+
+  // Returns the sound matching the currently-tracked active slot, if any.
+  #activeSound(): Phaser.Sound.BaseSound | null {
+    if (this.#currentTrack === 'menu') return this.#menuMusic;
+    if (this.#currentTrack === 'gameplay') return this.#gameplayMusic;
+    if (this.#currentTrack === 'intro') return this.#introMusic;
+    return null;
   }
 
   // ---------------------------------------------------------------------------
@@ -151,7 +267,7 @@ export class MusicManager {
   // The `track` guard in the callback prevents a stale listener from starting
   // the wrong track when the current track has already changed.
   // ---------------------------------------------------------------------------
-  #playOrDefer(scene: Phaser.Scene, sound: Phaser.Sound.BaseSound, track: 'menu' | 'gameplay'): void {
+  #playOrDefer(scene: Phaser.Scene, sound: Phaser.Sound.BaseSound, track: 'menu' | 'gameplay' | 'intro'): void {
     sound.play();
 
     if (!sound.isPlaying) {
@@ -167,6 +283,7 @@ export class MusicManager {
   #stopAll(): void {
     if (this.#menuMusic?.isPlaying) this.#menuMusic.stop();
     if (this.#gameplayMusic?.isPlaying) this.#gameplayMusic.stop();
+    if (this.#introMusic?.isPlaying) this.#introMusic.stop();
     this.#currentTrack = null;
   }
 }

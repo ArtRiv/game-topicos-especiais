@@ -29,10 +29,22 @@ export class SteamBurst extends Phaser.Physics.Arcade.Sprite {
     scene.add.existing(this);
     scene.physics.add.existing(this);
     this.setDepth(5);
+    // The steam animation is drawn in the bottom portion of the frame on
+    // early frames (tiny puff at bottom-center, rising/expanding upward
+    // through the sheet). With the default 0.5/0.5 origin the early puff
+    // ends up *below* the spawn point — visually wrong for "steam rising off
+    // a surface" and the cause of puffs appearing below the lava when the
+    // spawn was near the lava's lower edge. Anchor to bottom-center so the
+    // puff's base sits at (x, y) and the steam rises above it.
+    this.setOrigin(0.5, 1);
 
     const r = STEAM_BURST_BODY_RADIUS;
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.setCircle(r);
+    // Body offset is in source-texture pixel coordinates, independent of the
+    // sprite's display origin. Center the damage circle in the frame so the
+    // hitbox covers the puff while the animation is mid-life (most damaging
+    // window) regardless of which origin the sprite uses to render.
     body.setOffset((this.width - r * 2) / 2, (this.height - r * 2) / 2);
     body.setImmovable(true);
     body.setAllowGravity(false);

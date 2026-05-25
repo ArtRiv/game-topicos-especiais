@@ -2,6 +2,7 @@
 import { SCENE_KEYS } from './scene-keys';
 import { buildMenuPlaceholder } from './menu-placeholder';
 import { startScene } from './scene-transition';
+import { MusicManager } from '../common/music-manager';
 
 // ---------------------------------------------------------------------------
 // JoinLobbyScene â€” placeholder
@@ -17,6 +18,7 @@ export class JoinLobbyScene extends Phaser.Scene {
   }
 
   public create(): void {
+    MusicManager.instance.playMenu(this);
     buildMenuPlaceholder(this, {
       title: 'ENTRAR EM LOBBY',
       hint: 'Encontre uma partida em andamento.',

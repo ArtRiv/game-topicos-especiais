@@ -21,14 +21,19 @@ export class EarthFireExplosion extends Phaser.Physics.Arcade.Sprite {
   }
 
   constructor(scene: Phaser.Scene, x: number, y: number) {
-    super(scene, x, y, ASSET_KEYS.EARTH_FIRE_ROCK_BURST);
+    // The bottom "rock burst" layer was sourced from Irregular rock Spritesheet.png
+    // which was removed during the asset reorg. We now use the EARTH_FIRE_EXPLOSION
+    // sheet alone — this sprite serves as the physics body host, and the visual is
+    // entirely on the overlaid #explosionSprite for layering parity with the old code.
+    super(scene, x, y, ASSET_KEYS.EARTH_FIRE_EXPLOSION);
     scene.add.existing(this);
     scene.physics.add.existing(this);
 
     this.setDepth(5);
     this.setScale(RUNTIME_CONFIG.EARTH_FIRE_EXPLOSION_SCALE);
+    this.setVisible(false); // body-host only; visible explosion is on #explosionSprite
 
-    // AoE body active immediately (both animations play together)
+    // AoE body active immediately
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.setCircle(RUNTIME_CONFIG.EARTH_FIRE_EXPLOSION_BODY_RADIUS);
     body.enable = true;
@@ -36,10 +41,7 @@ export class EarthFireExplosion extends Phaser.Physics.Arcade.Sprite {
     body.setAllowGravity(false);
     this.#isDamageActive = true;
 
-    // Layer 1 (bottom): rock burst
-    this.play(ASSET_KEYS.EARTH_FIRE_ROCK_BURST);
-
-    // Layer 2 (top): big explosion — starts at the same time
+    // Visible explosion sprite (was layer 2; now the only layer)
     this.#explosionSprite = scene.add
       .sprite(x, y, ASSET_KEYS.EARTH_FIRE_EXPLOSION)
       .setDepth(6)

@@ -9,10 +9,13 @@ import {
   EARTH_BUMP_MANA_COST, EARTH_BUMP_COOLDOWN,
   WATER_SPIKE_MANA_COST, WATER_SPIKE_COOLDOWN,
   WATER_TORNADO_MANA_COST, WATER_TORNADO_COOLDOWN,
+  VOID_ORB_MANA_COST, VOID_ORB_COOLDOWN,
   DARK_BOLT_MANA_COST, DARK_BOLT_COOLDOWN,
   WATER_BALL_MANA_COST, WATER_BALL_COOLDOWN,
   THUNDER_SPLASH_MANA_COST, THUNDER_SPLASH_COOLDOWN,
   AIR_BURST_MANA_COST, AIR_BURST_COOLDOWN,
+  LIGHTNING_BEAM_MANA_PER_TICK,
+  LIGHTNING_BEAM_COOLDOWN_MS,
 } from '../../common/config';
 
 export type SpellFactory = (
@@ -34,12 +37,18 @@ export type SpellFactory = (
  *  the slot-cast path then no-ops and the special handler takes over. */
 export const SPELL_SLOT_REGISTRY: Record<Element, readonly [SpellId | null, SpellId | null, SpellId | null]> = {
   [ELEMENT.FIRE]:     [SPELL_ID.FIRE_BOLT,      SPELL_ID.FIRE_AREA,       null], // key 3 = FireBreath (held, channeled)
-  [ELEMENT.EARTH]:    [SPELL_ID.EARTH_BUMP,     null,                     null], // key 3 = EarthWall (draw-mode); EarthBolt deprecated from radial flow
+  // EARTH: slot 0 is intentionally null — left mouse click is owned by EarthWall draw-mode
+  // (see GameScene.#updateEarthWallSpell). Slot 1 (right click) casts EarthBump.
+  [ELEMENT.EARTH]:    [null,                    SPELL_ID.EARTH_BUMP,      null],
   [ELEMENT.WATER]:    [SPELL_ID.WATER_TORNADO,  SPELL_ID.WATER_SPIKE,     null], // WaterBall still registered but unbound
   [ELEMENT.ICE]:      [SPELL_ID.ICE_SHARD,      null,                     null],
-  [ELEMENT.WIND]:     [SPELL_ID.WIND_BOLT,      SPELL_ID.AIR_BURST,       null],
-  [ELEMENT.THUNDER]:  [SPELL_ID.THUNDER_STRIKE, SPELL_ID.THUNDER_SPLASH,  null],
-  [ELEMENT.DARKNESS]: [SPELL_ID.DARK_BOLT,      null,                     null],
+  // WIND: slot 1 is intentionally null — Air Burst (the super-dash) is bound to
+  // SHIFT when Wind is the active element instead of right-click. Avoids the
+  // Chrome Shift+RMB context-menu chord that would otherwise interfere when
+  // chaining a regular dash into a super-dash.
+  [ELEMENT.WIND]:     [SPELL_ID.WIND_BOLT,      null,                     null],
+  [ELEMENT.THUNDER]:  [SPELL_ID.THUNDER_STRIKE, SPELL_ID.LIGHTNING_BEAM,  null],
+  [ELEMENT.DARKNESS]: [SPELL_ID.VOID_ORB,      null,                     null],
 };
 
 /** Mana cost and cooldown (ms) per spell — only source of truth for these values in the component. */
@@ -56,9 +65,14 @@ export const SPELL_CONFIG: Record<SpellId, { manaCost: number; cooldown: number 
   [SPELL_ID.WIND_BOLT]:      { manaCost: RUNTIME_CONFIG.WIND_BOLT_MANA_COST,      cooldown: RUNTIME_CONFIG.WIND_BOLT_COOLDOWN },
   [SPELL_ID.THUNDER_STRIKE]: { manaCost: RUNTIME_CONFIG.THUNDER_STRIKE_MANA_COST, cooldown: RUNTIME_CONFIG.THUNDER_STRIKE_COOLDOWN },
   [SPELL_ID.THUNDER_SPLASH]: { manaCost: THUNDER_SPLASH_MANA_COST, cooldown: THUNDER_SPLASH_COOLDOWN },
+  [SPELL_ID.VOID_ORB]:      { manaCost: VOID_ORB_MANA_COST,      cooldown: VOID_ORB_COOLDOWN },
   [SPELL_ID.DARK_BOLT]:      { manaCost: DARK_BOLT_MANA_COST,      cooldown: DARK_BOLT_COOLDOWN },
   [SPELL_ID.WATER_BALL]:     { manaCost: WATER_BALL_MANA_COST,     cooldown: WATER_BALL_COOLDOWN },
   [SPELL_ID.AIR_BURST]:      { manaCost: AIR_BURST_MANA_COST,      cooldown: AIR_BURST_COOLDOWN },
+  // LightningBeam is channeled — mana drains per tick from the spell itself. Cooldown
+  // is enforced post-channel (the beam calls SpellCastingComponent.refreshCooldown on
+  // destroy), so this is the cooldown window AFTER the beam ends, not from cast time.
+  [SPELL_ID.LIGHTNING_BEAM]: { manaCost: LIGHTNING_BEAM_MANA_PER_TICK, cooldown: LIGHTNING_BEAM_COOLDOWN_MS },
 };
 
 /**

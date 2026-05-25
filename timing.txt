@@ -1,0 +1,173 @@
+1 2 3 (tem que fazer o calculo da duração de cada um, coloquei o áudio em 0.5x e fui ver as ondas sonoras, o primeiro começa mais ou menos em 00:29:12 e termina mais ou menos em 00:29:17, o outro começa em 00:29:20 e termina em 00:29:25) e o último acredito que seja a mesma duração
+
+4 5 6 7 (todos parecem ter a mesma duração, o primeiro começa em 00:30:065 e termina em 00:30:095, o segundo começa em 00:30:10 e termina em 00:30:13 e segue nesse padrão)
+
+8 9 (começa mais ou menos em 00:30:23 e termina em 00:30:28 o segundo começa em 00:31:01 e termina em 00:31:06
+
+10 11 (agora mudei para 0.25x para ficar mais fácil de identificar os beats, esse começa em 01:02:18 e termina em 01:03:04 e o 11 começa no mesmotempo que o 10 termina, ou seja 01:03:04 e para identificar onde ele termina eu tive que mudar para 0.10x a velocidade do áudio, ele termina em 02:39:06
+
+12 13 14 15 (em 0.10x, o primeiro começa bem quando termina o numero 11, ou seja, 02:39:06, termina mais ou menos em 02:39:14, 13 começa em 02:39:16 e termina em 02:39:24, 14 começa em 02:39:26 termina mais ou menos em 02:40:03 o 15 02:40:06 e termina em 02:40:14
+
+16 começa em mais ou menos 02:40:16 (em 0.10x) e termina em 02:41:09
+
+17 começa em 02:41:27 termina em 02:42:10
+
+18 começa em 02:42:17 termina em 02:42:26
+
+19 começa em 02:43:08 termina em 02:44:00
+
+20 começa em 02:44:19 termina em 02:45:11
+
+21 começa em 02:45:29 termina em 02:47:25
+
+22 começa em 02:48:00 termina em 02:48:16
+
+a partir dai já é a batida em si e termina a animação, dai já é para mostrar o menu inteiro.
+
+[intro-capture] paste into BEATS[]:
+const BEATS: Beat[] = [
+  { start: 14.738, end: 14.758 },  // 1
+  { start: 14.852, end: 14.872 },  // 2
+  { start: 14.975, end: 14.995 },  // 3
+  { start: 15.116, end: 15.136 },  // 4
+  { start: 15.180, end: 15.200 },  // 5
+  { start: 15.248, end: 15.268 },  // 6
+  { start: 15.314, end: 15.334 },  // 7
+  { start: 15.382, end: 15.402 },  // 8
+  { start: 15.514, end: 15.534 },  // 9
+  { start: 15.651, end: 15.671 },  // 10
+  { start: 15.789, end: 15.809 },  // 11
+  { start: 15.922, end: 15.942 },  // 12
+  { start: 15.960, end: 15.980 },  // 13
+  { start: 15.992, end: 16.012 },  // 14
+  { start: 16.026, end: 16.046 },  // 15
+  { start: 16.070, end: 16.090 },  // 16
+  { start: 16.195, end: 16.215 },  // 17
+  { start: 16.270, end: 16.290 },  // 18
+  { start: 16.330, end: 16.350 },  // 19
+  { start: 16.462, end: 16.482 },  // 20
+  { start: 16.603, end: 16.623 },  // 21
+  { start: 16.717, end: 16.737 },  // 22
+  { start: 16.741, end: 16.761 },  // 23
+  { start: 16.804, end: 16.824 },  // 24
+  { start: 16.822, end: 16.842 },  // 25
+  { start: 16.886, end: 16.906 },  // 26
+];
+
+[intro-capture] paste into BEATS[]:
+const BEATS: Beat[] = [
+  { start: 14.715, end: 14.735 },  // 1
+  { start: 14.846, end: 14.866 },  // 2
+  { start: 14.976, end: 14.996 },  // 3
+  { start: 15.113, end: 15.133 },  // 4
+  { start: 15.181, end: 15.201 },  // 5
+  { start: 15.248, end: 15.268 },  // 6
+  { start: 15.316, end: 15.336 },  // 7
+  { start: 15.380, end: 15.400 },  // 8
+  { start: 15.517, end: 15.537 },  // 9
+  { start: 15.651, end: 15.671 },  // 10
+  { start: 15.790, end: 15.810 },  // 11
+  { start: 15.925, end: 15.945 },  // 12
+  { start: 15.964, end: 15.984 },  // 13
+  { start: 15.997, end: 16.017 },  // 14
+  { start: 16.031, end: 16.051 },  // 15
+  { start: 16.081, end: 16.101 },  // 16
+  { start: 16.196, end: 16.216 },  // 17
+  { start: 16.266, end: 16.286 },  // 18
+  { start: 16.325, end: 16.345 },  // 19
+  { start: 16.456, end: 16.476 },  // 20
+  { start: 16.592, end: 16.612 },  // 21
+  { start: 16.732, end: 16.752 },  // 22
+  { start: 16.809, end: 16.829 },  // 23
+  { start: 16.852, end: 16.872 },  // 24
+];
+
+[intro-capture] paste into BEATS[]:
+const BEATS: Beat[] = [
+  { start: 14.734, end: 14.754 },  // 1
+  { start: 14.851, end: 14.871 },  // 2
+  { start: 14.976, end: 14.996 },  // 3
+  { start: 15.117, end: 15.137 },  // 4
+  { start: 15.180, end: 15.200 },  // 5
+  { start: 15.248, end: 15.268 },  // 6
+  { start: 15.315, end: 15.335 },  // 7
+  { start: 15.382, end: 15.402 },  // 8
+  { start: 15.514, end: 15.534 },  // 9
+  { start: 15.650, end: 15.670 },  // 10
+  { start: 15.790, end: 15.810 },  // 11
+  { start: 15.923, end: 15.943 },  // 12
+  { start: 15.961, end: 15.981 },  // 13
+  { start: 15.993, end: 16.013 },  // 14
+  { start: 16.027, end: 16.047 },  // 15
+  { start: 16.072, end: 16.092 },  // 16
+  { start: 16.196, end: 16.216 },  // 17
+  { start: 16.269, end: 16.289 },  // 18
+  { start: 16.329, end: 16.349 },  // 19
+  { start: 16.461, end: 16.481 },  // 20
+  { start: 16.602, end: 16.622 },  // 21
+  { start: 16.682, end: 16.702 },  // 22
+  { start: 16.741, end: 16.761 },  // 23
+  { start: 16.804, end: 16.824 },  // 24
+  { start: 16.822, end: 16.842 },  // 25
+  { start: 16.886, end: 16.906 },  // 26
+];
+
+[intro-capture] paste into BEATS[]:
+const BEATS: Beat[] = [
+  { start: 14.727, end: 14.747 },  // 1
+  { start: 14.850, end: 14.870 },  // 2
+  { start: 14.976, end: 14.996 },  // 3
+  { start: 15.116, end: 15.136 },  // 4
+  { start: 15.181, end: 15.200 },  // 5
+  { start: 15.249, end: 15.269 },  // 6
+  { start: 15.316, end: 15.336 },  // 7
+  { start: 15.381, end: 15.401 },  // 8
+  { start: 15.515, end: 15.535 },  // 9
+  { start: 15.651, end: 15.671 },  // 10
+  { start: 15.790, end: 15.810 },  // 11
+  { start: 15.925, end: 15.945 },  // 12
+  { start: 15.963, end: 15.983 },  // 13
+  { start: 15.994, end: 16.014 },  // 14
+  { start: 16.028, end: 16.048 },  // 15
+  { start: 16.076, end: 16.096 },  // 16
+  { start: 16.196, end: 16.216 },  // 17
+  { start: 16.270, end: 16.290 },  // 18
+  { start: 16.328, end: 16.348 },  // 19
+  { start: 16.458, end: 16.478 },  // 20
+  { start: 16.596, end: 16.616 },  // 21
+  { start: 16.704, end: 16.724 },  // 22
+  { start: 16.758, end: 16.778 },  // 23
+  { start: 16.804, end: 16.824 },  // 24
+  { start: 16.822, end: 16.842 },  // 25
+  { start: 16.886, end: 16.906 },  // 26
+];
+
+[intro-capture] paste into BEATS[]:
+const BEATS: Beat[] = [
+  { start: 14.739, end: 14.759 },  // 1
+  { start: 14.852, end: 14.872 },  // 2
+  { start: 14.975, end: 14.995 },  // 3
+  { start: 15.116, end: 15.136 },  // 4
+  { start: 15.179, end: 15.199 },  // 5
+  { start: 15.248, end: 15.268 },  // 6
+  { start: 15.316, end: 15.336 },  // 7
+  { start: 15.383, end: 15.403 },  // 8
+  { start: 15.514, end: 15.534 },  // 9
+  { start: 15.650, end: 15.670 },  // 10
+  { start: 15.789, end: 15.809 },  // 11
+  { start: 15.922, end: 15.942 },  // 12
+  { start: 15.959, end: 15.979 },  // 13
+  { start: 15.991, end: 16.011 },  // 14
+  { start: 16.025, end: 16.045 },  // 15
+  { start: 16.069, end: 16.089 },  // 16
+  { start: 16.194, end: 16.214 },  // 17
+  { start: 16.269, end: 16.289 },  // 18
+  { start: 16.331, end: 16.351 },  // 19
+  { start: 16.467, end: 16.487 },  // 20
+  { start: 16.603, end: 16.623 },  // 21
+  { start: 16.717, end: 16.737 },  // 22
+  { start: 16.741, end: 16.761 },  // 23
+  { start: 16.804, end: 16.824 },  // 24
+  { start: 16.822, end: 16.842 },  // 25
+  { start: 16.886, end: 16.906 },  // 26
+];

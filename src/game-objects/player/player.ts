@@ -14,6 +14,12 @@ import {
   AIR_BURST_DURATION_MS,
   AIR_BURST_VFX_OFFSET_PX,
   AIR_BURST_VFX_SCALE,
+  AIR_BURST_ARC_LIFT_PX,
+  AIR_BURST_SCALE_BOOST,
+  AIR_BURST_IFRAME_MS,
+  AIR_BURST_MANA_COST,
+  AIR_BURST_COOLDOWN,
+  AIR_BURST_VFX_TILT_RAD,
 } from '../../common/config';
 import { AnimationConfig } from '../../components/game-object/animation-component';
 import { ASSET_KEYS, DASH_ANIMATION_KEYS, PLAYER_ANIMATION_KEYS } from '../../common/assets';
@@ -53,6 +59,10 @@ export class Player extends CharacterGameObject {
   public iFrameUntil: number = 0;
   public isDashing: boolean = false;
   #lastDashTime: number = -Infinity;
+  // Independent cooldown for the wind super-dash. Tracked here instead of in
+  // SpellCastingComponent because AirBurst isn't bound to any spell slot — it
+  // rides on the SHIFT input when the active element is Wind.
+  #lastAirBurstTime: number = -Infinity;
 
   constructor(config: PlayerConfig) {
     // create animation config for component
@@ -182,20 +192,46 @@ export class Player extends CharacterGameObject {
    * cooldown gate it via SpellCastingComponent instead) and uses the AIR_BURST_* tunables
    * for distance/duration, then spawns the Air Burst sheet trailing behind the mage.
    */
-  public dashSuper(): void {
+  /** Returns true if the super-dash actually fired (had mana + off cooldown).
+   *  Callers (e.g. the SHIFT handler on Wind) can fall back to a regular dash
+   *  on `false` so the player always gets *some* movement out of pressing the
+   *  dash button. */
+  public dashSuper(): boolean {
+    const now = this.scene.time.now;
+    if (now - this.#lastAirBurstTime < AIR_BURST_COOLDOWN) return false;
+    if (!this.#manaComponent.consume(AIR_BURST_MANA_COST)) return false;
+    this.#lastAirBurstTime = now;
+    // Mark airborne for the dash window — GameScene's hazard scanner skips
+    // mud/lava slow + damage while this is true (mage is jumping over them).
+    this.isFlying = true;
     this.#performDash({
       ignoreCooldown: true,
       distanceTiles: AIR_BURST_DISTANCE_TILES,
       durationMs: AIR_BURST_DURATION_MS,
+      forceIFrameMs: AIR_BURST_IFRAME_MS,
+      arcLiftPx: AIR_BURST_ARC_LIFT_PX,
+      rollScaleMult: AIR_BURST_SCALE_BOOST,
       extraVfx: (nx, ny) => this.#spawnAirBurstVfx(nx, ny),
+      onEnd: () => { this.isFlying = false; },
     });
+    return true;
   }
 
   #performDash(opts: {
     ignoreCooldown?: boolean;
     distanceTiles?: number;
     durationMs?: number;
+    /** Override DASH_IFRAMES_ENABLED — when set, always grant i-frames for
+     *  this many ms (super-dash uses this so projectiles pass through). */
+    forceIFrameMs?: number;
+    /** Visual-only vertical lift on the roll sprite: offset = -sin(t·π) × this
+     *  over the dash duration. Roll sprite peaks at the midpoint. */
+    arcLiftPx?: number;
+    /** Roll-sprite scale multiplier (stacks with DASH_ROLL_SCALE). */
+    rollScaleMult?: number;
     extraVfx?: (nx: number, ny: number) => void;
+    /** Called after the dash window closes (post velocity-zero, post unlock). */
+    onEnd?: () => void;
   }): void {
     const cfg = RUNTIME_CONFIG;
     const now = this.scene.time.now;
@@ -241,20 +277,26 @@ export class Player extends CharacterGameObject {
     this.controls.isMovementLocked = true;
     this.#lastDashTime = now;
 
-    if (cfg.DASH_IFRAMES_ENABLED) {
+    if (opts.forceIFrameMs !== undefined) {
+      this.iFrameUntil = now + opts.forceIFrameMs;
+    } else if (cfg.DASH_IFRAMES_ENABLED) {
       this.iFrameUntil = now + cfg.DASH_IFRAMES_MS;
     }
 
-    this.#spawnDashVfx(nx, ny, durationMs);
+    this.#spawnDashVfx(nx, ny, durationMs, opts.arcLiftPx, opts.rollScaleMult);
     opts.extraVfx?.(nx, ny);
 
     // End dash: zero velocity, unlock movement, clear dashing flag.
     this.scene.time.delayedCall(durationMs, () => {
       // Guard against player being destroyed mid-dash (e.g. respawn).
-      if (!this.active || !this.body) return;
+      if (!this.active || !this.body) {
+        opts.onEnd?.();
+        return;
+      }
       (this.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
       this.isDashing = false;
       this.controls.isMovementLocked = false;
+      opts.onEnd?.();
     });
   }
 
@@ -263,9 +305,17 @@ export class Player extends CharacterGameObject {
    * and a one-shot smoke puff at the dash origin, drawn behind the player. Opacity/size are
    * read from RUNTIME_CONFIG each cast so the debug panel can tune them live.
    */
-  #spawnDashVfx(nx: number, ny: number, durationMs?: number): void {
+  #spawnDashVfx(
+    nx: number,
+    ny: number,
+    durationMs?: number,
+    arcLiftPx?: number,
+    rollScaleMult?: number,
+  ): void {
     const cfg = RUNTIME_CONFIG;
     const dashMs = durationMs ?? cfg.DASH_DURATION_MS;
+    const lift = arcLiftPx ?? 0;
+    const scaleMult = rollScaleMult ?? 1;
 
     // Smoke puff at dash origin, behind the player. The base puff art is drawn trailing to
     // the right (assumes a rightward dash). For leftward dashes we mirror it across X and
@@ -288,7 +338,7 @@ export class Player extends CharacterGameObject {
     const roll = this.scene.add.sprite(this.x, this.y + 4, ASSET_KEYS.PLAYER_ROLL_1);
     roll.setOrigin(0.5, 0.5);
     roll.setDepth(this.depth);
-    roll.setScale(cfg.DASH_ROLL_SCALE);
+    roll.setScale(cfg.DASH_ROLL_SCALE * scaleMult);
     roll.setFlipX(this.flipX);
     if (this.tintFill || this.tint !== 0xffffff) {
       roll.setTint(this.tint);
@@ -297,9 +347,18 @@ export class Player extends CharacterGameObject {
 
     this.setVisible(false);
 
+    // Arc-lift: sin curve over the dash duration → peak at t=0.5, ends at 0.
+    // Recomputed every frame in the follow handler so the visual stays in
+    // sync regardless of any time-scale weirdness.
+    const arcStartMs = this.scene.time.now;
     const followHandler = (): void => {
       if (!roll.active) return;
-      roll.setPosition(this.x, this.y + 4);
+      let extraY = 0;
+      if (lift > 0) {
+        const t = Math.max(0, Math.min(1, (this.scene.time.now - arcStartMs) / dashMs));
+        extraY = -Math.sin(t * Math.PI) * lift;
+      }
+      roll.setPosition(this.x, this.y + 4 + extraY);
     };
     this.scene.events.on(Phaser.Scenes.Events.UPDATE, followHandler);
 
@@ -324,14 +383,19 @@ export class Player extends CharacterGameObject {
    * Sprite is drawn one layer below the player so it reads as a trail rather than a mask.
    */
   #spawnAirBurstVfx(nx: number, ny: number): void {
-    const angle = Math.atan2(ny, nx);
+    const baseAngle = Math.atan2(ny, nx);
+    // Tilt the trail so its leading edge points slightly UP relative to the
+    // dash direction (matches the parabolic arc — the mage is angled up, not
+    // moving flat forward). Sign flip on the X-axis keeps "up" as world-up
+    // for both left- and right-dashes.
+    const tilt = (nx >= 0 ? -1 : 1) * AIR_BURST_VFX_TILT_RAD;
     const offset = AIR_BURST_VFX_OFFSET_PX;
     const bx = this.x - nx * offset;
     const by = this.y - ny * offset;
     const burst = this.scene.add.sprite(bx, by, ASSET_KEYS.AIR_BURST, 0);
     burst.setOrigin(0.5, 0.5);
     burst.setDepth(this.depth - 1);
-    burst.setRotation(angle);
+    burst.setRotation(baseAngle + tilt);
     burst.setScale(AIR_BURST_VFX_SCALE);
     burst.play(ASSET_KEYS.AIR_BURST);
     burst.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => burst.destroy());

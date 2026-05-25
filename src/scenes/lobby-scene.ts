@@ -5,7 +5,7 @@ import { EVENT_BUS, CUSTOM_EVENTS } from '../common/event-bus.js';
 import type { Lobby, LobbyConfig, LobbyFormat, MatchConfig, PlayerInfo } from '../networking/types.js';
 import { MAP_POOL } from '../networking/types.js';
 import { ASSET_KEYS } from '../common/assets.js';
-import { MusicManager } from '../common/music-manager';
+import { LOBBY_VOLUME, MusicManager } from '../common/music-manager';
 
 // BitmapText replaces Phaser.GameObjects.Text. Press_Start_2P TTF was
 // pre-rasterized via Snowb into Press_Start-2.png + Press_Start-2.fnt
@@ -48,11 +48,11 @@ export class LobbyScene extends Phaser.Scene {
     // and the blue fallback rectangle never shows.
     this.load.image(
       ASSET_KEYS.MAP_THUMB_WORLD,
-      'assets/images/levels/world/thumbnail.png',
+      'assets/levels/world/thumbnail.png',
     );
     this.load.image(
       ASSET_KEYS.MAP_THUMB_DUNGEON_1,
-      'assets/images/levels/dungeon_1/thumbnail.png',
+      'assets/levels/dungeon-1/thumbnail.png',
     );
     this.load.bitmapFont(
       BMFONT_KEY,
@@ -64,9 +64,16 @@ export class LobbyScene extends Phaser.Scene {
   public create(): void {
     this.#showConnectView();
 
-    // D-13: duck menu music from 0.05 (MainMenu) to 0.03 (Lobby) — same track,
-    // just quieter so UI sfx + DOM input feel are not drowned out.
-    MusicManager.instance.setMenuVolume(0.03);
+    // Switch from intro music (teste.mp3) to the standard menu loop, faded
+    // directly to the ducked LOBBY_VOLUME (0.03) so we don't have a tween →
+    // hard-set conflict with the prior setMenuVolume call below. No-op if
+    // menu music is already the active track (back-nav, fresh boot via a
+    // sub-scene that already swapped).
+    MusicManager.instance.playMenu(this, { volume: LOBBY_VOLUME });
+
+    // D-13: ensure the ducked level is applied even on the no-op fast path
+    // (when menu music is already playing and playMenu skipped the fade).
+    MusicManager.instance.setMenuVolume(LOBBY_VOLUME);
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_CONNECTED, this.#onConnected, this);

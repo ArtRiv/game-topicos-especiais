@@ -11,7 +11,7 @@
     ]
   },
   {
-    "path": "assets/images/hud",
+    "path": "assets/hud",
     "files": [
       {
         "type": "aseprite",
@@ -22,29 +22,17 @@
     ]
   },
   {
-    "path": "assets/images/ui",
+    "path": "assets/ui",
     "files": [
-      {
-        "type": "image",
-        "key": "UI_DIALOG",
-        "url": "dialog_ui.png"
-      },
-      {
-        "type": "image",
-        "key": "UI_CURSOR",
-        "url": "cursor_white.png"
-      },
+      { "type": "image", "key": "UI_DIALOG", "url": "dialog-ui.png" },
+      { "type": "image", "key": "UI_CURSOR", "url": "cursor-white.png" },
       {
         "type": "spritesheet",
         "key": "UI_ICONS",
         "url": "icons.png",
         "frameConfig": { "frameWidth": 16, "frameHeight": 16 }
       },
-      {
-        "type": "image",
-        "key": "MENU_BG",
-        "url": "menu_bg.jpg"
-      }
+      { "type": "image", "key": "MENU_BG", "url": "menu-bg.jpg" }
     ]
   },
   {
@@ -55,13 +43,13 @@
     ]
   },
   {
-    "path": "assets/images/player",
+    "path": "assets/player/base",
     "files": [
       {
         "type": "aseprite",
         "key": "PLAYER",
-        "textureURL": "little_mage.png",
-        "atlasURL": "little_mage.json"
+        "textureURL": "little-mage.png",
+        "atlasURL": "little-mage.json"
       },
       {
         "type": "spritesheet",
@@ -72,34 +60,26 @@
     ]
   },
   {
-    "path": "assets/images/levels/common",
+    "path": "assets/levels/common",
     "files": [
-      {
-        "type": "image",
-        "key": "COLLISION",
-        "url": "collision.png"
-      },
+      { "type": "image", "key": "COLLISION", "url": "collision.png" },
       {
         "type": "atlas",
         "key": "DUNGEON_OBJECTS",
-        "textureURL": "dungeon_objects.png",
-        "atlasURL": "dungeon_objects.json"
+        "textureURL": "dungeon-objects.png",
+        "atlasURL": "dungeon-objects.json"
       },
-      {
-        "type": "image",
-        "key": "POT",
-        "url": "pot.png"
-      },
+      { "type": "image", "key": "POT", "url": "pot.png" },
       {
         "type": "spritesheet",
         "key": "POT_BREAK",
-        "url": "pot_break.png",
+        "url": "pot-break.png",
         "frameConfig": { "frameWidth": 32, "frameHeight": 32 }
       }
     ]
   },
   {
-    "path": "assets/images/enemies",
+    "path": "assets/enemies",
     "files": [
       {
         "type": "aseprite",
@@ -128,240 +108,225 @@
     ]
   },
   {
-    "path": "assets/spells/Earth Effect 01",
+    "path": "assets/spells/earth/earthbolt",
     "files": [
       {
         "type": "spritesheet",
         "key": "EARTH_BOLT",
-        "url": "Earth projectile Spritesheet .png",
+        "url": "earth-projectile-spritesheet.png",
         "frameConfig": { "frameWidth": 48, "frameHeight": 32 }
       },
       {
         "type": "spritesheet",
         "key": "EARTH_BOLT_IMPACT",
-        "url": "Impact Spritesheet.png",
-        "frameConfig": { "frameWidth": 48, "frameHeight": 48 }
-      },
-      {
-        "type": "spritesheet",
-        "key": "EARTH_FIRE_ROCK_BURST",
-        "url": "Irregular rock Spritesheet.png",
+        "url": "impact-spritesheet.png",
         "frameConfig": { "frameWidth": 48, "frameHeight": 48 }
       }
     ]
   },
   {
-    "path": "assets/spells/Earth Effect 02",
+    "path": "assets/spells/earth/earthwall",
     "files": [
       {
         "type": "spritesheet",
         "key": "EARTH_WALL",
-        "url": "Earth Wall.png",
-        "frameConfig": { "frameWidth": 48, "frameHeight": 48 }      },
-      {
-        "type": "spritesheet",
-        "key": "EARTH_BUMP",
-        "url": "Earth Bump.png",
-        "frameConfig": { "frameWidth": 48, "frameHeight": 48 }      }
+        "url": "earth-wall.png",
+        "frameConfig": { "frameWidth": 48, "frameHeight": 48 }
+      }
     ]
   },
   {
-    "path": "assets/spells/Fire Effect 1",
+    "path": "assets/spells/earth/earthbump",
+    "files": [
+      {
+        "type": "spritesheet",
+        "key": "EARTH_BUMP",
+        "url": "earth-bump.png",
+        "frameConfig": { "frameWidth": 48, "frameHeight": 48 }
+      }
+    ]
+  },
+  {
+    "path": "assets/spells/fire/firebolt",
     "files": [
       {
         "type": "spritesheet",
         "key": "FIRE_BOLT",
-        "url": "Firebolt SpriteSheet.png",
+        "url": "firebolt-spritesheet.png",
         "frameConfig": { "frameWidth": 48, "frameHeight": 48 }
       },
       {
         "type": "spritesheet",
         "key": "FIRE_BOLT_IMPACT",
-        "url": "Firebolt SpriteSheet.png",
+        "url": "firebolt-spritesheet.png",
         "frameConfig": { "frameWidth": 48, "frameHeight": 48 }
-      },
+      }
+    ]
+  },
+  {
+    "path": "assets/spells/fire/firebreath",
+    "files": [
       {
         "type": "spritesheet",
         "key": "FIRE_BREATH_BEAM",
-        "url": "Fire Breath SpriteSheet.png",
+        "url": "fire-breath-spritesheet.png",
         "frameConfig": { "frameWidth": 48, "frameHeight": 48 }
       },
       {
         "type": "spritesheet",
         "key": "FIRE_BREATH_HIT",
-        "url": "Fire Breath hit effect SpriteSheet.png",
+        "url": "fire-breath-hit-effect-spritesheet.png",
         "frameConfig": { "frameWidth": 48, "frameHeight": 48 }
       }
     ]
   },
   {
-    "path": "assets/spells/Fire Effect 2",
+    "path": "assets/spells/fire/firearea",
     "files": [
       {
         "type": "spritesheet",
         "key": "FIRE_AREA_EXPLOSION",
-        "url": "Explosion 2 SpriteSheet.png",
+        "url": "explosion-2-spritesheet.png",
         "frameConfig": { "frameWidth": 48, "frameHeight": 48 }
       },
       {
         "type": "spritesheet",
         "key": "EARTH_FIRE_EXPLOSION",
-        "url": "Explosion SpriteSheet.png",
+        "url": "explosion-spritesheet.png",
         "frameConfig": { "frameWidth": 64, "frameHeight": 64 }
       }
     ]
   },
   {
-    "path": "assets/spells/Water Effect 01/Water Effect SpriteSheet",
+    "path": "assets/spells/water/waterspike",
     "files": [
       {
         "type": "spritesheet",
         "key": "WATER_SPIKE",
-        "url": "Water Spike 01 - SpriteSheet.png",
+        "url": "water-spike-01-spritesheet.png",
         "frameConfig": { "frameWidth": 64, "frameHeight": 80 }
-      }
-    ]
-  },
-  {
-    "path": "assets/spells/Water Effect 01/Start Up",
-    "files": [
+      },
       {
         "type": "spritesheet",
         "key": "WATER_SPIKE_STARTUP",
-        "url": "Water StartUp 1 SpriteSheet.png",
+        "url": "water-startup-1-spritesheet.png",
         "frameConfig": { "frameWidth": 64, "frameHeight": 16 }
       }
     ]
   },
   {
-    "path": "assets/spells/Water Effect 2/Water Blast - Spritesheet",
+    "path": "assets/spells/water/watertornado",
     "files": [
       {
         "type": "spritesheet",
         "key": "WATER_TORNADO_STARTUP_LOOP",
-        "url": "Water Blast - Startup and Infinite.png",
+        "url": "water-blast-startup-and-infinite.png",
         "frameConfig": { "frameWidth": 128, "frameHeight": 128 }
       },
       {
         "type": "spritesheet",
         "key": "WATER_TORNADO_END",
-        "url": "Water Blast - End.png",
+        "url": "water-blast-end.png",
         "frameConfig": { "frameWidth": 128, "frameHeight": 128 }
       }
     ]
   },
   {
-    "path": "assets/spells/Water Effect 2/Water Ball - Spritesheet",
+    "path": "assets/spells/water/waterball",
     "files": [
       {
         "type": "spritesheet",
         "key": "WATER_BALL_STARTUP",
-        "url": "WaterBall - Startup and Infinite.png",
+        "url": "waterball-startup-and-infinite.png",
         "frameConfig": { "frameWidth": 64, "frameHeight": 64 }
       },
       {
         "type": "spritesheet",
         "key": "WATER_BALL_IMPACT",
-        "url": "WaterBall - Impact.png",
+        "url": "waterball-impact.png",
         "frameConfig": { "frameWidth": 64, "frameHeight": 64 }
       }
     ]
   },
   {
-    "path": "assets/spells/Ice Effect 01/Ice VFX 1",
+    "path": "assets/spells/ice/iceshard",
     "files": [
       {
         "type": "spritesheet",
         "key": "ICE_SHARD",
-        "url": "Ice VFX 1 Start.png",
+        "url": "ice-vfx-1-start.png",
         "frameConfig": { "frameWidth": 48, "frameHeight": 32 }
       },
       {
         "type": "spritesheet",
         "key": "ICE_SHARD_HIT",
-        "url": "Ice VFX 1 Hit.png",
+        "url": "ice-vfx-1-hit.png",
         "frameConfig": { "frameWidth": 48, "frameHeight": 32 }
       }
     ]
   },
   {
-    "path": "assets/spells/Wind Effect 01",
+    "path": "assets/spells/wind/windbolt",
     "files": [
       {
         "type": "spritesheet",
         "key": "WIND_BOLT",
-        "url": "Wind Projectile.png",
+        "url": "wind-projectile.png",
         "frameConfig": { "frameWidth": 32, "frameHeight": 32 }
       },
       {
         "type": "spritesheet",
         "key": "WIND_BOLT_HIT",
-        "url": "Wind Hit Effect.png",
+        "url": "wind-hit-effect.png",
         "frameConfig": { "frameWidth": 32, "frameHeight": 32 }
       }
     ]
   },
   {
-    "path": "assets/spells/Thunder Effect 02/Thunder Strike",
+    "path": "assets/spells/thunder/thunderstrike",
     "files": [
       {
         "type": "spritesheet",
         "key": "THUNDER_STRIKE",
-        "url": "Thunderstrike wo blur.png",
+        "url": "thunderstrike-wo-blur.png",
         "frameConfig": { "frameWidth": 64, "frameHeight": 64 }
-      }
-    ]
-  },
-  {
-    "path": "assets/spells/Thunder Effect 02/Thunder Splash",
-    "files": [
+      },
       {
         "type": "spritesheet",
         "key": "THUNDER_SPLASH",
-        "url": "Thunder splash wo blur.png",
+        "url": "thunder-splash-wo-blur.png",
         "frameConfig": { "frameWidth": 48, "frameHeight": 48 }
       }
     ]
   },
   {
-    "path": "assets/spells/Wind Effect 02",
+    "path": "assets/spells/wind/windaoe",
     "files": [
       {
         "type": "spritesheet",
         "key": "AIR_BURST",
-        "url": "Air Burst.png",
+        "url": "air-burst.png",
         "frameConfig": { "frameWidth": 48, "frameHeight": 48 }
       }
     ]
   },
   {
-    "path": "assets/spells/Pixelart Spells/PNG Files",
-    "files": [
-      {
-        "type": "spritesheet",
-        "key": "PIXELART_SPLASH",
-        "url": "Splash.png",
-        "frameConfig": { "frameWidth": 32, "frameHeight": 32 }
-      }
-    ]
-  },
-  {
-    "path": "assets/images/levels/dungeon_1",
+    "path": "assets/levels/dungeon-1",
     "files": [
       {
         "type": "image",
         "key": "DUNGEON_1_BACKGROUND",
-        "url": "dungeon_1_background.png"
+        "url": "dungeon-1-background.png"
       },
       {
         "type": "image",
         "key": "DUNGEON_1_FOREGROUND",
-        "url": "dungeon_1_foreground.png"
+        "url": "dungeon-1-foreground.png"
       },
       {
         "type": "tilemapTiledJSON",
         "key": "DUNGEON_1_LEVEL",
-        "url": "dungeon_1.json"
+        "url": "dungeon-1.json"
       },
       {
         "type": "image",
@@ -371,7 +336,7 @@
     ]
   },
   {
-    "path": "assets/images/levels/world",
+    "path": "assets/levels/world",
     "files": [
       {
         "type": "image",
@@ -396,22 +361,22 @@
     ]
   },
   {
-    "path": "assets/Little Mage/Role",
+    "path": "assets/player/roll",
     "files": [
-      { "type": "image", "key": "PLAYER_ROLL_1", "url": "Role1.png" },
-      { "type": "image", "key": "PLAYER_ROLL_2", "url": "Role2.png" },
-      { "type": "image", "key": "PLAYER_ROLL_3", "url": "Role3.png" },
-      { "type": "image", "key": "PLAYER_ROLL_4", "url": "Role4.png" },
-      { "type": "image", "key": "PLAYER_ROLL_5", "url": "Role5.png" }
+      { "type": "image", "key": "PLAYER_ROLL_1", "url": "role-1.png" },
+      { "type": "image", "key": "PLAYER_ROLL_2", "url": "role-2.png" },
+      { "type": "image", "key": "PLAYER_ROLL_3", "url": "role-3.png" },
+      { "type": "image", "key": "PLAYER_ROLL_4", "url": "role-4.png" },
+      { "type": "image", "key": "PLAYER_ROLL_5", "url": "role-5.png" }
     ]
   },
   {
-    "path": "assets/spells/Smoke N Dust 03",
+    "path": "assets/spells/shared/smoke-n-dust",
     "files": [
       {
         "type": "spritesheet",
         "key": "DASH_SMOKE",
-        "url": "SmokeNDust P03 VFX 2.png",
+        "url": "smoke-n-dust-p03-vfx-2.png",
         "frameConfig": { "frameWidth": 64, "frameHeight": 64 }
       }
     ]

@@ -12,6 +12,7 @@ import {
 import { RUNTIME_CONFIG } from '../../common/runtime-config';
 import { CharacterGameObject } from '../common/character-game-object';
 import { Puddle } from './puddle';
+import type { VoidOrb } from './void-orb';
 
 type WaterSpikePhase = 'startup' | 'rise' | 'loop' | 'fade';
 
@@ -27,6 +28,13 @@ export class WaterSpike extends Phaser.Physics.Arcade.Sprite implements ActiveSp
   #phase: WaterSpikePhase = 'startup';
   #loopTimer: Phaser.Time.TimerEvent | undefined;
   #hitEnemies: Set<CharacterGameObject> = new Set();
+  // VoidOrb combo portal: same pattern as WaterTornado. While a VoidOrb orb
+  // overlaps the spike, an inverted soft BitmapMask sourced from the orb fades
+  // the overlapping portion of the spike into the portal. Tracked
+  // bidirectionally so cleanup is symmetric (see #darkPortalSourceIsDead +
+  // VoidOrb.#maskedSpells).
+  #darkPortalMask: Phaser.Display.Masks.BitmapMask | undefined;
+  #voidPortalSourceOrb: VoidOrb | undefined;
 
   get baseDamage(): number {
     return RUNTIME_CONFIG.WATER_SPIKE_DAMAGE;
@@ -85,6 +93,60 @@ export class WaterSpike extends Phaser.Physics.Arcade.Sprite implements ActiveSp
     return this;
   }
 
+  /** Safety-net check: if the orb that owns our mask source died first, clear
+   *  the mask before we render this frame — otherwise the spike would render a
+   *  phantom transparent hole even though the orb is gone. */
+  public preUpdate(time: number, delta: number): void {
+    super.preUpdate(time, delta);
+    if (this.#darkPortalMask) {
+      const orb = this.#voidPortalSourceOrb;
+      if (!orb || !orb.active || !orb.scene) {
+        this.clearVoidPortalMask();
+      }
+    }
+  }
+
+  /** Punch a hole in the spike where `orb`'s soft mask source is opaque. The
+   *  portion of the spike overlapping the orb's portal core fades into the
+   *  vortex; the rest of the spike renders normally. Idempotent — if we're
+   *  already masked, no-op. */
+  public applyVoidPortalMask(orb: VoidOrb, maskSource: Phaser.GameObjects.GameObject): void {
+    if (this.#darkPortalMask) return;
+    const bm = new Phaser.Display.Masks.BitmapMask(this.scene, maskSource);
+    bm.invertAlpha = true;
+    this.setMask(bm);
+    this.#darkPortalMask = bm;
+    this.#voidPortalSourceOrb = orb;
+    orb.registerMaskedSpell(this);
+  }
+
+  public clearVoidPortalMask(): void {
+    if (!this.#darkPortalMask) return;
+    this.clearMask();
+    this.#darkPortalMask.destroy();
+    this.#darkPortalMask = undefined;
+    const orb = this.#voidPortalSourceOrb;
+    this.#voidPortalSourceOrb = undefined;
+    // Notify AFTER nulling our own refs so re-entrant callbacks don't loop.
+    if (orb?.active) orb.unregisterMaskedSpell(this);
+  }
+
+  /** EarthWall combo: the wall blocked the spike. Forces an early fade so the
+   *  spike dies quickly (the wall stopped it). Idempotent — second call while
+   *  already fading is a no-op. The visual cleanup is handled by the existing
+   *  fade animation; the impact splash + mud puddle are spawned by the combo
+   *  handler in GameScene (since it owns the impact location). */
+  public triggerEarthBlock(): void {
+    if (this.#phase === 'fade' || !this.active) return;
+    this.#loopTimer?.destroy();
+    this.#loopTimer = undefined;
+    this.#startupTimer?.destroy();
+    this.#startupTimer = undefined;
+    // If still in startup, kill the startup sprite so it doesn't linger.
+    this.#startupSprite?.setVisible(false);
+    this.#startFade();
+  }
+
   /** Called when this spike overlaps with an enemy. Damages each enemy once per activation. */
   public hitEnemy(enemy: CharacterGameObject): void {
     if (!this.isDamageActive || this.#hitEnemies.has(enemy)) return;
@@ -96,6 +158,7 @@ export class WaterSpike extends Phaser.Physics.Arcade.Sprite implements ActiveSp
     this.#startupTimer?.destroy();
     this.#loopTimer?.destroy();
     this.#startupSprite?.destroy();
+    this.clearVoidPortalMask();
     this.#hitEnemies.clear();
     super.destroy(fromScene);
   }

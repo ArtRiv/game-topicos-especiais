@@ -15,6 +15,13 @@ export class KeyboardComponent extends InputComponent {
   #enterKey: Phaser.Input.Keyboard.Key;
   #spaceKey: Phaser.Input.Keyboard.Key;
   #shiftKey: Phaser.Input.Keyboard.Key;
+  #carouselLeftKey: Phaser.Input.Keyboard.Key;  // Q — previous element
+  #carouselRightKey: Phaser.Input.Keyboard.Key; // E — next element
+  #specialCastKey: Phaser.Input.Keyboard.Key;   // R — cast pickup-granted special spell
+
+  // Mouse-button state. Latched to "just down" on pointerdown and consumed at end of frame.
+  #leftMouseJustDown = false;
+  #rightMouseJustDown = false;
 
   constructor(scene: Phaser.Scene, keyboardPlugin: Phaser.Input.Keyboard.KeyboardPlugin) {
     super();
@@ -26,27 +33,52 @@ export class KeyboardComponent extends InputComponent {
     this.#spell1Key = keyboardPlugin.addKey(Phaser.Input.Keyboard.KeyCodes.ONE);
     this.#spell2Key = keyboardPlugin.addKey(Phaser.Input.Keyboard.KeyCodes.TWO);
     this.#spell3Key = keyboardPlugin.addKey(Phaser.Input.Keyboard.KeyCodes.THREE);
-    this.#actionKey = keyboardPlugin.addKey(Phaser.Input.Keyboard.KeyCodes.E);
+    // Interact rebound from E to F so E can drive the element carousel.
+    this.#actionKey = keyboardPlugin.addKey(Phaser.Input.Keyboard.KeyCodes.F);
     this.#enterKey = keyboardPlugin.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
     this.#debugToggleKey = keyboardPlugin.addKey(Phaser.Input.Keyboard.KeyCodes.P);
     this.#spaceKey = keyboardPlugin.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
     this.#shiftKey = keyboardPlugin.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT);
+    this.#carouselLeftKey = keyboardPlugin.addKey(Phaser.Input.Keyboard.KeyCodes.Q);
+    this.#carouselRightKey = keyboardPlugin.addKey(Phaser.Input.Keyboard.KeyCodes.E);
+    this.#specialCastKey = keyboardPlugin.addKey(Phaser.Input.Keyboard.KeyCodes.R);
 
     // Prevent Chrome's default page-scroll on SPACE and any browser shortcuts on SHIFT
     // while the game canvas has focus. CTRL is intentionally NOT captured (D-19, Phase 9.3)
     // so Ctrl+W / Ctrl+T / Ctrl+R pass through to the browser.
     keyboardPlugin.addCapture('SPACE,SHIFT');
 
-    // WASD  = movement
-    // SHIFT = dash (D-13/14, Phase 9.3)
-    // SPACE = hold to open radial element-selection menu (rebound from CTRL — D-17, Phase 9.3)
-    // 1     = spell slot 1
-    // 2     = spell slot 2
-    // 3     = spell slot 3 (hold)
-    // P     = toggle arcade physics hitboxes
-    // E     = interact / action
-    // mouse = aim target position
-    // CTRL  = no longer bound (D-19) — Ctrl+W/T/R passes through to browser
+    // Mouse bindings: left = spell slot 0 (alongside `1`), right = spell slot 1 (alongside `2`).
+    // Right-click would normally open the browser context menu — suppress it for the canvas.
+    scene.input.mouse?.disableContextMenu();
+    scene.input.on(Phaser.Input.Events.POINTER_DOWN, (pointer: Phaser.Input.Pointer) => {
+      if (pointer.leftButtonDown()) this.#leftMouseJustDown = true;
+      if (pointer.rightButtonDown()) this.#rightMouseJustDown = true;
+    });
+    // Clear latched "just down" flags after each frame so they fire exactly once,
+    // matching Phaser.Input.Keyboard.JustDown semantics.
+    scene.events.on(Phaser.Scenes.Events.POST_UPDATE, this.#clearJustDownFlags, this);
+    scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      scene.events.off(Phaser.Scenes.Events.POST_UPDATE, this.#clearJustDownFlags, this);
+    });
+
+    // WASD       = movement
+    // SHIFT      = dash (D-13/14, Phase 9.3)
+    // SPACE      = hold to open radial element-selection menu (rebound from CTRL — D-17, Phase 9.3)
+    // 1 / LMB    = spell slot 1
+    // 2 / RMB    = spell slot 2
+    // 3          = spell slot 3 (hold)
+    // Q          = element carousel: previous
+    // E          = element carousel: next
+    // F          = interact / action (rebound from E)
+    // P          = toggle arcade physics hitboxes
+    // mouse move = aim target position
+    // CTRL       = no longer bound (D-19) — Ctrl+W/T/R passes through to browser
+  }
+
+  #clearJustDownFlags(): void {
+    this.#leftMouseJustDown = false;
+    this.#rightMouseJustDown = false;
   }
 
   get isUpDown(): boolean {
@@ -90,11 +122,26 @@ export class KeyboardComponent extends InputComponent {
   }
 
   get isSpell1KeyJustDown(): boolean {
-    return Phaser.Input.Keyboard.JustDown(this.#spell1Key);
+    // Read keyboard first so Phaser's internal JustDown latch is consumed every frame.
+    const keyboardJustDown = Phaser.Input.Keyboard.JustDown(this.#spell1Key);
+    return keyboardJustDown || this.#leftMouseJustDown;
   }
 
   get isSpell2KeyJustDown(): boolean {
-    return Phaser.Input.Keyboard.JustDown(this.#spell2Key);
+    const keyboardJustDown = Phaser.Input.Keyboard.JustDown(this.#spell2Key);
+    return keyboardJustDown || this.#rightMouseJustDown;
+  }
+
+  get isCarouselLeftJustDown(): boolean {
+    return Phaser.Input.Keyboard.JustDown(this.#carouselLeftKey);
+  }
+
+  get isCarouselRightJustDown(): boolean {
+    return Phaser.Input.Keyboard.JustDown(this.#carouselRightKey);
+  }
+
+  get isSpecialCastJustDown(): boolean {
+    return Phaser.Input.Keyboard.JustDown(this.#specialCastKey);
   }
 
   // isSpell3KeyDown returns true while THREE is held (not just-down)
@@ -119,11 +166,31 @@ export class KeyboardComponent extends InputComponent {
     return Phaser.Input.Keyboard.JustDown(this.#shiftKey);
   }
 
+  // Scratch vector to avoid per-cast allocation when transforming the pointer.
+  #worldPointBuf: Phaser.Math.Vector2 = new Phaser.Math.Vector2();
+
+  /**
+   * Transform the active pointer's screen position through GameScene's main camera and
+   * cache the result in #worldPointBuf. We CANNOT use `activePointer.worldX/Y` directly:
+   * `activePointer` is shared across all running scenes, and its worldX/Y is recomputed
+   * on each scene's input update. UiScene is launched on top of GameScene and runs an
+   * input plugin against a non-scrolling HUD camera, so its update overwrites the
+   * pointer's world coordinates to ignore the GameScene camera's scroll. The bug
+   * manifested as spells being aimed off-axis — worst when the player was near a screen
+   * edge, since the missing scroll offset is largest there. Going through the main
+   * camera explicitly is the only reliable way to get world coordinates here.
+   */
+  #updateWorldPoint(): Phaser.Math.Vector2 {
+    const cam = this.#scene.cameras.main;
+    const ptr = this.#scene.input.activePointer;
+    return cam.getWorldPoint(ptr.x, ptr.y, this.#worldPointBuf) as Phaser.Math.Vector2;
+  }
+
   get mouseWorldX(): number {
-    return this.#scene.input.activePointer.worldX;
+    return this.#updateWorldPoint().x;
   }
 
   get mouseWorldY(): number {
-    return this.#scene.input.activePointer.worldY;
+    return this.#updateWorldPoint().y;
   }
 }

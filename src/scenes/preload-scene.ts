@@ -34,22 +34,21 @@ export class PreloadScene extends Phaser.Scene {
     MusicManager.instance.loadTracks(this);
 
     // Explicit lobby thumbnail loads. The MAP_THUMB_* entries inside the
-    // levels/world and levels/dungeon_1 sub-packs in assets.json are not
+    // levels/world and levels/dungeon-1 sub-packs in assets.json are not
     // resolved by the MAIN-keyed pack load (Phaser only fetches entries
     // whose pack key matches), so they would never reach the texture cache
     // before LobbyScene renders. Loading them here guarantees presence.
     this.load.image(
       ASSET_KEYS.MAP_THUMB_WORLD,
-      'assets/images/levels/world/thumbnail.png',
+      'assets/levels/world/thumbnail.png',
     );
     this.load.image(
       ASSET_KEYS.MAP_THUMB_DUNGEON_1,
-      'assets/images/levels/dungeon_1/thumbnail.png',
+      'assets/levels/dungeon-1/thumbnail.png',
     );
 
-    // Combo / new-spell sprites added in the dark/lightning extension.
-    // Lightning bursts and lightning strike are shipped as per-frame PNGs (frameNNNN.png),
-    // so we load them individually and assemble the animation from the same-prefix keys.
+    // Combo / new-spell sprites loaded as per-frame PNGs (frameNNNN.png), assembled into
+    // animations from same-prefix keys at create time.
     const loadFrameSeries = (baseKey: string, basePath: string, count: number): void => {
       for (let i = 0; i < count; i++) {
         const padded = `frame${i.toString().padStart(4, '0')}`;
@@ -57,37 +56,21 @@ export class PreloadScene extends Phaser.Scene {
       }
     };
 
-    loadFrameSeries(
-      ASSET_KEYS.LIGHTNING_BURST_002,
-      'assets/spells/Lightning/lightning_burst_002/lightning_burst_002_large_violet',
-      9,
-    );
-    loadFrameSeries(
-      ASSET_KEYS.LIGHTNING_BURST_003,
-      'assets/spells/Lightning/lightning_burst_003/lightning_burst_003_large_violet',
-      10,
-    );
-    loadFrameSeries(
-      ASSET_KEYS.LIGHTNING_STRIKE_001,
-      'assets/spells/Lightning/lightning_strike_001/lightning_strike_001_large_violet',
-      7,
-    );
+    loadFrameSeries(ASSET_KEYS.LIGHTNING_BURST_002, 'assets/spells/shared/lightning-burst-002', 9);
+    loadFrameSeries(ASSET_KEYS.LIGHTNING_BURST_003, 'assets/spells/darkness/darkbolt-orb', 10);
+    loadFrameSeries(ASSET_KEYS.LIGHTNING_STRIKE_001, 'assets/spells/thunder/thunder-empowered', 7);
 
     // FireBolt-into-FireArea impact (placeholder: Hit Effect 01 sheet 1). 336x48 sheet,
     // 48x48 per frame = 7 frames. We use sheet 1 first per request; sheets 2 and 3 exist
     // for easy swapping if the placeholder doesn't read well.
     this.load.spritesheet(
       ASSET_KEYS.FIRE_BOLT_AREA_IMPACT,
-      'assets/spells/Hit Effect 01/Hit Effect 01 1.png',
+      'assets/spells/shared/hit-effect-01/hit-effect-01-1.png',
       { frameWidth: 48, frameHeight: 48 },
     );
 
-    // Steam burst (fire + water combo) — per-frame PNGs, 21 frames, large white.
-    loadFrameSeries(
-      ASSET_KEYS.STEAM_BURST,
-      'assets/spells/Smoke Bursts/directional_smoke_burst_001/directional_smoke_burst_001_large_white',
-      21,
-    );
+    // Steam burst (fire + water combo) — per-frame PNGs, 21 frames.
+    loadFrameSeries(ASSET_KEYS.STEAM_BURST, 'assets/spells/shared/steam-burst', 21);
 
     // Spell cooldown HUD icons
     this.load.image(ASSET_KEYS.SPELL_ICO_FIRE,  'assets/spell-ico/fire.png');
@@ -96,19 +79,82 @@ export class PreloadScene extends Phaser.Scene {
     this.load.image(ASSET_KEYS.SPELL_ICO_WIND,  'assets/spell-ico/wind.png');
     this.load.image(ASSET_KEYS.SPELL_ICO_DARK,  'assets/spell-ico/dark.png');
 
-    // Dark Bolt / alternative Lightning — load individual frames (sheet packing is uneven).
-    for (let i = 1; i <= 12; i++) {
-      this.load.image(
-        `${ASSET_KEYS.DARK_BOLT}_${i - 1}`,
-        `assets/spells/Magic Pack 9 files/Magic Pack 9 files/sprites/DarkBolt/Dark-Bolt${i}.png`,
-      );
-    }
-    for (let i = 1; i <= 11; i++) {
-      this.load.image(
-        `${ASSET_KEYS.THUNDER_STRIKE_ALT}_${i - 1}`,
-        `assets/spells/Magic Pack 9 files/Magic Pack 9 files/sprites/Lightning/Lightning${i}.png`,
-      );
-    }
+    // Element carousel icons + panel border
+    this.load.image(ASSET_KEYS.ELEMENT_ICON_FIRE,      'assets/ui/element-menu/fire_icon.png');
+    this.load.image(ASSET_KEYS.ELEMENT_ICON_WATER,     'assets/ui/element-menu/water_icon.png');
+    this.load.image(ASSET_KEYS.ELEMENT_ICON_EARTH,     'assets/ui/element-menu/earth_icon.png');
+    this.load.image(ASSET_KEYS.ELEMENT_ICON_WIND,      'assets/ui/element-menu/wind_icon.png');
+    this.load.image(ASSET_KEYS.ELEMENT_ICON_LIGHTNING, 'assets/ui/element-menu/lightning_icon.png');
+    this.load.image(ASSET_KEYS.CAROUSEL_PANEL,         'assets/kenney_fantasy-ui-borders/PNG/Default/Border/panel-border-022.png');
+
+    // Pixelart Splash — VFX shown when a ThunderStrike lands on a Puddle. 6 frames @ 32x32.
+    this.load.spritesheet(
+      ASSET_KEYS.PIXELART_SPLASH,
+      'assets/spells/shared/pixelart-splash/Splash.png',
+      { frameWidth: 32, frameHeight: 32 },
+    );
+
+    // LightningBeam — held/channeled spell. Two stacked sheets, each 1024x128 (4×256x128).
+    this.load.spritesheet(
+      ASSET_KEYS.LIGHTNING_BEAM_VFX1,
+      'assets/spells/thunder/lightning-beam/vfx1.png',
+      { frameWidth: 256, frameHeight: 128 },
+    );
+    this.load.spritesheet(
+      ASSET_KEYS.LIGHTNING_BEAM_VFX2,
+      'assets/spells/thunder/lightning-beam/vfx2.png',
+      { frameWidth: 256, frameHeight: 128 },
+    );
+
+    // Earth+Fire burst (replaces the lava pool). Three 128×128/frame sheets;
+    // VFX1 and VFX2 are 8 frames (1024 wide), VFX3 is 7 frames (896 wide).
+    // Pick the variant in RUNTIME_CONFIG.EARTH_FIRE_BURST_VARIANT to A/B them.
+    this.load.spritesheet(
+      ASSET_KEYS.EARTH_FIRE_BURST_VFX1,
+      'assets/spells/shared/fire-explosions/vfx1.png',
+      { frameWidth: 128, frameHeight: 128 },
+    );
+    this.load.spritesheet(
+      ASSET_KEYS.EARTH_FIRE_BURST_VFX2,
+      'assets/spells/shared/fire-explosions/vfx2.png',
+      { frameWidth: 128, frameHeight: 128 },
+    );
+    this.load.spritesheet(
+      ASSET_KEYS.EARTH_FIRE_BURST_VFX3,
+      'assets/spells/shared/fire-explosions/vfx3.png',
+      { frameWidth: 128, frameHeight: 128 },
+    );
+
+    // VoidOrb — Blood Mage VFX1 sheets (3 phases, all 128x128 per frame).
+    this.load.spritesheet(
+      ASSET_KEYS.VOID_ORB_BM_START,
+      'assets/spells/darkness/bloodmage-vfx1/start.png',
+      { frameWidth: 128, frameHeight: 128 },
+    );
+    this.load.spritesheet(
+      ASSET_KEYS.VOID_ORB_BM_LOOP,
+      'assets/spells/darkness/bloodmage-vfx1/loop.png',
+      { frameWidth: 128, frameHeight: 128 },
+    );
+    this.load.spritesheet(
+      ASSET_KEYS.VOID_ORB_BM_END,
+      'assets/spells/darkness/bloodmage-vfx1/end.png',
+      { frameWidth: 128, frameHeight: 128 },
+    );
+    // VFX2 — 12-frame backdrop sheet, used as the startup layer behind the orb.
+    this.load.spritesheet(
+      ASSET_KEYS.VOID_ORB_BM_VFX2,
+      'assets/spells/darkness/bloodmage-vfx1/vfx2.png',
+      { frameWidth: 128, frameHeight: 128 },
+    );
+
+    // DarkBolt — Blood Mage VFX3 sheet (512×128 = 4 frames). Loops while the
+    // bolt is in flight; reused as the pickup icon (frame 0).
+    this.load.spritesheet(
+      ASSET_KEYS.DARK_BOLT_BM_VFX3,
+      'assets/spells/darkness/bloodmage-vfx3/sprite-sheet.png',
+      { frameWidth: 128, frameHeight: 128 },
+    );
   }
 
   public create(): void {
@@ -302,15 +348,32 @@ export class PreloadScene extends Phaser.Scene {
       repeat: -1,
     });
 
-    // Earth + Fire combo: rock burst (12 frames across 2 rows, play once)
+    // Earth + Fire burst variants — pick whichever reads best via
+    // RUNTIME_CONFIG.EARTH_FIRE_BURST_VARIANT. All play once.
     this.anims.create({
-      key: ASSET_KEYS.EARTH_FIRE_ROCK_BURST,
-      frames: this.anims.generateFrameNumbers(ASSET_KEYS.EARTH_FIRE_ROCK_BURST, { start: 0, end: 11 }),
+      key: ASSET_KEYS.EARTH_FIRE_BURST_VFX1,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.EARTH_FIRE_BURST_VFX1, { start: 0, end: 7 }),
+      frameRate: 16,
+      repeat: 0,
+    });
+    this.anims.create({
+      key: ASSET_KEYS.EARTH_FIRE_BURST_VFX2,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.EARTH_FIRE_BURST_VFX2, { start: 0, end: 7 }),
+      frameRate: 16,
+      repeat: 0,
+    });
+    this.anims.create({
+      key: ASSET_KEYS.EARTH_FIRE_BURST_VFX3,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.EARTH_FIRE_BURST_VFX3, { start: 0, end: 6 }),
       frameRate: 16,
       repeat: 0,
     });
 
-    // Earth + Fire combo: big explosion (16 frames 4×4 grid, play once)
+    // Earth + Fire combo: big explosion (16 frames 4×4 grid, play once).
+    // NOTE: the original combo had a 2nd "rock burst" layer underneath, but the
+    // Irregular rock Spritesheet was removed during the asset reorg. The combo now
+    // shows just the explosion layer; restore EARTH_FIRE_ROCK_BURST + its anim if you
+    // re-add the irregular-rock spritesheet later.
     this.anims.create({
       key: ASSET_KEYS.EARTH_FIRE_EXPLOSION,
       frames: this.anims.generateFrameNumbers(ASSET_KEYS.EARTH_FIRE_EXPLOSION, { start: 0, end: 15 }),
@@ -493,6 +556,62 @@ export class PreloadScene extends Phaser.Scene {
       hideOnComplete: true,
     });
 
+    // VoidOrb — Blood Mage VFX1 anims. Three phases share the 128x128 frame size:
+    //   START — buildup at cast point (plays once)
+    //   LOOP  — sustained orb pulse (loops forever)
+    //   END   — dissipate (plays once, hides on complete)
+    this.anims.create({
+      key: ASSET_KEYS.VOID_ORB_BM_START,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.VOID_ORB_BM_START, { start: 0, end: 7 }),
+      frameRate: 16,
+      repeat: 0,
+    });
+    this.anims.create({
+      key: ASSET_KEYS.VOID_ORB_BM_LOOP,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.VOID_ORB_BM_LOOP, { start: 0, end: 4 }),
+      frameRate: 12,
+      repeat: -1,
+    });
+    this.anims.create({
+      key: ASSET_KEYS.VOID_ORB_BM_END,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.VOID_ORB_BM_END, { start: 0, end: 5 }),
+      frameRate: 16,
+      repeat: 0,
+      hideOnComplete: true,
+    });
+    // VFX2 backdrop — 12-frame burst. Plays once during startup; faded out afterward.
+    this.anims.create({
+      key: ASSET_KEYS.VOID_ORB_BM_VFX2,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.VOID_ORB_BM_VFX2, { start: 0, end: 11 }),
+      frameRate: 18,
+      repeat: 0,
+    });
+
+    // DarkBolt — 4-frame loop of the Blood Mage skill3 sheet. Frame rate is
+    // imported from config so it can be re-tuned without touching the preloader.
+    this.anims.create({
+      key: ASSET_KEYS.DARK_BOLT_BM_VFX3,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.DARK_BOLT_BM_VFX3, { start: 0, end: 3 }),
+      frameRate: 10,
+      repeat: -1,
+    });
+
+    // LightningBeam — two looping 4-frame anims, one per layer. Stacked at runtime so
+    // the beam reads as a single composite. Frame rate is fast (24) so the crackle reads
+    // as continuous electricity rather than discrete frames.
+    this.anims.create({
+      key: ASSET_KEYS.LIGHTNING_BEAM_VFX1,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.LIGHTNING_BEAM_VFX1, { start: 0, end: 3 }),
+      frameRate: 24,
+      repeat: -1,
+    });
+    this.anims.create({
+      key: ASSET_KEYS.LIGHTNING_BEAM_VFX2,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.LIGHTNING_BEAM_VFX2, { start: 0, end: 3 }),
+      frameRate: 24,
+      repeat: -1,
+    });
+
     // Air Burst — wind super-dash VFX (3x3 grid → 9 frames @ 48x48).
     this.anims.create({
       key: ASSET_KEYS.AIR_BURST,
@@ -537,9 +656,8 @@ export class PreloadScene extends Phaser.Scene {
     makeSeriesAnim(ASSET_KEYS.LIGHTNING_STRIKE_001, ASSET_KEYS.LIGHTNING_STRIKE_001, 7, 18);
     makeSeriesAnim(ASSET_KEYS.STEAM_BURST, ASSET_KEYS.STEAM_BURST, 21, 20);
 
-    // Dark Bolt orb animations are built lazily in dark-bolt.ts based on the current
-    // DARK_BOLT_LOOP_FRAME_LOW / _HIGH config values (so the loop range can be tuned
-    // without changing this file). Cached in Phaser's anim system after first cast.
+    // VoidOrb orb animations are built lazily in void-orb.ts and cached in
+    // Phaser's anim system after first cast.
 
     // FireBolt-into-FireArea impact: 7 frames @ 48x48 from the Hit Effect 01 sheet.
     this.anims.create({
@@ -550,14 +668,9 @@ export class PreloadScene extends Phaser.Scene {
       hideOnComplete: true,
     });
 
-    // Dark Bolt projectile — 12 frames, looping.
-    const darkBoltFrames: Phaser.Types.Animations.AnimationFrame[] = [];
-    for (let i = 0; i < 12; i++) darkBoltFrames.push({ key: `${ASSET_KEYS.DARK_BOLT}_${i}` });
-    this.anims.create({ key: ASSET_KEYS.DARK_BOLT, frames: darkBoltFrames, frameRate: 16, repeat: -1 });
-
-    // Magic Pack 9 alternative Lightning — 11 frames, play once.
-    const thunderAltFrames: Phaser.Types.Animations.AnimationFrame[] = [];
-    for (let i = 0; i < 11; i++) thunderAltFrames.push({ key: `${ASSET_KEYS.THUNDER_STRIKE_ALT}_${i}` });
-    this.anims.create({ key: ASSET_KEYS.THUNDER_STRIKE_ALT, frames: thunderAltFrames, frameRate: 18, repeat: 0 });
+    // VOID_ORB and THUNDER_STRIKE_ALT anims removed — their Magic Pack 9 source
+    // images were never in this repo (the loader paths pointed to a folder that
+    // didn't exist). Current VoidOrb uses lightning_burst_003 frames; the
+    // MAGIC_PACK_9 thunder variant is unreachable (LIGHTNING_SPRITE_VARIANT='CURRENT').
   }
 }

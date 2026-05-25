@@ -165,6 +165,20 @@ export class InputComponent {
     this.#radialMenuKey = val;
   }
 
+  // Carousel navigation (Q / E). Local-input only — remote players never trigger these,
+  // so the base class is a no-op getter and the keyboard subclass overrides.
+  get isCarouselLeftJustDown(): boolean {
+    return false;
+  }
+
+  get isCarouselRightJustDown(): boolean {
+    return false;
+  }
+
+  get isSpecialCastJustDown(): boolean {
+    return false;
+  }
+
   get isDashKeyJustDown(): boolean {
     return this.#dashKey;
   }

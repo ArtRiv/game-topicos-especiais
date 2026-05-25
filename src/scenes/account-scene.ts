@@ -1,6 +1,7 @@
 import * as Phaser from 'phaser';
 import { SCENE_KEYS } from './scene-keys';
 import { buildMenuPlaceholder } from './menu-placeholder';
+import { MusicManager } from '../common/music-manager';
 
 // ---------------------------------------------------------------------------
 // AccountScene — placeholder
@@ -14,6 +15,8 @@ export class AccountScene extends Phaser.Scene {
   }
 
   public create(): void {
+    // Switch from intro music (teste.mp3) to the standard menu loop on entry.
+    MusicManager.instance.playMenu(this);
     buildMenuPlaceholder(this, {
       title: 'CONTA',
       backScene: SCENE_KEYS.MAIN_MENU_SCENE,

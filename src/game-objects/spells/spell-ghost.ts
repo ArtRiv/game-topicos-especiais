@@ -181,7 +181,7 @@ registerGhost(SPELL_ID.EARTH_BUMP, (scene, _cx, _cy, tx, ty) => {
   makeAreaGhost(scene, tx, ty, ASSET_KEYS.EARTH_BUMP);
 });
 
-registerGhost(SPELL_ID.DARK_BOLT, (scene, _cx, _cy, tx, ty) => {
+registerGhost(SPELL_ID.VOID_ORB, (scene, _cx, _cy, tx, ty) => {
   // Use frame 0 of the lightning_burst_003 series — the first wisp the real orb shows.
   makeAreaGhost(scene, tx, ty, `${ASSET_KEYS.LIGHTNING_BURST_003}_0`);
 });

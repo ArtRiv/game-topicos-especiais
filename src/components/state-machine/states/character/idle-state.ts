@@ -37,14 +37,18 @@ export class IdleState extends BaseCharacterState {
       return;
     }
 
-    // if spell 1 key was pressed, cast spell from slot 0
-    if (controls.isSpell1KeyJustDown) {
+    // if spell 1 key was pressed, cast spell from slot 0 — but only if the active
+    // element actually has a slot 0 spell. Skipping the transition when slot 0 is
+    // null (e.g. EARTH, where left-click is owned by EarthWall draw-mode) avoids a
+    // pointless CASTING→IDLE bounce on every click.
+    const slots = SPELL_SLOT_REGISTRY[ElementManager.instance.activeElement];
+    if (controls.isSpell1KeyJustDown && slots?.[0] != null) {
       this._stateMachine.setState(CHARACTER_STATES.CASTING_STATE, 0, controls.mouseWorldX, controls.mouseWorldY);
       return;
     }
 
     // if spell 2 key was pressed, cast spell from slot 1
-    if (controls.isSpell2KeyJustDown) {
+    if (controls.isSpell2KeyJustDown && slots?.[1] != null) {
       this._stateMachine.setState(CHARACTER_STATES.CASTING_STATE, 1, controls.mouseWorldX, controls.mouseWorldY);
       return;
     }
@@ -54,10 +58,7 @@ export class IdleState extends BaseCharacterState {
     // element with slot 2 = null (FIRE/EARTH, whose key 3 is owned by GameScene's
     // FireBreath / EarthWall handlers), it eats the just-down event before those
     // handlers can see it. Gating on the slot map keeps the press available downstream.
-    if (
-      SPELL_SLOT_REGISTRY[ElementManager.instance.activeElement]?.[2] != null &&
-      controls.isSpell3KeyJustDown
-    ) {
+    if (slots?.[2] != null && controls.isSpell3KeyJustDown) {
       this._stateMachine.setState(CHARACTER_STATES.CASTING_STATE, 2, controls.mouseWorldX, controls.mouseWorldY);
       return;
     }

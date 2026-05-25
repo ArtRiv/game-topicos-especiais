@@ -2,9 +2,14 @@ import { describe, it, expect } from 'vitest';
 import { ELEMENT, SPELL_ID } from '../../common/common';
 import { SPELL_SLOT_REGISTRY, SPELL_CONFIG, SPELL_FACTORY_REGISTRY } from './spell-registry';
 
+// EARTH's slot 0 is intentionally null — left-click is owned by the EarthWall draw-mode
+// handler in GameScene (see comment in SPELL_SLOT_REGISTRY).
+const ELEMENTS_WITH_SPECIAL_SLOT_0: Set<string> = new Set([ELEMENT.EARTH]);
+
 describe('SPELL_SLOT_REGISTRY', () => {
   it('every element has a non-null primary spell (slot 0)', () => {
     for (const element of Object.values(ELEMENT)) {
+      if (ELEMENTS_WITH_SPECIAL_SLOT_0.has(element)) continue;
       expect(SPELL_SLOT_REGISTRY[element][0]).not.toBeNull();
     }
   });

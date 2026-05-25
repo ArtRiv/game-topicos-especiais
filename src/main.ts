@@ -2,6 +2,7 @@ import * as Phaser from 'phaser';
 import { SCENE_KEYS } from './scenes/scene-keys';
 // --- Menu scenes ---
 import { SplashScene } from './scenes/splash-scene';
+import { IntroScene } from './scenes/intro-scene';
 import { MainMenuScene } from './scenes/main-menu-scene';
 import { CreateLobbyScene } from './scenes/create-lobby-scene';
 import { JoinLobbyScene } from './scenes/join-lobby-scene';
@@ -86,6 +87,7 @@ void (async () => {
   // --- Register all scenes ---
   // Menu layer
   game.scene.add(SCENE_KEYS.SPLASH_SCENE, SplashScene);
+  game.scene.add(SCENE_KEYS.INTRO_SCENE, IntroScene);
   game.scene.add(SCENE_KEYS.MAIN_MENU_SCENE, MainMenuScene);
   game.scene.add(SCENE_KEYS.CREATE_LOBBY_SCENE, CreateLobbyScene);
   game.scene.add(SCENE_KEYS.JOIN_LOBBY_SCENE, JoinLobbyScene);

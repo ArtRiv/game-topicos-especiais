@@ -13,12 +13,12 @@ import { RUNTIME_CONFIG } from '../../common/runtime-config';
 import type { CharacterGameObject } from '../common/character-game-object';
 import { registerSpell } from './spell-registry';
 
-// Vertical fudge for the dark-empowered variant. Positive = push the sprite + hitbox
+// Vertical fudge for the void-empowered variant. Positive = push the sprite + hitbox
 // DOWN (the actual strike point inside lightning_strike_001's 128×128 frame isn't quite
 // at the bottom edge, so anchoring origin (0.5, 1) at the cast point puts everything a
 // few pixels too high). Tune to taste — sprite and body shift together, so the hitbox
 // stays aligned with the visible bolt.
-const DARK_EMPOWERED_Y_OFFSET_PX = 20;
+const VOID_EMPOWERED_Y_OFFSET_PX = 20;
 
 export class ThunderStrike extends Phaser.Physics.Arcade.Sprite implements ActiveSpell {
   readonly element: Element = ELEMENT.THUNDER;
@@ -46,22 +46,22 @@ export class ThunderStrike extends Phaser.Physics.Arcade.Sprite implements Activ
   #damageMultiplier: number;
   #reactionBufferMs: number;
 
-  constructor(scene: Phaser.Scene, x: number, y: number, options?: { darkEmpowered?: boolean }) {
-    const darkEmpowered = options?.darkEmpowered === true;
+  constructor(scene: Phaser.Scene, x: number, y: number, options?: { voidEmpowered?: boolean }) {
+    const voidEmpowered = options?.voidEmpowered === true;
 
-    // Dark-empowered variant: cast onto an active DarkBolt orb → use the violet
+    // Void-empowered variant: cast onto an active VoidOrb orb → use the violet
     // lightning_strike_001 frames (per-frame PNGs, see preload-scene.ts) and play that
     // single-frame anim instead of the normal Thunder sheet.
-    const useAlt = !darkEmpowered && RUNTIME_CONFIG.LIGHTNING_SPRITE_VARIANT === 'MAGIC_PACK_9';
-    const initialTextureKey = darkEmpowered
+    const useAlt = !voidEmpowered && RUNTIME_CONFIG.LIGHTNING_SPRITE_VARIANT === 'MAGIC_PACK_9';
+    const initialTextureKey = voidEmpowered
       ? `${ASSET_KEYS.LIGHTNING_STRIKE_001}_0`
       : useAlt
         ? `${ASSET_KEYS.THUNDER_STRIKE_ALT}_0`
         : ASSET_KEYS.THUNDER_STRIKE;
-    // Vanilla strike gets a runtime-tunable Y offset (config). Dark-empowered keeps its
-    // dedicated DARK_EMPOWERED_Y_OFFSET_PX constant — they're independent knobs.
+    // Vanilla strike gets a runtime-tunable Y offset (config). Void-empowered keeps its
+    // dedicated VOID_EMPOWERED_Y_OFFSET_PX constant — they're independent knobs.
     const vanillaSpriteYOffset = RUNTIME_CONFIG.THUNDER_STRIKE_SPRITE_Y_OFFSET_PX;
-    super(scene, x, y + (darkEmpowered ? DARK_EMPOWERED_Y_OFFSET_PX : vanillaSpriteYOffset), initialTextureKey);
+    super(scene, x, y + (voidEmpowered ? VOID_EMPOWERED_Y_OFFSET_PX : vanillaSpriteYOffset), initialTextureKey);
     scene.add.existing(this);
     scene.physics.add.existing(this);
     this.setDepth(3);
@@ -69,10 +69,10 @@ export class ThunderStrike extends Phaser.Physics.Arcade.Sprite implements Activ
     // Position the origin at the bottom of the 64x64 frame so (x, y) lines up with the
     // point the lightning actually strikes (the bolt visual sits in the upper half).
     // The hitbox is a circle centred on that strike point.
-    // For the dark-empowered (lightning_strike_001) sprite — 96x96 frames centred on the
+    // For the void-empowered (lightning_strike_001) sprite — 96x96 frames centred on the
     // strike point — keep the default centred origin so the bigger flash radiates around
     // the impact instead of dangling above it.
-    if (darkEmpowered) {
+    if (voidEmpowered) {
       // 128x128 frames are already 2× the normal Thunder sheet — no extra scale needed.
       // Origin matches the vanilla strike convention: bolt is drawn coming from above
       // with the strike point near the bottom of the frame, so anchor the bottom at
@@ -84,19 +84,19 @@ export class ThunderStrike extends Phaser.Physics.Arcade.Sprite implements Activ
     }
 
     // Empowered cast deals more damage per the user's spec.
-    this.#damageMultiplier = darkEmpowered ? 1.75 : 1;
+    this.#damageMultiplier = voidEmpowered ? 1.75 : 1;
     // Reaction buffer is now a single tunable (RUNTIME_CONFIG.THUNDER_STRIKE_REACTION_BUFFER_MS).
-    // The dark-empowered variant used to bake in a separate 50ms (its anim was shorter),
+    // The void-empowered variant used to bake in a separate 50ms (its anim was shorter),
     // but we now share one knob — tune via debug panel.
     this.#reactionBufferMs = RUNTIME_CONFIG.THUNDER_STRIKE_REACTION_BUFFER_MS;
 
     const body = this.body as Phaser.Physics.Arcade.Body;
-    const r = darkEmpowered ? 26 : THUNDER_STRIKE_BODY_RADIUS;
+    const r = voidEmpowered ? 26 : THUNDER_STRIKE_BODY_RADIUS;
     // Tunable hitbox Y offset (vanilla only). Positive value shifts the body DOWN
     // relative to the strike point — useful when the visible bolt looks correct but
     // damage registers above where the lightning lands.
     const vanillaHitboxYOffset = RUNTIME_CONFIG.THUNDER_STRIKE_HITBOX_Y_OFFSET_PX;
-    if (darkEmpowered) {
+    if (voidEmpowered) {
       // lightning_strike_001 is 128x128 with the strike point near the bottom of the
       // frame. With origin (0.5, 1) the sprite's bottom-center anchors at the cast
       // point, so put the body at the same place: horizontally centered, vertically
@@ -121,20 +121,18 @@ export class ThunderStrike extends Phaser.Physics.Arcade.Sprite implements Activ
     body.debugShowBody = false;
 
     // Phase 1: play strike-down animation; on complete → activate body.
-    const animKey = darkEmpowered
+    const animKey = voidEmpowered
       ? ASSET_KEYS.LIGHTNING_STRIKE_001
       : useAlt
         ? ASSET_KEYS.THUNDER_STRIKE_ALT
         : ASSET_KEYS.THUNDER_STRIKE;
     this.play(animKey);
-    // Animation playback speed multiplier. 1 = native frame rate; 2 halves the descent;
-    // 3 thirds it. The animation has to finish before damage activates, so this is the
-    // single biggest knob if the strike feels too slow.
+    // Animation playback speed multiplier. 1 = native frame rate; 2 halves the descent.
     this.anims.timeScale = RUNTIME_CONFIG.THUNDER_STRIKE_ANIM_TIMESCALE;
-    this.once(`animationcomplete-${animKey}`, () => {
-      if (!this.active) return;
-      this.#activateBody();
-    });
+    // Hitbox activates at the START of the animation, not on completion. The damage
+    // window (RUNTIME_CONFIG.THUNDER_STRIKE_LOOP_DURATION) runs concurrently with the
+    // visual descent, so the strike feels responsive even at ANIM_TIMESCALE = 1.
+    this.#activateBody();
   }
 
   /** Called in the overlap callback for each enemy. Damages each enemy only once per activation. */
@@ -177,14 +175,14 @@ export class ThunderStrike extends Phaser.Physics.Arcade.Sprite implements Activ
 }
 
 // Side-effect: register factory (casterX/Y ignored — spell lands at target position).
-// Cast-onto-DarkBolt detection: if an active DarkBolt orb sits within EMPOWER_RANGE of
+// Cast-onto-VoidOrb detection: if an active VoidOrb orb sits within EMPOWER_RANGE of
 // the requested target, swap to the violet lightning_strike_001 variant.
-import { DarkBolt } from './dark-bolt';
-const DARK_EMPOWER_RANGE = 40; // px — roughly the orb body radius
+import { VoidOrb } from './void-orb';
+const VOID_EMPOWER_RANGE = 40; // px — roughly the orb body radius
 
 registerSpell(SPELL_ID.THUNDER_STRIKE, (scene, _cx, _cy, tx, ty) => {
   const empowered = scene.children.list.some(
-    (c) => c instanceof DarkBolt && c.active && Math.hypot(c.x - tx, c.y - ty) <= DARK_EMPOWER_RANGE,
+    (c) => c instanceof VoidOrb && c.active && Math.hypot(c.x - tx, c.y - ty) <= VOID_EMPOWER_RANGE,
   );
-  return new ThunderStrike(scene, tx, ty, empowered ? { darkEmpowered: true } : undefined);
+  return new ThunderStrike(scene, tx, ty, empowered ? { voidEmpowered: true } : undefined);
 });

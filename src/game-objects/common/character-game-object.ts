@@ -38,6 +38,23 @@ export abstract class CharacterGameObject extends Phaser.Physics.Arcade.Sprite i
   protected _stateMachine: StateMachine;
   protected _isPlayer: boolean;
   protected _isDefeated: boolean;
+  // ── Movement-control effects ──────────────────────────────────────────────
+  // Slow multiplier — multiplied into body.velocity each tick. 1 = no slow,
+  // 0.5 = half speed, 0 = effectively snared (but snare uses the timestamp
+  // below instead so it auto-clears). Sources (mud puddles etc.) recompute
+  // this each frame in GameScene — they DON'T accumulate, the value is
+  // overwritten — so just reset to 1 when no source applies.
+  #movementMultiplier: number = 1;
+  // Snare deadline — scene.time.now must be < this to be snared. Zero means
+  // no snare. Driven by `applyMovementSnare(durationMs)`; auto-expires by
+  // time check, no explicit cleanup needed (no timer = nothing to leak on
+  // destroy). Snare only zeroes movement velocity; casting still works.
+  #snareUntilMs: number = 0;
+  // True while the character is mid-air (e.g. Player.dashSuper). Read by
+  // GameScene's hazard-puddle scanner to skip mud/lava slow + lava tick
+  // damage — the mage is jumping over them. Player owns the flag; remote
+  // players + enemies leave it at false.
+  public isFlying: boolean = false;
 
   constructor(config: CharacterConfig) {
     const {
@@ -131,6 +148,55 @@ export abstract class CharacterGameObject extends Phaser.Physics.Arcade.Sprite i
     this._stateMachine.update();
     // Keep depth in sync with Y so entities lower on screen render in front
     this.setDepth(this.y);
+
+    // Apply movement-control effects (snare > slow) AFTER the state machine
+    // has set velocity for this frame. Doing it here means every state
+    // benefits without having to bake the multiplier into individual states'
+    // velocity-setting code. Snare wins over slow — a snared character is
+    // pinned, not just slow.
+    const body = this.body as Phaser.Physics.Arcade.Body | null;
+    if (body) {
+      if (this.isMovementSnared()) {
+        body.setVelocity(0, 0);
+      } else if (this.#movementMultiplier !== 1) {
+        body.setVelocity(
+          body.velocity.x * this.#movementMultiplier,
+          body.velocity.y * this.#movementMultiplier,
+        );
+      }
+    }
+  }
+
+  /** Set the per-frame movement multiplier. Anything ≠1 scales `body.velocity`
+   *  in `update()`. Call once per frame from the slow-source detection loop
+   *  (e.g. GameScene's mud-puddle overlap check): pass the strongest applicable
+   *  multiplier, or `1` to clear. */
+  public setMovementMultiplier(m: number): void {
+    this.#movementMultiplier = m;
+  }
+
+  public getMovementMultiplier(): number {
+    return this.#movementMultiplier;
+  }
+
+  /** Root the character in place for `durationMs`. Stacks LONGER — if a
+   *  fresh snare's deadline is earlier than the existing one, the existing
+   *  one wins (keeps the player's "worst case" snare time). Casting and
+   *  other actions are unaffected — only movement velocity is zeroed. */
+  public applyMovementSnare(durationMs: number): void {
+    const until = this.scene.time.now + durationMs;
+    if (until > this.#snareUntilMs) this.#snareUntilMs = until;
+  }
+
+  public isMovementSnared(): boolean {
+    return this.scene.time.now < this.#snareUntilMs;
+  }
+
+  /** Force-clear any active snare. Use sparingly — normally the timestamp
+   *  expires on its own. Useful for state transitions (e.g. respawn) where
+   *  lingering snare from a prior life shouldn't carry over. */
+  public clearMovementSnare(): void {
+    this.#snareUntilMs = 0;
   }
 
   public hit(direction: Direction, damage: number): void {

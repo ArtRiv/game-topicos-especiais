@@ -13,6 +13,8 @@ import {
 } from '../../common/config';
 import { CharacterGameObject } from '../common/character-game-object';
 import { DIRECTION } from '../../common/common';
+import type { Player } from '../player/player';
+import type { GameScene } from '../../scenes/game-scene';
 
 export class FireArea extends Phaser.Physics.Arcade.Sprite implements ActiveSpell {
   readonly element: Element = ELEMENT.FIRE;
@@ -28,13 +30,20 @@ export class FireArea extends Phaser.Physics.Arcade.Sprite implements ActiveSpel
   #boltsInsideCount: number = 0;
   #comboPulseTween: Phaser.Tweens.Tween | undefined;
   #breathActive: boolean = false;
+  // Self-only silhouette shown above the flames while the local player is inside,
+  // so the user can still see roughly where they are. Each client renders its own.
+  #playerGhost: Phaser.GameObjects.Sprite | undefined;
 
   constructor(scene: Phaser.Scene, x: number, y: number) {
     super(scene, x, y, ASSET_KEYS.FIRE_AREA_EXPLOSION);
     scene.add.existing(this);
     scene.physics.add.existing(this);
 
-    this.setDepth(3);
+    // Y-based depth: characters use `depth = this.y` (see CharacterGameObject.update),
+    // so any character whose center Y is less than the spell's depth renders BEHIND.
+    // Using `y + 16` (≈ body half-height) ensures every character physically overlapping
+    // the 32×32 fire area is hidden by the flames — they're standing IN the fire.
+    this.setDepth(y + 16);
     this.#enemiesInArea = new Set();
 
     // set physics body as a circle for area-of-effect
@@ -121,6 +130,8 @@ export class FireArea extends Phaser.Physics.Arcade.Sprite implements ActiveSpel
     this.setScale(FIRE_BREATH_FIRE_AREA_AREA_SCALE);
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.setSize(32 * FIRE_BREATH_FIRE_AREA_AREA_SCALE, 32 * FIRE_BREATH_FIRE_AREA_AREA_SCALE, true);
+    // Keep depth proportional to the grown body so players inside the bigger area stay hidden.
+    this.setDepth(this.y + 16 * FIRE_BREATH_FIRE_AREA_AREA_SCALE);
   }
 
   public onFireBreathExit(): void {
@@ -131,6 +142,7 @@ export class FireArea extends Phaser.Physics.Arcade.Sprite implements ActiveSpel
     this.setScale(1);
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.setSize(32, 32, true);
+    this.setDepth(this.y + 16);
 
     // Restore bolt combo visuals if a bolt is still inside
     if (this.#boltsInsideCount > 0) {
@@ -147,6 +159,41 @@ export class FireArea extends Phaser.Physics.Arcade.Sprite implements ActiveSpel
     }
   }
 
+  public preUpdate(time: number, delta: number): void {
+    super.preUpdate(time, delta);
+    if (this.#isEnding) {
+      this.#playerGhost?.setVisible(false);
+      return;
+    }
+    const scene = this.scene as GameScene;
+    const player = scene.player;
+    if (!player?.active) {
+      this.#playerGhost?.setVisible(false);
+      return;
+    }
+    const body = this.body as Phaser.Physics.Arcade.Body;
+    const r = body.halfWidth; // square 32×body.width, scales with breath combo
+    const dx = player.x - this.x;
+    const dy = player.y - this.y;
+    if (dx * dx + dy * dy > r * r) {
+      this.#playerGhost?.setVisible(false);
+      return;
+    }
+    if (!this.#playerGhost || !this.#playerGhost.scene) {
+      this.#playerGhost = this.scene.add.sprite(player.x, player.y, player.texture.key);
+      this.#playerGhost.setTint(0xffb066);
+      this.#playerGhost.setAlpha(0.55);
+    }
+    const g = this.#playerGhost;
+    g.setTexture(player.texture.key, player.frame.name);
+    g.setPosition(player.x, player.y);
+    g.setFlipX(player.flipX);
+    g.setOrigin(player.originX, player.originY);
+    g.setScale(player.scaleX, player.scaleY);
+    g.setDepth(this.depth + 1);
+    g.setVisible(true);
+  }
+
   #applyTickDamage(): void {
     for (const enemy of this.#enemiesInArea) {
       if (enemy.active && !enemy.isDefeated) {
@@ -156,7 +203,7 @@ export class FireArea extends Phaser.Physics.Arcade.Sprite implements ActiveSpel
   }
 
   /** Combo extinguish: play START (if still in it) → END, no LOOP. Stops damage
-   *  immediately. Idempotent — safe to call multiple times. Used by the DarkBolt
+   *  immediately. Idempotent — safe to call multiple times. Used by the VoidOrb
    *  combo (and any other counter that wants the user to *see* the fire appear and
    *  die rather than just vanish). */
   public extinguish(): void {
@@ -201,6 +248,8 @@ export class FireArea extends Phaser.Physics.Arcade.Sprite implements ActiveSpel
     this.#tickTimer?.destroy();
     this.#durationTimer?.destroy();
     this.#comboPulseTween?.stop();
+    this.#playerGhost?.destroy();
+    this.#playerGhost = undefined;
     this.#enemiesInArea.clear();
     super.destroy(fromScene);
   }

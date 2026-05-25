@@ -36,6 +36,9 @@ export const ASSET_KEYS = {
   EARTH_FIRE_ROCK_BURST: 'EARTH_FIRE_ROCK_BURST',
   EARTH_FIRE_EXPLOSION: 'EARTH_FIRE_EXPLOSION',
   EARTH_BOLT_LAVA_POOL: 'EARTH_BOLT_LAVA_POOL',
+  EARTH_FIRE_BURST_VFX1: 'EARTH_FIRE_BURST_VFX1',
+  EARTH_FIRE_BURST_VFX2: 'EARTH_FIRE_BURST_VFX2',
+  EARTH_FIRE_BURST_VFX3: 'EARTH_FIRE_BURST_VFX3',
   EARTH_WALL: 'EARTH_WALL',
   EARTH_BUMP: 'EARTH_BUMP',
   FLYING_OBELISK: 'FLYING_OBELISK',
@@ -55,6 +58,7 @@ export const ASSET_KEYS = {
   MENU_BG_VIDEO: 'MENU_BG_VIDEO',
   MENU_MUSIC: 'MENU_MUSIC',
   GAMEPLAY_MUSIC: 'GAMEPLAY_MUSIC',
+  INTRO_MUSIC: 'INTRO_MUSIC',
   // --- Dash VFX ---
   PLAYER_ROLL_1: 'PLAYER_ROLL_1',
   PLAYER_ROLL_2: 'PLAYER_ROLL_2',
@@ -67,7 +71,7 @@ export const ASSET_KEYS = {
   LIGHTNING_BURST_003: 'LIGHTNING_BURST_003',
   LIGHTNING_STRIKE_001: 'LIGHTNING_STRIKE_001',
   THUNDER_STRIKE_ALT: 'THUNDER_STRIKE_ALT',
-  DARK_BOLT: 'DARK_BOLT',
+  VOID_ORB: 'VOID_ORB',
   // Impact VFX shown where a FireBolt first overlaps a FireArea (signals the player
   // that the bolt-into-area combo is firing). Spritesheet: 336x48 = 7 frames @ 48x48.
   FIRE_BOLT_AREA_IMPACT: 'FIRE_BOLT_AREA_IMPACT',
@@ -88,6 +92,27 @@ export const ASSET_KEYS = {
   // Lightning and Ice are generated programmatically in UiScene (no PNG available)
   SPELL_ICO_LIGHTNING: 'SPELL_ICO_LIGHTNING',
   SPELL_ICO_ICE: 'SPELL_ICO_ICE',
+  // Element carousel — 192x192 PNGs from public/assets/ui/element-menu/ + Kenney panel border.
+  ELEMENT_ICON_FIRE: 'ELEMENT_ICON_FIRE',
+  ELEMENT_ICON_WATER: 'ELEMENT_ICON_WATER',
+  ELEMENT_ICON_EARTH: 'ELEMENT_ICON_EARTH',
+  ELEMENT_ICON_WIND: 'ELEMENT_ICON_WIND',
+  ELEMENT_ICON_LIGHTNING: 'ELEMENT_ICON_LIGHTNING',
+  CAROUSEL_PANEL: 'CAROUSEL_PANEL',
+  // LightningBeam — held/channeled lightning beam (replaces ThunderSplash). Two stacked
+  // spritesheets (vfx1 + vfx2), each 1024x128 = 4 frames @ 256x128.
+  LIGHTNING_BEAM_VFX1: 'LIGHTNING_BEAM_VFX1',
+  LIGHTNING_BEAM_VFX2: 'LIGHTNING_BEAM_VFX2',
+  // VoidOrb sprite swap — Blood Mage VFX1, 3-phase animation (start/loop/end), 128x128
+  // per frame. Frames-per-sheet differ per phase: start=8, loop=5, end=6.
+  VOID_ORB_BM_START: 'VOID_ORB_BM_START',
+  VOID_ORB_BM_LOOP: 'VOID_ORB_BM_LOOP',
+  VOID_ORB_BM_END: 'VOID_ORB_BM_END',
+  VOID_ORB_BM_VFX2: 'VOID_ORB_BM_VFX2',         // 12-frame backdrop layered under VFX1
+  VOID_ORB_PARTICLE: 'VOID_ORB_PARTICLE',        // generated at runtime — 4×4 white dot
+  VOID_ORB_DISPLACEMENT: 'VOID_ORB_DISPLACEMENT',// generated at runtime — radial noise map
+  // DarkBolt — Hollow-Purple-style erasure projectile. Blood Mage VFX3 sheet, 4 frames @ 128×128.
+  DARK_BOLT_BM_VFX3: 'DARK_BOLT_BM_VFX3',
 } as const;
 
 export const DASH_ANIMATION_KEYS = {

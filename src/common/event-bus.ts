@@ -14,7 +14,11 @@ export const CUSTOM_EVENTS = {
   SPELL_CAST: 'SPELL_CAST',
   MANA_UPDATED: 'MANA_UPDATED',
   ELEMENT_CHANGED: 'ELEMENT_CHANGED',
+  ELEMENT_CAROUSEL_STEP: 'ELEMENT_CAROUSEL_STEP',
+  // Special-spell charges (pickup-granted casts of VoidOrb etc.)
+  SPECIAL_SPELL_CHARGES_CHANGED: 'SPECIAL_SPELL_CHARGES_CHANGED',
   DEBUG_SPAWN_FLYING_OBELISK: 'DEBUG_SPAWN_FLYING_OBELISK',
+  DEBUG_SPAWN_LAVA_PUDDLE: 'DEBUG_SPAWN_LAVA_PUDDLE',
   // Network events (Phase 1: LAN Foundation)
   NETWORK_PLAYER_UPDATE: 'NETWORK_PLAYER_UPDATE',
   NETWORK_SPELL_CAST: 'NETWORK_SPELL_CAST',
@@ -77,4 +81,16 @@ export type PlayerHealthUpdated = {
 
 export type ElementChangedData = {
   element: Element;
+};
+
+export type ElementCarouselStepData = {
+  direction: -1 | 1; // -1 = previous (Q), +1 = next (E)
+};
+
+// Fired whenever the player's single special-spell slot changes — either a new
+// pickup replaced the active spell, a cast consumed a charge, or the last
+// charge was spent (in which case spellId === null + charges === 0).
+export type SpecialSpellChargesChangedData = {
+  spellId: string | null;
+  charges: number;
 };

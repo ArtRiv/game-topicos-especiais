@@ -21,7 +21,7 @@ const MENU_SPACING = 26;
 const MUSIC_DROP_MS = 2_000;
 
 const MENU_BG_VIDEO_KEY = 'MENU_BG_VIDEO';
-const MENU_BG_VIDEO_PATH = 'assets/images/ui/landscape.mp4';
+const MENU_BG_VIDEO_PATH = 'assets/ui/landscape.mp4';
 
 // Tint palette per UI-SPEC §Typography / §Color.
 const TINT_DISPLAY = 0xffffff;       // title
@@ -33,6 +33,20 @@ const TINT_MENU_HOVER = 0xffc857;    // accent gold — reserved for hover ONLY
 // scene restarts within the same browser session so back-nav from stubs
 // doesn't replay the 2s hold.
 let cinematicPlayed = false;
+// Set by IntroScene right before scene.start(MAIN_MENU). MainMenu honors it
+// once: fades in from white (instead of black) AND keeps the intro track
+// playing instead of switching to menu_music.ogg. Cleared after first use.
+let arrivingFromIntro = false;
+
+// IntroScene calls this on completion so MainMenu skips its own title slam
+// when the player arrives from the new beat-synced intro animation.
+export function markMainMenuCinematicPlayed(): void {
+  cinematicPlayed = true;
+}
+
+export function markMainMenuArrivingFromIntro(): void {
+  arrivingFromIntro = true;
+}
 
 type MenuEntry = { label: string; action: () => void };
 
@@ -60,17 +74,29 @@ export class MainMenuScene extends Phaser.Scene {
     const cx = Math.round(width / 2);
     const cy = Math.round(height / 2);
 
-    this.cameras.main.fadeIn(400, 0, 0, 0);
+    // Fade from white when arriving from IntroScene (sells the last-beat
+    // flash); otherwise fade from black on regular entries / back-nav.
+    const fromIntro = arrivingFromIntro;
+    arrivingFromIntro = false;
+    if (fromIntro) {
+      this.cameras.main.fadeIn(600, 255, 255, 255);
+    } else {
+      this.cameras.main.fadeIn(400, 0, 0, 0);
+    }
 
     this.#drawBackground(cx, cy, width, height);
     const { title, subtitle } = this.#drawTitle(cx, cy);
     const menuItems = this.#drawMenu(cx, cy);
 
-    MusicManager.instance.playMenu(this);
+    // Music handoff:
+    //   - Arriving from IntroScene → teste.mp3 is already playing; leave it.
+    //   - Any other entry (back-nav, fresh boot) → switch to menu_music.ogg.
+    if (MusicManager.instance.currentTrack() !== 'intro') {
+      MusicManager.instance.playMenu(this);
+    }
     // WARNING 5 / D-13: Restore menu volume to 0.05 on every MainMenu entry so
     // back-nav from Lobby (which ducks to 0.03) returns to the canonical menu
-    // profile. Idempotent: no-op if menu music isn't initialised yet. The
-    // playMenu call above kicks it off either way. Future-proofs back-nav.
+    // profile. Idempotent: no-op if menu music isn't initialised yet.
     MusicManager.instance.setMenuVolume(0.05);
 
     if (cinematicPlayed) {

@@ -2,6 +2,7 @@
 import { SCENE_KEYS } from './scene-keys';
 import { buildMenuPlaceholder } from './menu-placeholder';
 import { startScene } from './scene-transition';
+import { MusicManager } from '../common/music-manager';
 
 // ---------------------------------------------------------------------------
 // CreateLobbyScene â€” placeholder
@@ -18,6 +19,7 @@ export class CreateLobbyScene extends Phaser.Scene {
   }
 
   public create(): void {
+    MusicManager.instance.playMenu(this);
     buildMenuPlaceholder(this, {
       title: 'CRIAR LOBBY',
       hint: 'Configure sua partida e convide jogadores.',

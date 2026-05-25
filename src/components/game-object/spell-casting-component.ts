@@ -6,6 +6,7 @@ import { BaseGameObjectComponent } from './base-game-object-component';
 import { ManaComponent } from './mana-component';
 import { ActiveSpell } from '../../game-objects/spells/base-spell';
 import { ElementManager } from '../../common/element-manager';
+import { SPELL_ID } from '../../common/common';
 import { SPELL_SLOT_REGISTRY, SPELL_CONFIG, SPELL_FACTORY_REGISTRY } from '../../game-objects/spells/spell-registry';
 import { maybeSpawnGhost } from '../../game-objects/spells/spell-ghost';
 import { RUNTIME_CONFIG } from '../../common/runtime-config';
@@ -37,17 +38,20 @@ export class SpellCastingComponent extends BaseGameObjectComponent {
 
   public canCast(slotIndex: number): boolean {
     if (slotIndex !== 0 && slotIndex !== 1 && slotIndex !== 2) return false;
-    // Phase 9.3 — DASH_INTERRUPTABLE_BY_CAST guard (D-13). When false, an active
-    // dash refuses new casts (1/2/3). Player.isDashing is the duck-typed flag.
-    if (
-      !RUNTIME_CONFIG.DASH_INTERRUPTABLE_BY_CAST &&
-      (this.gameObject as unknown as { isDashing?: boolean }).isDashing === true
-    ) {
-      return false;
-    }
     const element = ElementManager.instance.activeElement;
     const spellId = SPELL_SLOT_REGISTRY[element]?.[slotIndex];
     if (!spellId) return false;
+    // Phase 9.3 — DASH_INTERRUPTABLE_BY_CAST guard (D-13). When false, an active
+    // dash refuses new casts (1/2/3). Player.isDashing is the duck-typed flag.
+    // EXCEPTION: AirBurst is itself a (super) dash — let it override the
+    // in-flight regular dash so the user can chain Shift → AirBurst smoothly.
+    if (
+      !RUNTIME_CONFIG.DASH_INTERRUPTABLE_BY_CAST &&
+      (this.gameObject as unknown as { isDashing?: boolean }).isDashing === true &&
+      spellId !== SPELL_ID.AIR_BURST
+    ) {
+      return false;
+    }
     const { manaCost, cooldown } = SPELL_CONFIG[spellId];
     const now = this.#scene.time.now;
     if (now - this.#lastCastTime[slotIndex] < cooldown) return false;
@@ -159,6 +163,17 @@ export class SpellCastingComponent extends BaseGameObjectComponent {
       return undefined;
     }
     return spawn();
+  }
+
+  /**
+   * Set the slot's lastCastTime to "now" — used by channeled spells (LightningBeam,
+   * FireBreath-style) to start their cooldown when the channel ENDS rather than when
+   * it begins. Without this, holding a beam for several seconds would consume the
+   * entire cooldown window during the cast and allow instant re-cast on release.
+   */
+  public refreshCooldown(slotIndex: number): void {
+    if (slotIndex !== 0 && slotIndex !== 1 && slotIndex !== 2) return;
+    this.#lastCastTime[slotIndex] = this.#scene.time.now;
   }
 
   public getCooldownPercent(slotIndex: number): number {

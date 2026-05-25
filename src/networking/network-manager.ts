@@ -1,6 +1,6 @@
 import { io, Socket } from 'socket.io-client';
 import { EVENT_BUS, CUSTOM_EVENTS } from '../common/event-bus.js';
-import { NETWORK_SERVER_URL, NETWORK_SERVER_PORT, NETWORK_TICK_RATE_HZ, NETWORK_DEBUG } from '../common/config.js';
+import { NETWORK_SERVER_URL, NETWORK_SERVER_PORT, NETWORK_TICK_RATE_HZ, NETWORK_DEBUG } from '../common/config';
 import type {
   PlayerUpdatePayload,
   PlayerUpdateBroadcast,

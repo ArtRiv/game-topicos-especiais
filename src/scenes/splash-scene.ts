@@ -57,8 +57,9 @@ export class SplashScene extends Phaser.Scene {
     this.input.keyboard!.on('keydown', this.#goToMenu, this);
     this.input.on('pointerdown', this.#goToMenu, this);
 
-    // Start menu music — MusicManager handles browser autoplay unlock.
-    MusicManager.instance.playMenu(this);
+    // No music on splash: the user's first keypress unlocks the audio context
+    // and IntroScene starts teste.mp3 immediately afterwards. Starting menu
+    // music here would briefly bleed through the splash→intro transition.
   }
 
   #goToMenu = (): void => {
@@ -71,7 +72,7 @@ export class SplashScene extends Phaser.Scene {
 
     this.cameras.main.fadeOut(400, 0, 0, 0);
     this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
-      this.scene.start(SCENE_KEYS.MAIN_MENU_SCENE);
+      this.scene.start(SCENE_KEYS.INTRO_SCENE);
     });
   };
 }

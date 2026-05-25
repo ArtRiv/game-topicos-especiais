@@ -10,7 +10,7 @@ import { CHEST_REWARD_TO_DIALOG_MAP, DIRECTION, ELEMENT, SPELL_ID } from '../com
 import * as CONFIG from '../common/config';
 import { Pot } from '../game-objects/objects/pot';
 import { Chest } from '../game-objects/objects/chest';
-import { GameObject, LevelData } from '../common/types';
+import { GameObject, LevelData, SpellId } from '../common/types';
 import { CUSTOM_EVENTS, EVENT_BUS } from '../common/event-bus';
 import {
   exhaustiveGuard,
@@ -50,6 +50,7 @@ import { EarthBolt } from '../game-objects/spells/earth-bolt';
 import { EarthFireExplosion } from '../game-objects/spells/earth-fire-explosion';
 import { LavaPool } from '../game-objects/spells/lava-pool';
 import { EarthWallPillar } from '../game-objects/spells/earth-wall-pillar';
+import { getSpriteFramePalette } from '../game-objects/spells/sprite-palette';
 import { WaterSpike } from '../game-objects/spells/water-spike';
 import { WaterTornado } from '../game-objects/spells/water-tornado';
 import { WaterBall } from '../game-objects/spells/water-ball';
@@ -58,7 +59,12 @@ import { IceShard } from '../game-objects/spells/ice-shard';
 import { WindBolt } from '../game-objects/spells/wind-bolt';
 import { ThunderStrike } from '../game-objects/spells/thunder-strike';
 import { ThunderSplash } from '../game-objects/spells/thunder-splash';
+import { LightningBeam } from '../game-objects/spells/lightning-beam';
+import { VoidOrbPickup } from '../game-objects/pickups/void-orb-pickup';
+import { DarkBoltPickup } from '../game-objects/pickups/dark-bolt-pickup';
+import { SpecialSpellInventory } from '../common/special-spell-inventory';
 import { AirBurst } from '../game-objects/spells/air-burst';
+import { VoidOrb } from '../game-objects/spells/void-orb';
 import { DarkBolt } from '../game-objects/spells/dark-bolt';
 import { LightningBurstCombo, LightningStrikeCombo } from '../game-objects/spells/lightning-combo';
 import { SteamBurst } from '../game-objects/spells/steam-burst';
@@ -78,6 +84,49 @@ import { MusicManager } from '../common/music-manager';
 import type { PlayerUpdateBroadcast, RoomTransitionPayload, PlayerDisconnectedPayload, PlayerUpdatePayload, SpellCastBroadcast, PlayerInfo, BreathStartBroadcast, BreathUpdateBroadcast, BreathEndBroadcast, EarthWallPillarBroadcast, EarthWallPillarDestroyBroadcast, MatchStateChangedPayload, MatchCountdownTickPayload, DamageConfirmedPayload, SpellDestroyedPayload, EliminationPayload, RespawnPayload } from '../networking/types';
 import { RUNTIME_CONFIG } from '../common/runtime-config';
 import type { Direction } from '../common/types';
+
+/** Quick blue-water + brown-debris splash spawned when a water spell breaks
+ *  against an EarthWall pillar. Pure visuals — no physics body, no damage.
+ *  Self-destroys on fade. Kept as a free function (not a class) because there's
+ *  zero state to manage and it's only used by the spike/tornado-vs-wall combos. */
+function spawnEarthBlockSplash(scene: Phaser.Scene, x: number, y: number): void {
+  // ~14 small particles split between cyan (water) and brown (earth debris).
+  // Each is a 2×2 Graphics rectangle that flies out radially and fades.
+  const particleCount = 14;
+  const lifetimeMs = 350;
+  const speedRange = { min: 35, max: 70 }; // px/s
+
+  for (let i = 0; i < particleCount; i++) {
+    const isWater = i % 2 === 0;
+    const color = isWater
+      ? (Math.random() < 0.5 ? 0x88c4ff : 0xaaddff) // cyan / light blue
+      : (Math.random() < 0.5 ? 0x6b4c2a : 0x4a3520); // light/dark mud brown
+    const size = isWater ? 2 : 2; // same size, color tells them apart
+
+    const g = scene.add.graphics({ x, y });
+    g.fillStyle(color, 1);
+    g.fillRect(-size / 2, -size / 2, size, size);
+    // Above the spike depth but below characters' depths so it reads as
+    // mid-foreground splash, not over the player sprite.
+    g.setDepth(y + 8);
+
+    // Radial fan with a slight upward bias (debris/water arcs upward off the wall).
+    const angle = Math.random() * Math.PI * 2;
+    const speed = speedRange.min + Math.random() * (speedRange.max - speedRange.min);
+    const vx = Math.cos(angle) * speed;
+    const vy = Math.sin(angle) * speed - 30; // upward bias
+
+    scene.tweens.add({
+      targets: g,
+      x: x + vx * (lifetimeMs / 1000),
+      y: y + vy * (lifetimeMs / 1000),
+      alpha: 0,
+      duration: lifetimeMs,
+      ease: 'Quad.easeOut',
+      onComplete: () => g.destroy(),
+    });
+  }
+}
 
 export class GameScene extends Phaser.Scene {
   #levelData!: LevelData;
@@ -148,6 +197,17 @@ export class GameScene extends Phaser.Scene {
   // EarthBump-vs-EarthWall combo overlap result: maps the bump → set of shattered pillar positions
   // so we only fire shards once per pillar.
   #bumpsThatShattered = new WeakSet<EarthBump>();
+  // WaterTornado-vs-EarthWall grind state: per-tornado map of per-pillar
+  // last-event timestamps so erosion ticks / mud drops / splash particles
+  // fire on their own cadences without lockstep. WeakMap on the outer key
+  // lets a destroyed tornado's state be GC'd automatically; the inner Map
+  // entries for destroyed pillars are stale-but-harmless (we re-check
+  // pillar.active each frame before damaging).
+  #tornadoGrindState: WeakMap<WaterTornado, Map<EarthWallPillar, { lastErosion: number; lastSplash: number; lastMud: number }>> = new WeakMap();
+  // Lava-puddle damage cadence per (puddle, character). Both keys are
+  // WeakMap so GC reclaims state for destroyed puddles / characters
+  // automatically — no explicit cleanup needed.
+  #lavaDamageState: WeakMap<Puddle, WeakMap<CharacterGameObject, number>> = new WeakMap();
 
   constructor() {
     super({
@@ -211,13 +271,422 @@ export class GameScene extends Phaser.Scene {
     this.#updateThunderFireAreaCombo();
     this.#updateThunderStrikePuddleCombo();
     this.#updateFireWaterSteamCombo();
-    this.#updateDarkBoltCombos(delta);
+    this.#updateVoidOrbCombos(delta);
     this.#updateEarthBumpWallCombo();
     this.#updateFireBreathVsEarthWall();
     this.#handleRadialMenuInput();
+    this.#handleCarouselInput();
     this.#handleDashInput();
+    this.#handleSpecialCastInput();
+    this.#updateLightningBeamCombos();
+    this.#updateWaterSpikeEarthWallCombo();
+    this.#updateWaterTornadoEarthWallCombo();
     this.#interpolateRemotePlayers(delta);
+    this.#updateLavaWaterExtinguishCombo(delta);
+    this.#updateFireAreaPuddleEvaporateCombo(delta);
+    this.#updateMudPuddleSlow();
     this.#updateRangeRing();
+  }
+
+  /**
+   * WaterSpike + EarthWall: the wall stops the spike. On the first overlap
+   * between a spike and any pillar, we:
+   *   - spawn an impact splash (blue water pixels + brown debris) at the
+   *     contact point;
+   *   - drop a small mud puddle there (water+earth = mud);
+   *   - damage the pillar (1 HP — minor, the spike isn't a wallbreaker);
+   *   - force the spike into its FADE phase early so it visually dies.
+   *
+   * Tracked per-spike via setData('earthBlocked', true) so the splash only
+   * fires once even though overlap can persist across multiple frames during
+   * the fade animation. Works in all three timing cases (spike-onto-wall,
+   * wall-onto-spike, spike-travels-into-wall) because it's a pure per-frame
+   * overlap check — whichever object spawned, the next frame detects it.
+   */
+  #updateWaterSpikeEarthWallCombo(): void {
+    if (!this.#player?.spellCastingComponent?.spellGroup) return;
+    const pillars = this.#earthWallGroup.getChildren() as EarthWallPillar[];
+    if (pillars.length === 0) return;
+    const spellChildren = [
+      ...this.#player.spellCastingComponent.spellGroup.getChildren(),
+      ...(this.#remoteSpellGroup?.getChildren() ?? []),
+    ];
+    const spikes = spellChildren.filter(
+      (s): s is WaterSpike => s instanceof WaterSpike && s.active && !s.getData('earthBlocked'),
+    );
+    if (spikes.length === 0) return;
+
+    for (const spike of spikes) {
+      for (const pillar of pillars) {
+        if (!pillar.active || pillar.isBeingDestroyed) continue;
+        if (!this.physics.overlap(spike, pillar)) continue;
+
+        spike.setData('earthBlocked', true);
+        const pBody = pillar.body as Phaser.Physics.Arcade.Body | null;
+        const ix = pBody ? pBody.center.x : pillar.x;
+        const iy = pBody ? pBody.center.y : pillar.y;
+
+        // Splash: blue water pixels + brown debris that fly out radially and
+        // fade. Quick (350 ms) so it doesn't linger after the spike is gone.
+        spawnEarthBlockSplash(this, ix, iy);
+
+        // Mud puddle at the impact point — water-on-stone mixes. Tunables in
+        // water.ts (SPIKE_WALL_BLOCK_MUD_*).
+        Puddle.spawnCluster(
+          this,
+          ix,
+          iy + 2,
+          CONFIG.SPIKE_WALL_BLOCK_MUD_COUNT,
+          CONFIG.SPIKE_WALL_BLOCK_MUD_SPREAD,
+          CONFIG.SPIKE_WALL_BLOCK_MUD_AMOUNT_EACH,
+          undefined,
+          0,
+          'mud',
+        );
+
+        // Minor pillar damage — spike is fast and small, shouldn't break walls.
+        pillar.takeDamage(1);
+
+        // Force the spike to fade out (the wall stopped it).
+        spike.triggerEarthBlock();
+        break; // one pillar's block is enough; spike is fading anyway
+      }
+    }
+  }
+
+  /**
+   * WaterTornado + EarthWall: the tornado GRINDS against the wall instead of
+   * being instantly stopped. The pillar takes gradual erosion damage; if the
+   * tornado lasts long enough, the wall breaks. While grinding:
+   *   - Erosion damage: 1 HP per pillar every 500 ms (so the 5-HP pillar breaks
+   *     after ~2.5 s of sustained contact — user-specified default).
+   *   - Splash/debris particles: cyan + brown specks at the contact zone,
+   *     spawned every 180 ms while overlapping. Visual feedback that the
+   *     grinding is happening.
+   *   - Mud puddle drip: every 600 ms, a tiny mud cluster spawned at the
+   *     contact. Adjacent water puddles within MERGE_RADIUS get "muddified"
+   *     automatically by Puddle.spawnOrMerge's mud-wins rule (step 1), so the
+   *     ground around the contact slowly converts from clean water to mud.
+   *
+   * No mask is applied to the tornado — natural depth ordering (pillar's
+   * Y-based depth covers the contact zone) already hides the overlapping
+   * funnel section. The splash particles + visible pillar do the rest of the
+   * "grinding" feedback.
+   */
+  #updateWaterTornadoEarthWallCombo(): void {
+    if (!this.#player?.spellCastingComponent?.spellGroup) return;
+    const pillars = this.#earthWallGroup.getChildren() as EarthWallPillar[];
+    if (pillars.length === 0) return;
+    const spellChildren = [
+      ...this.#player.spellCastingComponent.spellGroup.getChildren(),
+      ...(this.#remoteSpellGroup?.getChildren() ?? []),
+    ];
+    const tornadoes = spellChildren.filter(
+      (s): s is WaterTornado =>
+        s instanceof WaterTornado && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+    );
+    if (tornadoes.length === 0) return;
+
+    const now = this.time.now;
+    const EROSION_INTERVAL_MS = 500; // 1 HP per pillar per 500ms (≈2.5s to break a 5-HP pillar)
+    const SPLASH_INTERVAL_MS = 180;  // visual particle cadence at the contact
+    const MUD_INTERVAL_MS = 600;     // periodic mud-drip cadence at the contact
+
+    for (const tornado of tornadoes) {
+      let perPillarState = this.#tornadoGrindState.get(tornado);
+      if (!perPillarState) {
+        perPillarState = new Map();
+        this.#tornadoGrindState.set(tornado, perPillarState);
+      }
+
+      for (const pillar of pillars) {
+        if (!pillar.active || pillar.isBeingDestroyed) continue;
+        if (!this.physics.overlap(tornado, pillar)) continue;
+
+        let state = perPillarState.get(pillar);
+        if (!state) {
+          state = { lastErosion: 0, lastSplash: 0, lastMud: 0 };
+          perPillarState.set(pillar, state);
+        }
+
+        const pBody = pillar.body as Phaser.Physics.Arcade.Body | null;
+        const ix = pBody ? pBody.center.x : pillar.x;
+        const iy = pBody ? pBody.center.y : pillar.y;
+
+        if (now - state.lastErosion >= EROSION_INTERVAL_MS) {
+          pillar.takeDamage(1);
+          state.lastErosion = now;
+        }
+
+        if (now - state.lastSplash >= SPLASH_INTERVAL_MS) {
+          spawnEarthBlockSplash(this, ix, iy);
+          state.lastSplash = now;
+        }
+
+        if (now - state.lastMud >= MUD_INTERVAL_MS) {
+          // Tiny cluster so we don't flood the ground — repeated ticks add
+          // up over the ~2.5s grind to a believable mud patch. Adjacent water
+          // puddles within MERGE_RADIUS get auto-muddied via the mud-wins
+          // merge rule. Tunables live in water.ts (TORNADO_GRIND_MUD_*).
+          Puddle.spawnCluster(
+            this,
+            ix,
+            iy + 4,
+            CONFIG.TORNADO_GRIND_MUD_COUNT,
+            CONFIG.TORNADO_GRIND_MUD_SPREAD,
+            CONFIG.TORNADO_GRIND_MUD_AMOUNT_EACH,
+            undefined,
+            0,
+            'mud',
+          );
+          state.lastMud = now;
+        }
+      }
+    }
+  }
+
+  /**
+   * Per-frame WaterTornado / water-puddle vs lava-puddle interaction:
+   *   - A tornado overlapping a lava puddle slowly fills the lava's
+   *     extinguish meter (LAVA_TORNADO_EXTINGUISH_MS to fully extinguish).
+   *     Multiple overlapping tornadoes stack (proportional speed-up).
+   *   - A water puddle overlapping a lava puddle is "boiled away" — destroyed
+   *     this frame, contributing LAVA_WATER_PUDDLE_EXTINGUISH_AMOUNT to the
+   *     lava's meter and spawning a small steam burst.
+   *   - While any tornado is extinguishing a lava puddle, periodic steam
+   *     puffs (LAVA_STEAM_BURSTS_PER_TICK every LAVA_STEAM_BURST_INTERVAL_MS)
+   *     spawn at random offsets within the lava puddle.
+   *
+   * Iteration is over local snapshots so addLavaExtinguish destroying the
+   * puddle mid-loop doesn't invalidate Puddle.all.
+   */
+  #updateLavaWaterExtinguishCombo(delta: number): void {
+    if (Puddle.all.size === 0) return;
+    const lavas: Puddle[] = [];
+    const waters: Puddle[] = [];
+    for (const p of Puddle.all) {
+      if (!p.active) continue;
+      if (p.kind === 'lava') lavas.push(p);
+      else if (p.kind === 'water') waters.push(p);
+    }
+    if (lavas.length === 0) return;
+
+    const localGroup = this.#player?.spellCastingComponent?.spellGroup;
+    const all = [
+      ...(localGroup?.getChildren() ?? []),
+      ...(this.#remoteSpellGroup?.getChildren() ?? []),
+    ];
+    const tornadoes = all.filter(
+      (s): s is WaterTornado =>
+        s instanceof WaterTornado && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+    );
+
+    const now = this.time.now;
+    const spawnSteam = (x: number, y: number): void => {
+      const steam = new SteamBurst(this, x, y);
+      // Add to the local player's spellGroup so it participates in normal
+      // overlap dispatch (same pattern as the FireBolt+Water steam combo).
+      // Falls back to plain scene-owned if no local player (shouldn't happen
+      // in practice, but guard against the early-init window).
+      if (localGroup) localGroup.add(steam);
+    };
+    const spawnSteamAroundLava = (lava: Puddle, count: number): void => {
+      for (let i = 0; i < count; i++) {
+        // sqrt(random) for area-uniform offset within the lava's visual disc.
+        const dist =
+          Math.sqrt(Math.random()) * lava.radius * CONFIG.LAVA_STEAM_SPAWN_RADIUS_FRAC;
+        const angle = Math.random() * Math.PI * 2;
+        spawnSteam(lava.x + Math.cos(angle) * dist, lava.y + Math.sin(angle) * dist);
+      }
+    };
+
+    // 1. Tornado-vs-lava: accumulate extinguish progress + emit steam on tick.
+    for (const lava of lavas) {
+      if (!lava.active) continue;
+      let extinguishedThisFrame = false;
+      let isBeingHit = false;
+      for (const tornado of tornadoes) {
+        if (!this.physics.overlap(lava, tornado)) continue;
+        isBeingHit = true;
+        const progress = delta / Math.max(1, CONFIG.LAVA_TORNADO_EXTINGUISH_MS);
+        if (lava.addLavaExtinguish(progress)) {
+          extinguishedThisFrame = true;
+          break;
+        }
+      }
+      if (isBeingHit && !extinguishedThisFrame) {
+        if (lava.consumeLavaSteamTick(now, CONFIG.LAVA_STEAM_BURST_INTERVAL_MS)) {
+          spawnSteamAroundLava(lava, CONFIG.LAVA_STEAM_BURSTS_PER_TICK);
+        }
+      } else if (extinguishedThisFrame) {
+        // One final puff so the death reads as "boiled off" instead of pop-out.
+        spawnSteamAroundLava(lava, CONFIG.LAVA_STEAM_BURSTS_PER_TICK);
+      }
+    }
+
+    // 2. Water puddle-vs-lava: water puddle is consumed (destroyed) and
+    //    contributes a chunk of extinguish progress + one steam burst.
+    //    Iterate the local water snapshot — destroying a water puddle is
+    //    safe because we hold the array, not the Set.
+    for (const water of waters) {
+      if (!water.active) continue;
+      for (const lava of lavas) {
+        if (!lava.active) continue;
+        if (!this.physics.overlap(water, lava)) continue;
+        // Steam at the water puddle's position — that's where the boil-off
+        // is actually happening, and reads better than centering on the
+        // lava when the water is at the lava's edge.
+        for (let i = 0; i < CONFIG.LAVA_WATER_PUDDLE_STEAM_COUNT; i++) {
+          const dist = Math.sqrt(Math.random()) * water.radius;
+          const angle = Math.random() * Math.PI * 2;
+          spawnSteam(water.x + Math.cos(angle) * dist, water.y + Math.sin(angle) * dist);
+        }
+        lava.addLavaExtinguish(CONFIG.LAVA_WATER_PUDDLE_EXTINGUISH_AMOUNT);
+        water.destroy();
+        break; // water puddle is gone — stop checking it against other lavas
+      }
+    }
+  }
+
+  /**
+   * FireArea sitting on a water/mud puddle slowly evaporates it. Water dries
+   * fast; mud is denser/dirtier so it takes ~3× as long. Lava puddles are
+   * skipped (fire isn't hot enough to dry lava). Multiple FireAreas overlapping
+   * a single puddle stack additively. Steam puffs reuse the SteamBurst sprite.
+   *
+   * Iteration is over local snapshots so addFireEvaporate destroying the
+   * puddle mid-loop doesn't invalidate Puddle.all.
+   */
+  #updateFireAreaPuddleEvaporateCombo(delta: number): void {
+    if (Puddle.all.size === 0) return;
+    const evapPuddles: Puddle[] = [];
+    for (const p of Puddle.all) {
+      if (p.active && (p.kind === 'water' || p.kind === 'mud')) evapPuddles.push(p);
+    }
+    if (evapPuddles.length === 0) return;
+
+    const localGroup = this.#player?.spellCastingComponent?.spellGroup;
+    const all = [
+      ...(localGroup?.getChildren() ?? []),
+      ...(this.#remoteSpellGroup?.getChildren() ?? []),
+    ];
+    const areas = all.filter(
+      (s): s is FireArea =>
+        s instanceof FireArea && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+    );
+    if (areas.length === 0) return;
+
+    const now = this.time.now;
+    const spawnSteamAt = (x: number, y: number): void => {
+      const steam = new SteamBurst(this, x, y);
+      if (localGroup) localGroup.add(steam);
+    };
+    const spawnSteamAround = (puddle: Puddle, count: number): void => {
+      for (let i = 0; i < count; i++) {
+        const dist =
+          Math.sqrt(Math.random()) * puddle.radius * CONFIG.FIRE_AREA_STEAM_SPAWN_RADIUS_FRAC;
+        const angle = Math.random() * Math.PI * 2;
+        spawnSteamAt(
+          puddle.x + Math.cos(angle) * dist,
+          puddle.y + Math.sin(angle) * dist,
+        );
+      }
+    };
+
+    for (const puddle of evapPuddles) {
+      if (!puddle.active) continue;
+      const fullMs = puddle.kind === 'water'
+        ? CONFIG.FIRE_AREA_WATER_EVAPORATE_MS
+        : CONFIG.FIRE_AREA_MUD_EVAPORATE_MS;
+      let isBeingEvaporated = false;
+      let evaporatedThisFrame = false;
+      for (const area of areas) {
+        if (!this.physics.overlap(puddle, area)) continue;
+        isBeingEvaporated = true;
+        const progress = delta / Math.max(1, fullMs);
+        if (puddle.addFireEvaporate(progress)) {
+          evaporatedThisFrame = true;
+          break;
+        }
+      }
+      if (isBeingEvaporated && !evaporatedThisFrame) {
+        if (puddle.consumeFireSteamTick(now, CONFIG.FIRE_AREA_STEAM_BURST_INTERVAL_MS)) {
+          spawnSteamAround(puddle, CONFIG.FIRE_AREA_STEAM_BURSTS_PER_TICK);
+        }
+      } else if (evaporatedThisFrame) {
+        // One last puff so the puddle's death reads as "boiled off".
+        spawnSteamAround(puddle, CONFIG.FIRE_AREA_STEAM_BURSTS_PER_TICK);
+      }
+    }
+  }
+
+  /**
+   * Per-frame slow + damage detection for hazard puddles (mud + lava).
+   * - Mud: only slows (no damage).
+   * - Lava: slows AND ticks damage on a timer per (puddle, character) pair.
+   *
+   * Recomputed from scratch each frame — walking out of a puddle naturally
+   * restores full speed without explicit exit callbacks. Affects local
+   * player, remote players, and current-room enemies.
+   *
+   * Cost is bounded (puddle/character counts are small).
+   */
+  #updateMudPuddleSlow(): void {
+    const muds: Puddle[] = [];
+    const lavas: Puddle[] = [];
+    for (const p of Puddle.all) {
+      if (!p.active) continue;
+      if (p.kind === 'mud') muds.push(p);
+      else if (p.kind === 'lava') lavas.push(p);
+    }
+
+    const characters: CharacterGameObject[] = [];
+    if (this.#player?.active) characters.push(this.#player);
+    for (const rp of this.#remotePlayers.values()) {
+      if (rp.active) characters.push(rp);
+    }
+    const enemies = this.#objectsByRoomId[this.#currentRoomId]?.enemyGroup?.getChildren() ?? [];
+    for (const e of enemies) {
+      const c = e as CharacterGameObject;
+      if (c.active) characters.push(c);
+    }
+
+    const now = this.time.now;
+    for (const c of characters) {
+      // Airborne characters (Player.dashSuper) skip ground hazards entirely
+      // — no slow from mud or lava, no lava tick damage. The mage is jumping
+      // over them, not standing in them.
+      if (c.isFlying) {
+        c.setMovementMultiplier(1);
+        continue;
+      }
+      let mult = 1;
+      // Mud slow.
+      for (const m of muds) {
+        if (this.physics.overlap(c, m)) {
+          const slow = CONFIG.MUD_PUDDLE_SLOW_MULTIPLIER;
+          if (slow < mult) mult = slow;
+        }
+      }
+      // Lava slow + damage. Same multiplier as mud per design; damage on tick.
+      for (const lava of lavas) {
+        if (!this.physics.overlap(c, lava)) continue;
+        const slow = CONFIG.LAVA_PUDDLE_SLOW_MULTIPLIER;
+        if (slow < mult) mult = slow;
+        if (c.isDefeated) continue;
+        let lavaTimestamps = this.#lavaDamageState.get(lava);
+        if (!lavaTimestamps) {
+          lavaTimestamps = new WeakMap();
+          this.#lavaDamageState.set(lava, lavaTimestamps);
+        }
+        const last = lavaTimestamps.get(c) ?? 0;
+        if (now - last >= CONFIG.LAVA_PUDDLE_TICK_INTERVAL_MS) {
+          c.hit('DOWN', CONFIG.LAVA_PUDDLE_DAMAGE_PER_TICK);
+          lavaTimestamps.set(c, now);
+        }
+      }
+      c.setMovementMultiplier(mult);
+    }
   }
 
   /** Draws / refreshes the faded reach circle around the player each frame. */
@@ -278,26 +747,31 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  /** DarkBolt orb combos — everything that interacts with an active darkness orb.
+  /** VoidOrb orb combos — everything that interacts with an active darkness orb.
    *  Runs every frame so pull forces are continuous; one-shot consumption combos use
    *  setData flags to fire exactly once per orb-victim pair. */
-  #updateDarkBoltCombos(delta: number): void {
+  #updateVoidOrbCombos(delta: number): void {
     if (!this.#player?.spellCastingComponent?.spellGroup) return;
     const all = [
       ...this.#player.spellCastingComponent.spellGroup.getChildren(),
       ...(this.#remoteSpellGroup?.getChildren() ?? []),
     ];
     const orbs = all.filter(
-      (s): s is DarkBolt => s instanceof DarkBolt && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+      (s): s is VoidOrb => s instanceof VoidOrb && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
     );
     if (orbs.length === 0) return;
 
-    // Pull tuning. Radius is how close you have to be for the orb to grab you; speed is
-    // how hard it pulls at the edge. Closeness ramps the pull up linearly (1 at the orb,
-    // 0 at the edge of the radius), so the closer you stand the more violently you're sucked in.
-    const PULL_RADIUS = 110;
-    const PULL_SPEED = 70; // px/s at the orb center
     const dt = delta / 1000;
+    const PLAYER_PULL_R = CONFIG.VOID_ORB_PLAYER_PULL_RADIUS;
+    const PLAYER_PULL_SPD = CONFIG.VOID_ORB_PLAYER_PULL_SPEED;
+    const PLAYER_PULL_EXP = CONFIG.VOID_ORB_PLAYER_PULL_FALLOFF_EXP;
+    // The tornado pull (section 2) was historically tuned against the same
+    // PULL_RADIUS / PULL_SPEED as the player pull — kept here as local
+    // tornado-only consts so the player knobs can move to config without
+    // changing tornado feel. Tornado section also applies its own 1.5×
+    // multiplier on top of TORNADO_PULL_SPD.
+    const TORNADO_PULL_R = 110;
+    const TORNADO_PULL_SPD = 70;
 
     // -----------------------------------------------------------------------------------
     // 1. Pull on players (local + remote). Position-additive so collisions still apply
@@ -312,44 +786,58 @@ export class GameScene extends Phaser.Scene {
         const dx = orb.x - target.x;
         const dy = orb.y - target.y;
         const distSq = dx * dx + dy * dy;
-        if (distSq < 1 || distSq > PULL_RADIUS * PULL_RADIUS) continue;
+        if (distSq < 1 || distSq > PLAYER_PULL_R * PLAYER_PULL_R) continue;
         const dist = Math.sqrt(distSq);
-        const closeness = 1 - dist / PULL_RADIUS;
-        const move = PULL_SPEED * closeness * dt;
+        const closeness = Math.pow(1 - dist / PLAYER_PULL_R, PLAYER_PULL_EXP);
+        const move = PLAYER_PULL_SPD * closeness * dt;
         target.x += (dx / dist) * move;
         target.y += (dy / dist) * move;
       }
     }
 
     // -----------------------------------------------------------------------------------
-    // 2. WaterTornado pull + grow + gradual purple tint (combo lasts the orb's lifetime).
+    // 2. WaterTornado pull + grow + purple tint + PORTAL HOLE (combo lasts orb lifetime).
+    //
+    // Visual goal: the funnel renders mostly in front of the orb (its outer ring is
+    // covered), but the orb's bright core punches a HOLE through the funnel so the
+    // tornado looks like it's being sucked into the vortex. Implemented by attaching
+    // a BitmapMask (with invertAlpha) on the tornado, sourced from a hidden Graphics
+    // disc that follows the orb's center.
     // -----------------------------------------------------------------------------------
+    // Small lift so the funnel's lower core overlaps the orb's center where the
+    // mask hole will appear. Raise to float the funnel higher above the orb;
+    // lower toward 0 to bury more of the funnel into the portal.
+    const DARK_COMBO_TORNADO_LIFT = 12;
     const tornadoes = all.filter(
       (s): s is WaterTornado => s instanceof WaterTornado && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
     );
     for (const orb of orbs) {
       const orbBody = orb.body as Phaser.Physics.Arcade.Body;
+      // Track which tornado (if any) this orb is feeding the portal mask on this
+      // frame so we can clear it when overlap stops.
+      let maskAppliedToTornado: WaterTornado | undefined;
       for (const tornado of tornadoes) {
         const tBody = tornado.body as Phaser.Physics.Arcade.Body;
         // Pull on BODY centers, not sprite positions — the tornado's body sits ~35px
         // below its sprite origin (128x128 frame with the body near the bottom), so
         // pulling sprite-to-sprite left the hitboxes badly misaligned. Translate the
-        // orb's body-center target back into the equivalent tornado sprite position.
+        // orb's body-center target back into the equivalent tornado sprite position,
+        // then lift it slightly so the funnel's core lines up with the orb's core.
         const spriteToBodyX = tBody.center.x - tornado.x;
         const spriteToBodyY = tBody.center.y - tornado.y;
         const targetSpriteX = orbBody.center.x - spriteToBodyX;
-        const targetSpriteY = orbBody.center.y - spriteToBodyY;
+        const targetSpriteY = orbBody.center.y - spriteToBodyY - DARK_COMBO_TORNADO_LIFT;
         const dx = targetSpriteX - tornado.x;
         const dy = targetSpriteY - tornado.y;
         const distSq = dx * dx + dy * dy;
-        if (distSq > PULL_RADIUS * PULL_RADIUS) continue;
+        if (distSq > TORNADO_PULL_R * TORNADO_PULL_R) continue;
         const dist = Math.sqrt(distSq) || 1;
-        const closeness = 1 - dist / PULL_RADIUS;
+        const closeness = 1 - dist / TORNADO_PULL_R;
 
         // Pull a bit harder than a player so the tornado visibly migrates onto the orb.
         // Clamp the per-frame move to the remaining distance so we settle exactly on
         // the target instead of jittering past it once the bodies overlap.
-        const move = Math.min(dist, PULL_SPEED * 1.5 * closeness * dt);
+        const move = Math.min(dist, TORNADO_PULL_SPD * 1.5 * closeness * dt);
         tornado.x += (dx / dist) * move;
         tornado.y += (dy / dist) * move;
 
@@ -366,12 +854,115 @@ export class GameScene extends Phaser.Scene {
         const g = lerp(0xff, 0xa8);
         const b = lerp(0xff, 0xff);
         tornado.setTint((r << 16) | (g << 8) | b);
+
+        // Punch a SOFT portal hole through the funnel where the orb's core sits.
+        // The mask source is a hidden radial-gradient Image on the orb; we
+        // reposition it every frame so it tracks any orb wobble. The Image's
+        // alpha ramps from solid center → fully transparent rim, so the tornado
+        // FADES into the portal instead of being cookie-cut by a hard circle.
+        // applyVoidPortalMask is idempotent on the same tornado so calling it
+        // each overlap frame is cheap.
+        // Hole radius (px) — smaller than the orb so the orb's outer ring still
+        // renders BEHIND the tornado. Bump if you want the hole to swallow more
+        // of the funnel.
+        const HOLE_RADIUS = 22;
+        const maskSource = orb.getPortalMaskSource(HOLE_RADIUS);
+        orb.updatePortalMaskPosition();
+        tornado.applyVoidPortalMask(orb, maskSource);
+        // Spiraling cyan "shredded water" fragments around the portal rim,
+        // rendering ABOVE the funnel so they read as water being torn off and
+        // dragged into the core. Idempotent across frames; just keeps the
+        // fragment depth in sync with the funnel as it migrates.
+        orb.startVoidAbsorptionFX(HOLE_RADIUS, tornado.depth);
+        maskAppliedToTornado = tornado;
+      }
+      // If this orb's mask is on a tornado that we no longer overlap (e.g. the
+      // tornado drifted out of range, or this frame found no overlap at all),
+      // strip the mask so we don't leave the funnel with a phantom hole.
+      const previouslyMasked = orb.getData('darkComboMaskedTornado') as WaterTornado | undefined;
+      if (previouslyMasked && previouslyMasked !== maskAppliedToTornado && previouslyMasked.active) {
+        previouslyMasked.clearVoidPortalMask();
+      }
+      orb.setData('darkComboMaskedTornado', maskAppliedToTornado);
+
+      // -----------------------------------------------------------------
+      // 2b. WaterSpike absorption — same portal-mask pattern as tornado,
+      // but without the pull/grow/tint (the spike is a quick attack; we
+      // only want the part overlapping the portal to fade in). Reuse the
+      // orb's existing soft mask source + absorption FX so the combo
+      // visually matches the tornado one.
+      //
+      // Note: we DON'T filter by `body.enable` here — the spike disables
+      // its body the moment it enters the FADE phase, so a body filter
+      // would drop the spike mid-absorption and strip the mask, making
+      // the unmasked fade frames suddenly pop in. Instead we accept any
+      // active spike and check overlap via display bounds (works whether
+      // the body is enabled or not).
+      // -----------------------------------------------------------------
+      const waterSpikes = all.filter(
+        (s): s is WaterSpike => s instanceof WaterSpike && s.active,
+      );
+      let maskAppliedToSpike: WaterSpike | undefined;
+      for (const spike of waterSpikes) {
+        // Body-tolerant overlap: use the spike's display bounds (which
+        // stay valid even after body.enable=false during fade) against
+        // the orb's body center. The orb's body remains enabled for its
+        // entire lifetime, so this is a reliable anchor point.
+        const orbBody = orb.body as Phaser.Physics.Arcade.Body | null;
+        if (!orbBody) continue;
+        const bounds = spike.getBounds();
+        if (!bounds.contains(orbBody.center.x, orbBody.center.y)) continue;
+
+        const HOLE_RADIUS = 22;
+        const maskSource = orb.getPortalMaskSource(HOLE_RADIUS);
+        orb.updatePortalMaskPosition();
+        spike.applyVoidPortalMask(orb, maskSource);
+        // Above-spike fragments: the spike's depth is its base Y, so the
+        // fragments will sit above the spike's footprint at the rim.
+        orb.startVoidAbsorptionFX(HOLE_RADIUS, spike.depth);
+        maskAppliedToSpike = spike;
+        break; // one spike absorption at a time is enough
+      }
+      // Mask clear-on-overlap-end: only strip the mask if the previously
+      // masked spike has actually left the orb's vicinity. If the spike
+      // was masked and is now in its fade phase (still nearby — bounds
+      // test above just returned false because the spike moved or the
+      // orb did), the mask STAYS so the fade frames don't pop. The mask
+      // will be cleared by the spike's own destroy() when its fade
+      // animation finishes, or by the orb's destroy if it dies first.
+      const previousSpike = orb.getData('darkComboMaskedSpike') as WaterSpike | undefined;
+      if (previousSpike && previousSpike !== maskAppliedToSpike && previousSpike.active) {
+        // Only force-clear if the spike has genuinely moved out of range
+        // (sanity: orb still alive, spike still alive, but no overlap
+        // anywhere near). We use a generous radius so jitter doesn't
+        // toggle the mask off mid-effect.
+        const orbBody2 = orb.body as Phaser.Physics.Arcade.Body | null;
+        const bounds = previousSpike.getBounds();
+        const stillNearby = orbBody2
+          ? bounds.contains(orbBody2.center.x, orbBody2.center.y)
+          : false;
+        if (!stillNearby) {
+          previousSpike.clearVoidPortalMask();
+        } else {
+          // Still nearby — keep this spike as the "currently masked" target
+          // so next frame's bookkeeping doesn't churn.
+          maskAppliedToSpike = previousSpike;
+        }
+      }
+      orb.setData('darkComboMaskedSpike', maskAppliedToSpike);
+
+      // Only despawn the spiral fragments + infection overlay if NEITHER a
+      // tornado NOR a spike is being absorbed this frame; otherwise the FX
+      // owned by the orb stays running for whichever combo is still active.
+      if (!maskAppliedToTornado && !maskAppliedToSpike) {
+        orb.stopVoidAbsorptionFX();
       }
     }
 
     // -----------------------------------------------------------------------------------
-    // 3. FireBolt vs orb: spawn a one-shot lightning_burst_002 VFX where they touched
-    //    (no damage — pure feedback) and consume the bolt. Orb persists.
+    // 3. FireBolt vs orb: orb consumes the bolt. Plays the same single-play impact
+    //    sprite that FireBolt uses when it enters a FireArea — pure feedback, no
+    //    physics body, no damage. The bolt is destroyed via explode(); orb persists.
     // -----------------------------------------------------------------------------------
     const fireBolts = all.filter(
       (s): s is FireBolt => s instanceof FireBolt && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
@@ -379,11 +970,11 @@ export class GameScene extends Phaser.Scene {
     for (const bolt of fireBolts) {
       for (const orb of orbs) {
         if (!this.physics.overlap(bolt, orb)) continue;
-        // Spawn LightningBurstCombo (force the 002 variant for this combo) so the burst
-        // gets a real physics body, hitEnemy de-dup, and damage via the existing spell-
-        // vs-enemy overlap registered in #registerColliders.
-        const burst = new LightningBurstCombo(this, bolt.x, bolt.y, { variant: '002' });
-        this.#player.spellCastingComponent.spellGroup.add(burst);
+        const impact = this.add.sprite(bolt.x, bolt.y, ASSET_KEYS.FIRE_BOLT_AREA_IMPACT);
+        impact.setDepth(bolt.depth + 1);
+        impact.setRotation(bolt.rotation);
+        impact.play(ASSET_KEYS.FIRE_BOLT_AREA_IMPACT);
+        impact.once(`animationcomplete-${ASSET_KEYS.FIRE_BOLT_AREA_IMPACT}`, () => impact.destroy());
         bolt.explode();
         break;
       }
@@ -422,22 +1013,259 @@ export class GameScene extends Phaser.Scene {
     }
 
     // -----------------------------------------------------------------------------------
-    // 6. EarthWall pillars touching the orb take periodic damage (throttled per pillar).
-    //    Same shape as FireBreath-vs-pillar above.
+    // 6. EarthWall pillars + orb. The orb pulls every pillar inside
+    //    VOID_ORB_EARTHWALL_PULL_RADIUS toward its body center; a pillar that
+    //    reaches VOID_ORB_EARTHWALL_CRUMBLE_RADIUS is shattered instantly
+    //    (the orb has "eaten" it). Otherwise the pillar takes throttled tick
+    //    damage while it slides inward. Pull is position-additive so the
+    //    pillar's immovable body still resolves collisions with players /
+    //    enemies normally on the next physics step.
     // -----------------------------------------------------------------------------------
     const pillars = this.#earthWallGroup.getChildren() as EarthWallPillar[];
     if (pillars.length > 0) {
       const now = this.time.now;
-      const DARK_TICK_MS = 300;
+      const PULL_R = CONFIG.VOID_ORB_EARTHWALL_PULL_RADIUS;
+      const CRUMBLE_R = CONFIG.VOID_ORB_EARTHWALL_CRUMBLE_RADIUS;
+      const PULL_SPD = CONFIG.VOID_ORB_EARTHWALL_PULL_SPEED;
+      const PULL_EXP = CONFIG.VOID_ORB_EARTHWALL_PULL_FALLOFF_EXP;
+      const TICK_MS = CONFIG.VOID_ORB_EARTHWALL_TICK_INTERVAL_MS;
+      const TICK_DMG = CONFIG.VOID_ORB_EARTHWALL_TICK_DAMAGE;
+      const DUST_MS = CONFIG.EARTH_WALL_DARK_PULL_DUST_INTERVAL_MS;
       for (const pillar of pillars) {
         if (!pillar.active || pillar.isBeingDestroyed) continue;
+        const pBody = pillar.body as Phaser.Physics.Arcade.Body | null;
+        const px = pBody?.center.x ?? pillar.x;
+        const py = pBody?.center.y ?? pillar.y;
+        let shattered = false;
         for (const orb of orbs) {
-          if (!this.physics.overlap(pillar, orb)) continue;
-          const last = (pillar.getData('lastDarkTickAt') as number | undefined) ?? 0;
-          if (now - last < DARK_TICK_MS) break;
-          pillar.setData('lastDarkTickAt', now);
-          pillar.takeDamage(1);
-          break;
+          const oBody = orb.body as Phaser.Physics.Arcade.Body;
+          const ocx = oBody.center.x;
+          const ocy = oBody.center.y;
+          const dx = ocx - px;
+          const dy = ocy - py;
+          const distSq = dx * dx + dy * dy;
+          if (distSq > PULL_R * PULL_R) continue;
+          const dist = Math.sqrt(distSq);
+
+          // Instant pulverize when the pillar reaches the inner ring — orb is
+          // "swallowing" it. pulverize() spawns brown pixel chunks that fly
+          // INTO the orb (the visual "brown pixels appearing on the orb")
+          // and destroys the pillar immediately, skipping the
+          // crumble-sink-into-floor animation that the EarthBump combo path
+          // uses.
+          if (dist <= CRUMBLE_R) {
+            pillar.pulverize(ocx, ocy);
+            shattered = true;
+            break;
+          }
+
+          // Exponential falloff so the pull barely tugs at the rim and
+          // accelerates violently as the pillar approaches the orb — much
+          // more black-hole-like than the linear ramp. EXP=1 reproduces the
+          // old linear behaviour; default EXP=3 is a hard accelerator.
+          // Per-frame move clamped to remaining distance so we never
+          // overshoot past the orb's body center.
+          const closeness = Math.pow(1 - dist / PULL_R, PULL_EXP);
+          const move = Math.min(dist, PULL_SPD * closeness * dt);
+          if (move > 0 && dist > 0) {
+            pillar.x += (dx / dist) * move;
+            pillar.y += (dy / dist) * move;
+          }
+
+          // Tick damage while pulled — independent of pulverize, throttled
+          // per-pillar so two orbs in range don't double-tick on the same
+          // frame.
+          const lastTick = (pillar.getData('lastDarkTickAt') as number | undefined) ?? 0;
+          if (now - lastTick >= TICK_MS) {
+            pillar.setData('lastDarkTickAt', now);
+            pillar.takeDamage(TICK_DMG);
+            if (!pillar.active || pillar.isBeingDestroyed) break;
+          }
+
+          // Dust trail: small brown chunks drifting from the pillar into the
+          // orb while it's being ground down. Cheap, per-pillar throttled.
+          if (DUST_MS > 0) {
+            const lastDust = (pillar.getData('lastDarkDustAt') as number | undefined) ?? 0;
+            if (now - lastDust >= DUST_MS) {
+              pillar.setData('lastDarkDustAt', now);
+              pillar.emitDarkDust(ocx, ocy);
+            }
+          }
+        }
+        if (shattered) continue;
+      }
+    }
+
+    // -----------------------------------------------------------------------------------
+    // 7. Puddles (water / mud / lava) get pulled toward the orb's body center
+    //    using the same exponential model as the EarthWall pillars. A puddle
+    //    that reaches the consume ring is destroyed — the void drinks it.
+    //    Runs in parallel with the LAVA+WATER extinguish combo for lava
+    //    puddles, so a lava puddle being pulled into an orb while a tornado
+    //    overlaps it still steams and extinguishes normally.
+    // -----------------------------------------------------------------------------------
+    if (Puddle.all.size > 0) {
+      const PP_R = CONFIG.VOID_ORB_PUDDLE_PULL_RADIUS;
+      const PP_SPD = CONFIG.VOID_ORB_PUDDLE_PULL_SPEED;
+      const PP_EXP = CONFIG.VOID_ORB_PUDDLE_PULL_FALLOFF_EXP;
+      const PP_CONSUME = CONFIG.VOID_ORB_PUDDLE_CONSUME_RADIUS;
+      // Iterate a local snapshot — calling puddle.destroy() inside the loop
+      // removes it from Puddle.all and would invalidate the Set iterator.
+      const puddleSnapshot: Puddle[] = [];
+      for (const p of Puddle.all) {
+        if (p.active) puddleSnapshot.push(p);
+      }
+      for (const puddle of puddleSnapshot) {
+        if (!puddle.active) continue;
+        let consumed = false;
+        for (const orb of orbs) {
+          const oBody = orb.body as Phaser.Physics.Arcade.Body;
+          const ocx = oBody.center.x;
+          const ocy = oBody.center.y;
+          const dx = ocx - puddle.x;
+          const dy = ocy - puddle.y;
+          const distSq = dx * dx + dy * dy;
+          if (distSq > PP_R * PP_R) continue;
+          const dist = Math.sqrt(distSq);
+          if (dist <= PP_CONSUME) {
+            // Void eats the puddle. Spawn a burst of kind-tinted pixel
+            // chunks flying INTO the orb (same visual language as the
+            // tornado-absorption fragments + earth-wall pulverize chunks)
+            // BEFORE destroy(), so the chunks read as fragments of the
+            // puddle being torn apart on consumption. destroy() handles
+            // removal from Puddle.all and from the LavaLayer's next
+            // rebuild.
+            puddle.spawnDarkConsumeBurst(ocx, ocy);
+            puddle.destroy();
+            consumed = true;
+            break;
+          }
+          // Exponential pull (same shape as the pillar pull). Per-frame move
+          // clamped to remaining distance so we never overshoot past the
+          // orb's body center. Moving puddle.x/y slides the body on the
+          // next physics step; for lava puddles, the LavaLayer reads the
+          // new position on its next POST_UPDATE rebuild so the silhouette
+          // tracks the puddle.
+          const closeness = Math.pow(1 - dist / PP_R, PP_EXP);
+          const move = Math.min(dist, PP_SPD * closeness * dt);
+          if (move > 0 && dist > 0) {
+            puddle.x += (dx / dist) * move;
+            puddle.y += (dy / dist) * move;
+          }
+        }
+        if (consumed) continue;
+      }
+    }
+
+    // -----------------------------------------------------------------------------------
+    // 8. Pixel pull FX — pure visual, no gameplay. Each orb periodically emits
+    //    small pixel particles flying into its body center. Particles are
+    //    sourced from two pools:
+    //      - SPRITE: a random in-range sprite (player, enemy, spell) picks a
+    //        random pixel from its current animation frame, particle launches
+    //        from the sprite's position tinted with that real pixel colour.
+    //      - ENV: a random point inside the FX radius tinted with a colour
+    //        from VOID_ORB_PIXEL_PULL_ENV_PALETTE — the "ground" filler.
+    //    Per-orb throttled by SPAWN_INTERVAL_MS via setData.
+    // -----------------------------------------------------------------------------------
+    if (CONFIG.VOID_ORB_PIXEL_PULL_ENABLED) {
+      const FX_R = CONFIG.VOID_ORB_PIXEL_PULL_RADIUS;
+      const EMIT_MS = CONFIG.VOID_ORB_PIXEL_PULL_SPAWN_INTERVAL_MS;
+      const PER_EMIT = CONFIG.VOID_ORB_PIXEL_PULL_PARTICLES_PER_EMIT;
+      const TRAVEL_MS = CONFIG.VOID_ORB_PIXEL_PULL_TRAVEL_MS;
+      const SIZE_MIN = CONFIG.VOID_ORB_PIXEL_PULL_SIZE_MIN_PX;
+      const SIZE_MAX = CONFIG.VOID_ORB_PIXEL_PULL_SIZE_MAX_PX;
+      const SPRITE_CHANCE = CONFIG.VOID_ORB_PIXEL_PULL_SPRITE_SOURCE_CHANCE;
+      const ENV = CONFIG.VOID_ORB_PIXEL_PULL_ENV_PALETTE;
+
+      // Pool of candidate sprites — built once per frame, reused per-orb.
+      // Excludes orbs themselves (self-feedback would look weird).
+      const candidates: Phaser.GameObjects.Sprite[] = [];
+      if (this.#player?.active) candidates.push(this.#player);
+      for (const rp of this.#remotePlayers.values()) {
+        if (rp.active) candidates.push(rp);
+      }
+      const enemiesInRoom = this.#objectsByRoomId[this.#currentRoomId]?.enemyGroup?.getChildren() ?? [];
+      for (const e of enemiesInRoom) {
+        const s = e as Phaser.GameObjects.Sprite;
+        if (s.active) candidates.push(s);
+      }
+      const localSpellChildren = this.#player?.spellCastingComponent?.spellGroup?.getChildren() ?? [];
+      const remoteSpellChildren = this.#remoteSpellGroup?.getChildren() ?? [];
+      for (const s of [...localSpellChildren, ...remoteSpellChildren]) {
+        if (!s.active || s instanceof VoidOrb) continue;
+        if (s instanceof Phaser.GameObjects.Sprite) candidates.push(s);
+      }
+
+      const nowMs = this.time.now;
+      for (const orb of orbs) {
+        const lastEmit = (orb.getData('lastPixelPullEmitAt') as number | undefined) ?? 0;
+        if (nowMs - lastEmit < EMIT_MS) continue;
+        orb.setData('lastPixelPullEmitAt', nowMs);
+
+        const orbBody = orb.body as Phaser.Physics.Arcade.Body;
+        const ocx = orbBody.center.x;
+        const ocy = orbBody.center.y;
+
+        // Filter candidates to in-range + extract a palette per sprite.
+        // Sprites whose texture can't be sampled (empty palette) drop out
+        // and the env pool covers for them.
+        const inRange: { sprite: Phaser.GameObjects.Sprite; palette: readonly number[] }[] = [];
+        for (const s of candidates) {
+          const ddx = s.x - ocx;
+          const ddy = s.y - ocy;
+          if (ddx * ddx + ddy * ddy > FX_R * FX_R) continue;
+          const palette = getSpriteFramePalette(s);
+          if (palette.length === 0) continue;
+          inRange.push({ sprite: s, palette });
+        }
+
+        const haveSprites = inRange.length > 0;
+        const haveEnv = ENV.length > 0;
+        if (!haveSprites && !haveEnv) continue;
+
+        for (let i = 0; i < PER_EMIT; i++) {
+          let sx: number;
+          let sy: number;
+          let tint: number;
+          const useSprite = haveSprites && (!haveEnv || Math.random() < SPRITE_CHANCE);
+          if (useSprite) {
+            const src = inRange[Math.floor(Math.random() * inRange.length)];
+            // Jitter the source position inside the sprite's display
+            // bounding box so the particle reads as coming from a random
+            // point on the sprite, not always its anchor.
+            const dw = src.sprite.displayWidth || 16;
+            const dh = src.sprite.displayHeight || 16;
+            sx = src.sprite.x + (Math.random() - 0.5) * dw * 0.6;
+            sy = src.sprite.y + (Math.random() - 0.5) * dh * 0.6;
+            tint = src.palette[Math.floor(Math.random() * src.palette.length)];
+          } else {
+            // Area-uniform random point within FX_R (sqrt for uniform area).
+            const r = Math.sqrt(Math.random()) * FX_R;
+            const a = Math.random() * Math.PI * 2;
+            sx = ocx + Math.cos(a) * r;
+            sy = ocy + Math.sin(a) * r;
+            tint = ENV[Math.floor(Math.random() * ENV.length)];
+          }
+
+          const size = SIZE_MIN + Math.floor(Math.random() * (SIZE_MAX - SIZE_MIN + 1));
+          const particle = this.add.graphics({ x: sx, y: sy });
+          particle.fillStyle(tint, 1);
+          particle.fillRect(-size / 2, -size / 2, size, size);
+          // Above the floor and most game objects so the stream is always
+          // visible. They're 1-2px and fade fast, so this won't visually
+          // obscure anything important.
+          particle.setDepth(1000);
+
+          this.tweens.add({
+            targets: particle,
+            x: ocx,
+            y: ocy,
+            alpha: 0,
+            duration: TRAVEL_MS,
+            ease: 'Quad.easeIn',
+            onComplete: () => particle.destroy(),
+          });
         }
       }
     }
@@ -493,30 +1321,56 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  /** ThunderStrike + FireArea combo — passive collision; both stay around, but a
-   *  lightning_strike_001 VFX fires once when a strike overlaps a fire area. */
+  /** ThunderStrike + FireArea combo — passive collision; both stay around, and a
+   *  lightning_burst_002 explosion VFX fires once at the contact point when a
+   *  strike overlaps a fire area. Damages enemies caught in the burst. */
   #updateThunderFireAreaCombo(): void {
     if (!this.#player?.spellCastingComponent?.spellGroup) return;
     const all = [
       ...this.#player.spellCastingComponent.spellGroup.getChildren(),
       ...(this.#remoteSpellGroup?.getChildren() ?? []),
     ];
+    // Filter without `body.enable` — the strike's damage body only switches on
+    // after the bolt animation + REACTION_BUFFER_MS, but the combo fires on
+    // *visual* impact (the moment the strike sprite lands). Same pattern as
+    // the ThunderStrike + Puddle combo below.
     const strikes = all.filter(
-      (s): s is ThunderStrike => s instanceof ThunderStrike && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+      (s): s is ThunderStrike => s instanceof ThunderStrike && s.active,
     );
     const areas = all.filter(
       (s): s is FireArea => s instanceof FireArea && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
     );
     if (strikes.length === 0 || areas.length === 0) return;
+    const now = this.time.now;
     for (const strike of strikes) {
       if (strike.getData('thunderFireAreaCombo')) continue;
       for (const area of areas) {
-        if (!this.physics.overlap(strike, area)) continue;
+        // Geometric containment on the area's display bounds — fires on the
+        // frame the strike spawns, independent of whether the strike's
+        // physics body has activated yet.
+        if (!area.getBounds().contains(strike.x, strike.y)) continue;
+
+        // Stamp the spawn time on first contact, then defer the burst by
+        // RUNTIME_CONFIG.THUNDER_FIREAREA_BURST_DELAY_MS so the explosion
+        // lands on whichever animation frame reads as "the bolt actually
+        // touched down". Same pattern as the Thunder + Puddle splash below.
+        let sightedAt = strike.getData('fireAreaSightedAt') as number | undefined;
+        if (sightedAt === undefined) {
+          sightedAt = now;
+          strike.setData('fireAreaSightedAt', sightedAt);
+        }
+        if (now - sightedAt < RUNTIME_CONFIG.THUNDER_FIREAREA_BURST_DELAY_MS) {
+          // Keep looking next frame — don't fire yet, but also don't mark
+          // the combo as triggered so we re-evaluate (the area might also
+          // move / fade in the meantime).
+          break;
+        }
+
         strike.setData('thunderFireAreaCombo', true);
         const x = (strike.x + area.x) / 2;
         const y = (strike.y + area.y) / 2;
-        const fx = new LightningStrikeCombo(this, x, y);
-        this.#player.spellCastingComponent.spellGroup.add(fx);
+        const burst = new LightningBurstCombo(this, x, y, { variant: '002' });
+        this.#player.spellCastingComponent.spellGroup.add(burst);
         break;
       }
     }
@@ -527,24 +1381,47 @@ export class GameScene extends Phaser.Scene {
    *  and electrifies every overlapping puddle. Re-striking an already-electrified
    *  puddle refreshes its charge to 100. Each strike triggers at most once. */
   #updateThunderStrikePuddleCombo(): void {
-    if (!this.#player?.spellCastingComponent?.spellGroup) return;
     if (Puddle.all.size === 0) return;
+    const localGroup = this.#player?.spellCastingComponent?.spellGroup;
     const all = [
-      ...this.#player.spellCastingComponent.spellGroup.getChildren(),
+      ...(localGroup?.getChildren() ?? []),
       ...(this.#remoteSpellGroup?.getChildren() ?? []),
     ];
+    // Splash + electrify trigger as soon as the strike spawns, independent of when its
+    // damage body activates (REACTION_BUFFER_MS). Decoupled so splash VFX timing can be
+    // tuned separately from damage timing — overlap is now a geometric check, not a
+    // physics-enabled check.
     const strikes = all.filter(
-      (s): s is ThunderStrike =>
-        s instanceof ThunderStrike && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+      (s): s is ThunderStrike => s instanceof ThunderStrike && s.active,
     );
     if (strikes.length === 0) return;
 
     for (const strike of strikes) {
       if (strike.getData('puddleComboTriggered')) continue;
+
+      // Splash fires when the visible bolt reaches the ground, not when the strike spawns.
+      // Stamp the spawn time on first sight, then wait RUNTIME_CONFIG.THUNDER_PUDDLE_SPLASH_DELAY_MS
+      // before triggering. Tune the delay to land on whichever animation frame reads as "impact".
+      let spawnAt = strike.getData('spawnAt') as number | undefined;
+      if (spawnAt === undefined) {
+        spawnAt = this.time.now;
+        strike.setData('spawnAt', spawnAt);
+      }
+      if (this.time.now - spawnAt < RUNTIME_CONFIG.THUNDER_PUDDLE_SPLASH_DELAY_MS) continue;
+
       const hit: Puddle[] = [];
+      // Manual circle-vs-circle distance check — physics.overlap silently returns false
+      // when either body is disabled, and the strike's body intentionally stays disabled
+      // until the reaction buffer elapses. We anchor on the strike's cast point and use
+      // its configured body radius (set in ThunderStrike's setCircle call).
+      const strikeBody = strike.body as Phaser.Physics.Arcade.Body | null;
+      const strikeR = strikeBody?.radius ?? 20;
       for (const p of Puddle.all) {
         if (!p.active) continue;
-        if (this.physics.overlap(strike, p)) hit.push(p);
+        const dx = p.x - strike.x;
+        const dy = p.y - strike.y;
+        const combinedR = strikeR + p.radius;
+        if (dx * dx + dy * dy <= combinedR * combinedR) hit.push(p);
       }
       if (hit.length === 0) continue;
       strike.setData('puddleComboTriggered', true);
@@ -553,21 +1430,62 @@ export class GameScene extends Phaser.Scene {
       // multiple puddles got electrified — the splash is the "lightning hit water"
       // feedback, not a per-puddle effect. X/Y offset tunables let you nudge the
       // sprite when the artwork's pivot isn't at the centre of its frame.
+      // Splash VFX skipped — the PIXELART_SPLASH texture (Splash.png) was removed
+      // during the asset reorg. The combo's gameplay (electrify nearby puddles) still
+      // fires below; restore the splash sprite/anim if you re-add the source PNG.
       const splashX = strike.x + RUNTIME_CONFIG.THUNDER_PUDDLE_SPLASH_X_OFFSET_PX;
       const splashY = strike.y + RUNTIME_CONFIG.THUNDER_PUDDLE_SPLASH_Y_OFFSET_PX;
-      const splash = this.add.sprite(splashX, splashY, ASSET_KEYS.PIXELART_SPLASH, 0);
-      // Above puddles (depth 1.5), under most spell VFX (3+).
-      splash.setDepth(2.5);
-      splash.play(ASSET_KEYS.PIXELART_SPLASH);
-      splash.once(`animationcomplete-${ASSET_KEYS.PIXELART_SPLASH}`, () => splash.destroy());
+      void splashX; void splashY;
+      if (this.textures.exists(ASSET_KEYS.PIXELART_SPLASH)) {
+        const splash = this.add.sprite(splashX, splashY, ASSET_KEYS.PIXELART_SPLASH, 0);
+        splash.setDepth(2.5);
+        splash.play(ASSET_KEYS.PIXELART_SPLASH);
+        splash.once(`animationcomplete-${ASSET_KEYS.PIXELART_SPLASH}`, () => splash.destroy());
+      }
 
+      // Cross-player attribution: each strike (local or remote-replicated) carries a
+      // casterId tag set at spawn time. Route the electrified puddle to the matching
+      // spell group so cross-player damage overlaps come from the correct caster's
+      // group and dedup by their casterId. Remote-cast strikes electrify too.
       const localId = this.#safeNetworkManager()?.localPlayerId;
+      const strikeCasterId = strike.getData('casterId') as string | undefined;
+      const isLocalCast = strikeCasterId === undefined || strikeCasterId === localId;
+      const targetGroup = isLocalCast ? localGroup : this.#remoteSpellGroup;
       for (const p of hit) {
         p.electrify(
           RUNTIME_CONFIG.ELEC_PUDDLE_CHARGE_MAX,
-          this.#player.spellCastingComponent.spellGroup,
-          localId,
+          targetGroup,
+          strikeCasterId ?? localId,
         );
+        // MUD puddle ⇒ snare every character currently standing in it. Water
+        // puddles still get the full damage treatment but no snare; mud trades
+        // raw damage for control. Movement-only — snared characters can still
+        // cast/use magic (see CharacterGameObject.applyMovementSnare).
+        if (p.kind === 'mud') {
+          this.#snareCharactersInPuddle(p, CONFIG.ELEC_PUDDLE_MUD_SNARE_DURATION_MS);
+        }
+      }
+    }
+  }
+
+  /** Snare every active character (local player + remote players + enemies in
+   *  the current room) currently overlapping `puddle`. Used by the Lightning +
+   *  mud puddle combo. Pure dispatcher — actual snare bookkeeping lives on
+   *  CharacterGameObject and auto-expires by timestamp. */
+  #snareCharactersInPuddle(puddle: Puddle, durationMs: number): void {
+    const characters: CharacterGameObject[] = [];
+    if (this.#player?.active) characters.push(this.#player);
+    for (const rp of this.#remotePlayers.values()) {
+      if (rp.active) characters.push(rp);
+    }
+    const enemies = this.#objectsByRoomId[this.#currentRoomId]?.enemyGroup?.getChildren() ?? [];
+    for (const e of enemies) {
+      const c = e as CharacterGameObject;
+      if (c.active) characters.push(c);
+    }
+    for (const c of characters) {
+      if (this.physics.overlap(c, puddle)) {
+        c.applyMovementSnare(durationMs);
       }
     }
   }
@@ -638,13 +1556,108 @@ export class GameScene extends Phaser.Scene {
     this.scene.launch(SCENE_KEYS.RADIAL_MENU_SCENE);
   }
 
+  /** Q / E rotate the on-screen element carousel. UiScene owns the visual + the actual
+   *  ElementManager.setElement call; here we only forward the just-down edge. */
+  #handleCarouselInput(): void {
+    if (this.#deathLockActive) return;
+    // While the radial menu is open it owns element selection — don't double-fire.
+    if (this.scene.isActive(SCENE_KEYS.RADIAL_MENU_SCENE)) return;
+    if (this.#controls.isCarouselLeftJustDown) {
+      EVENT_BUS.emit(CUSTOM_EVENTS.ELEMENT_CAROUSEL_STEP, { direction: -1 });
+    } else if (this.#controls.isCarouselRightJustDown) {
+      EVENT_BUS.emit(CUSTOM_EVENTS.ELEMENT_CAROUSEL_STEP, { direction: 1 });
+    }
+  }
+
   #handleDashInput(): void {
     // Respect COUNTDOWN lock and (Plan 03) death lock.
     if (this.#combatLocked) return;
     if (this.#deathLockActive) return;
     if (!this.#controls.isDashKeyJustDown) return;
     if (!this.#player?.active) return;
+    // On Wind, SHIFT becomes the wind super-dash (AirBurst) when mana +
+    // cooldown allow. Falls back to a regular dash if not ready so the
+    // button always does *something*.
+    if (ElementManager.instance.activeElement === ELEMENT.WIND) {
+      if (this.#player.dashSuper()) {
+        // Mirror the special-cast pattern (VoidOrb R-key) so the
+        // network broadcasts the cast and remote clients spawn the
+        // air-burst VFX behind the remote mage. slotIndex = -1 is the
+        // "not-from-a-slot" sentinel that #onLocalSpellCast accepts.
+        EVENT_BUS.emit(CUSTOM_EVENTS.SPELL_CAST, {
+          spellInstanceId: Phaser.Math.RND.uuid(),
+          spellId: SPELL_ID.AIR_BURST,
+          slotIndex: -1,
+          casterX: this.#player.x,
+          casterY: this.#player.y,
+          targetX: this.#player.x,
+          targetY: this.#player.y,
+        });
+        return;
+      }
+    }
     this.#player.dash();
+  }
+
+  /**
+   * R-key handler — casts whichever pickup-granted special spell is currently
+   * equipped in SpecialSpellInventory (one-slot model: VoidOrb OR DarkBolt OR
+   * none). The slot is set by the last pickup the player walked over.
+   *
+   * Bypasses the element / slot pipeline entirely so it doesn't disturb the
+   * carousel or interfere with channeled spells like FireBreath / LightningBeam.
+   * The single-slot inventory persists across scene restarts (singleton).
+   */
+  #handleSpecialCastInput(): void {
+    if (this.#combatLocked) return;
+    if (this.#deathLockActive) return;
+    if (!this.#controls.isSpecialCastJustDown) return;
+    if (!this.#player?.active) return;
+
+    const inv = SpecialSpellInventory.instance;
+    const activeSpellId = inv.activeSpellId;
+    if (!activeSpellId) return;
+    if (!inv.tryConsume()) return;
+
+    // Cast at the cursor's world position, clamped to attack range (matches the
+    // standard slot-cast clamp in SpellCastingComponent).
+    let targetX = this.#controls.mouseWorldX;
+    let targetY = this.#controls.mouseWorldY;
+    const range = RUNTIME_CONFIG.PLAYER_ATTACK_RANGE_PX;
+    const dx = targetX - this.#player.x;
+    const dy = targetY - this.#player.y;
+    const distSq = dx * dx + dy * dy;
+    if (distSq > range * range) {
+      const d = Math.sqrt(distSq);
+      targetX = this.#player.x + (dx * range) / d;
+      targetY = this.#player.y + (dy * range) / d;
+    }
+
+    const factory = SPELL_FACTORY_REGISTRY[activeSpellId as SpellId];
+    if (!factory) return;
+    const direction = Math.abs(dx) >= Math.abs(dy)
+      ? (dx >= 0 ? DIRECTION.RIGHT : DIRECTION.LEFT)
+      : (dy >= 0 ? DIRECTION.DOWN : DIRECTION.UP);
+    const spell = factory(this, this.#player.x, this.#player.y, targetX, targetY, direction, this.#player);
+    this.#player.spellCastingComponent.spellGroup.add(spell.gameObject);
+
+    // Tag for the cross-player damage + dedupe pipeline (same shape as standard casts).
+    const spellInstanceId = Phaser.Math.RND.uuid();
+    spell.gameObject.setData('spellId', spellInstanceId);
+    spell.gameObject.setData('spellType', activeSpellId);
+    try {
+      const localId = NetworkManager.getInstance().localPlayerId;
+      if (localId) spell.gameObject.setData('casterId', localId);
+    } catch { /* offline */ }
+    EVENT_BUS.emit(CUSTOM_EVENTS.SPELL_CAST, {
+      spellInstanceId,
+      spellId: activeSpellId,
+      slotIndex: -1, // -1 sentinel = special-cast (not from a slot)
+      casterX: this.#player.x,
+      casterY: this.#player.y,
+      targetX,
+      targetY,
+    });
   }
 
   #configureArcadeDebug(): void {
@@ -831,6 +1844,69 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  /**
+   * LightningBeam — drives the per-frame damage + combo dispatch for any active
+   * LightningBeam game objects in the scene (local OR remote). The spell itself
+   * handles its own lifecycle (release → destroy) and mana drain; this handler is
+   * only responsible for "what's inside the beam right now":
+   *   - Damage enemies in the current room (deduped to once per drain-tick).
+   *   - Electrify any puddles overlapping the beam (one-shot per puddle per cast).
+   *
+   * Pattern mirrors `#applyFireBreathDamage` + the ThunderStrike/Puddle combo handler.
+   */
+  #updateLightningBeamCombos(): void {
+    // Collect every active beam from local + remote spell groups.
+    const beams: LightningBeam[] = [];
+    const localGroup = this.#player?.spellCastingComponent?.spellGroup;
+    if (localGroup) {
+      for (const c of localGroup.getChildren()) {
+        if (c instanceof LightningBeam && c.active) beams.push(c);
+      }
+    }
+    if (this.#remoteSpellGroup) {
+      for (const c of this.#remoteSpellGroup.getChildren()) {
+        if (c instanceof LightningBeam && c.active) beams.push(c);
+      }
+    }
+    if (beams.length === 0) return;
+
+    // Enemies — current room only (matches FireBreath scoping).
+    const enemyGroup = this.#objectsByRoomId[this.#currentRoomId]?.enemyGroup;
+
+    for (const beam of beams) {
+      // ── Enemy damage (deduped per drain tick via beam.hitThisTickSet) ──
+      if (enemyGroup) {
+        enemyGroup.getChildren().forEach((child) => {
+          if (!child.active) return;
+          const enemy = child as CharacterGameObject;
+          if (enemy.isDefeated) return;
+          if (beam.hitThisTickSet.has(enemy)) return;
+          if (!beam.isPointInBeam(enemy.x, enemy.y)) return;
+          beam.hitThisTickSet.add(enemy);
+          enemy.hit(beam.aimDirection, beam.baseDamage);
+        });
+      }
+
+      // ── Puddle combo — every overlapping puddle is (re-)electrified every frame.
+      // Puddle.electrify() ratchets charge to MAX on every call and early-returns if
+      // already running, so this is cheap. While the beam is sweeping a puddle the
+      // charge stays pinned at full; the moment the beam moves off, the puddle's own
+      // decay (ELEC_PUDDLE_DECAY_PER_SEC) takes over and it eventually fades.
+      if (Puddle.all.size > 0) {
+        const casterId = beam.getData('casterId') as string | undefined;
+        const localId = this.#safeNetworkManager()?.localPlayerId;
+        const targetGroup = casterId === undefined || casterId === localId
+          ? localGroup
+          : this.#remoteSpellGroup;
+        for (const p of Puddle.all) {
+          if (!p.active) continue;
+          if (!beam.isPointInBeam(p.x, p.y)) continue;
+          p.electrify(RUNTIME_CONFIG.ELEC_PUDDLE_CHARGE_MAX, targetGroup, casterId ?? localId);
+        }
+      }
+    }
+  }
+
   #updateFireSpellCombos(): void {
     if (!this.#player?.spellCastingComponent?.spellGroup) {
       return;
@@ -932,9 +2008,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
-   * Detects overlaps between EarthBolt projectiles and active FireAreas.
-   * When an EarthBolt enters a FireArea, the bolt is consumed and a LavaPool
-   * is spawned at the bolt's current position, lasting several seconds.
+   * EarthBolt + FireArea: the bolt is HEATED into a molten projectile —
+   * it keeps travelling (no longer consumed by the fire), deals more damage,
+   * and drops a lava puddle at its eventual impact point. Idempotent per
+   * bolt; a molten bolt passing through more fire areas is a no-op.
    */
   #updateEarthBoltFireAreaCombo(): void {
     if (!this.#player?.spellCastingComponent?.spellGroup) {
@@ -945,7 +2022,7 @@ export class GameScene extends Phaser.Scene {
     const remoteChildren = this.#remoteSpellGroup?.getChildren() ?? [];
     const allSpells = [...spellChildren, ...remoteChildren];
     const earthBolts = allSpells.filter(
-      (s): s is EarthBolt => s instanceof EarthBolt && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+      (s): s is EarthBolt => s instanceof EarthBolt && s.active && !s.isMolten && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
     );
     const fireAreas = allSpells.filter(
       (s): s is FireArea => s instanceof FireArea && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
@@ -958,14 +2035,10 @@ export class GameScene extends Phaser.Scene {
     for (const earthBolt of earthBolts) {
       for (const fireArea of fireAreas) {
         if (this.physics.overlap(earthBolt, fireArea)) {
-          const x = earthBolt.x;
-          const y = earthBolt.y;
-
-          // Consume the bolt and leave a lava pool in its wake.
-          earthBolt.triggerFireAreaCombo();
-
-          const lavaPool = new LavaPool(this, x, y);
-          this.#player.spellCastingComponent.spellGroup.add(lavaPool);
+          // Heat the bolt — it continues toward its target now as a molten
+          // projectile. Lava puddle drops in EarthBolt.destroy() when it
+          // eventually lands.
+          earthBolt.makeMolten();
           break;
         }
       }
@@ -973,52 +2046,49 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
-   * EarthWall draw flow (3 phases):
-   *  1. Press 3 → enters "pending click" state (checks mana, waits for a mouse click to confirm).
-   *  2. Left mouse click → begins drawing; pillars are spawned as the cursor moves.
-   *  3. Cursor moved ≥ EARTH_WALL_PILLAR_SPACING px from last pillar → new pillar placed.
-   * Drawing ends automatically once EARTH_WALL_PILLAR_COUNT pillars have been placed.
-   * Pressing 3 again at any phase cancels the spell.
+   * EarthWall draw flow (left-click owned):
+   *  1. Left click while EARTH active and idle → check mana, consume, enter drawing mode.
+   *  2. Cursor moved ≥ EARTH_WALL_PILLAR_SPACING px from last pillar → new pillar placed.
+   * Drawing ends automatically once EARTH_WALL_PILLAR_COUNT pillars have been placed,
+   * when the active element changes, or when the player left-clicks again (cancel).
+   *
+   * EARTH's slot-0 spell is null (see SPELL_SLOT_REGISTRY) so the state machine's
+   * slot-cast path is dormant for this element — left-click is exclusively ours.
+   * Right-click drives slot 1 (EarthBump) via the standard slot-cast path.
    */
   #updateEarthWallSpell(): void {
-    // LFC-06: hard-gate spell input during COUNTDOWN. EarthWall is a multi-phase
-    // spell (pending-click → drawing) — locking via isMovementLocked alone would
-    // not prevent a pending click from committing, so we gate at the very top.
+    // LFC-06: hard-gate spell input during COUNTDOWN.
     if (this.#combatLocked) return;
     // Phase 9.3 (Plan 03): D-11 dead-player input suppression.
     if (this.#deathLockActive) return;
     if (!this.#player?.active) return;
-    if (ElementManager.instance.activeElement !== ELEMENT.EARTH) return;
 
-    // Press 3 → toggle / cancel
-    if (this.#controls.isSpell3KeyJustDown) {
-      if (this.#earthWallPendingClick || this.#earthWallDrawingMode) {
-        // Cancel whichever phase is active
-        this.#earthWallPendingClick = false;
-        this.#earthWallDrawingMode = false;
-      } else {
-        // Phase 1: check mana then wait for the confirming mouse click
-        if (this.#player.manaComponent.mana < EARTH_WALL_MANA_COST) return;
-        this.#earthWallPendingClick = true;
-      }
+    // Element change cancels any in-progress draw.
+    if (ElementManager.instance.activeElement !== ELEMENT.EARTH) {
+      this.#earthWallPendingClick = false;
+      this.#earthWallDrawingMode = false;
       return;
     }
 
-    // Phase 1 → Phase 2: left mouse click commits the spell
+    // Rising-edge detect on left mouse — using activePointer directly (not the
+    // KeyboardComponent's isSpell1KeyJustDown getter) keeps the bookkeeping local
+    // and independent of any per-frame consumption of that flag elsewhere.
     const mouseLeftDown = this.input.activePointer.leftButtonDown();
     const mouseLeftJustDown = mouseLeftDown && !this.#earthWallMouseWasDown;
     this.#earthWallMouseWasDown = mouseLeftDown;
 
-    if (this.#earthWallPendingClick) {
-      if (mouseLeftJustDown) {
-        this.#earthWallPendingClick = false;
-        if (EARTH_WALL_MANA_COST > 0) this.#player.manaComponent.consume(EARTH_WALL_MANA_COST);
-        this.#earthWallDrawingMode = true;
-        this.#earthWallDrawingPillarCount = 0;
-        this.#earthWallLastPlacedX = -Infinity;
-        this.#earthWallLastPlacedY = -Infinity;
+    // Left-click toggles: start a new draw, or cancel one already in progress.
+    if (mouseLeftJustDown) {
+      if (this.#earthWallDrawingMode) {
+        this.#earthWallDrawingMode = false;
+        return;
       }
-      return;
+      if (this.#player.manaComponent.mana < EARTH_WALL_MANA_COST) return;
+      if (EARTH_WALL_MANA_COST > 0) this.#player.manaComponent.consume(EARTH_WALL_MANA_COST);
+      this.#earthWallDrawingMode = true;
+      this.#earthWallDrawingPillarCount = 0;
+      this.#earthWallLastPlacedX = -Infinity;
+      this.#earthWallLastPlacedY = -Infinity;
     }
 
     if (!this.#earthWallDrawingMode) return;
@@ -1260,11 +2330,19 @@ export class GameScene extends Phaser.Scene {
               return;
             }
 
-            // DarkBolt — persistent darkness orb. Damage is applied as ticks from inside
-            // the orb itself (see DarkBolt.#applyTickDamage); here we just track which
+            // VoidOrb — persistent darkness orb. Damage is applied as ticks from inside
+            // the orb itself (see VoidOrb.#applyTickDamage); here we just track which
             // enemies are currently overlapping so the tick loop knows who to hit.
-            if (spellObj instanceof DarkBolt) {
+            if (spellObj instanceof VoidOrb) {
               spellObj.addEnemyInArea(enemyGameObject);
+              return;
+            }
+
+            // DarkBolt — Hollow-Purple-style pierce projectile. Each enemy is one-shot
+            // on first overlap; the bolt itself deduplicates so a target inside the
+            // body for multiple frames only takes the hit once.
+            if (spellObj instanceof DarkBolt) {
+              spellObj.tryHitEnemy(enemyGameObject);
               return;
             }
 
@@ -1354,6 +2432,9 @@ export class GameScene extends Phaser.Scene {
         spellObj.explode();
       }
       if (spellObj instanceof WindBolt) {
+        spellObj.explode();
+      }
+      if (spellObj instanceof VoidOrb) {
         spellObj.explode();
       }
       if (spellObj instanceof DarkBolt) {
@@ -1819,6 +2900,7 @@ export class GameScene extends Phaser.Scene {
     EVENT_BUS.on(CUSTOM_EVENTS.DIALOG_CLOSED, this.#handleDialogClosed, this);
     EVENT_BUS.on(CUSTOM_EVENTS.BOSS_DEFEATED, this.#handleBossDefeated, this);
     EVENT_BUS.on(CUSTOM_EVENTS.DEBUG_SPAWN_FLYING_OBELISK, this.#spawnDebugFlyingObelisk, this);
+    EVENT_BUS.on(CUSTOM_EVENTS.DEBUG_SPAWN_LAVA_PUDDLE, this.#spawnDebugLavaPuddle, this);
     // Match FSM + server-driven countdown ticks (LFC-06..09)
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_MATCH_STATE_CHANGED, this.#onMatchStateChanged, this);
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_MATCH_COUNTDOWN_TICK, this.#onCountdownTick, this);
@@ -1835,6 +2917,7 @@ export class GameScene extends Phaser.Scene {
       EVENT_BUS.off(CUSTOM_EVENTS.DIALOG_CLOSED, this.#handleDialogClosed, this);
       EVENT_BUS.off(CUSTOM_EVENTS.BOSS_DEFEATED, this.#handleBossDefeated, this);
       EVENT_BUS.off(CUSTOM_EVENTS.DEBUG_SPAWN_FLYING_OBELISK, this.#spawnDebugFlyingObelisk, this);
+      EVENT_BUS.off(CUSTOM_EVENTS.DEBUG_SPAWN_LAVA_PUDDLE, this.#spawnDebugLavaPuddle, this);
       // Match FSM + countdown listener cleanup (LFC-06..09)
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_MATCH_STATE_CHANGED, this.#onMatchStateChanged, this);
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_MATCH_COUNTDOWN_TICK, this.#onCountdownTick, this);
@@ -1874,6 +2957,18 @@ export class GameScene extends Phaser.Scene {
       // the beginning every time you left a dungeon. Destinations that actually want
       // menu music (GameOverScene, MainMenuScene) call playMenu() themselves.
     });
+  }
+
+  /** Debug-panel hook: drop a lava puddle at the current cursor world
+   *  position. Uses the same Puddle.spawnOrMerge path as the molten EarthBolt
+   *  combo so the puddle picks up all PUDDLE_LAVA_* tunables (size, tints,
+   *  bubble cadence, embers, body fraction, etc.). Merges into a nearby
+   *  existing lava puddle if there is one. */
+  #spawnDebugLavaPuddle(): void {
+    if (!this.#controls) return;
+    const x = this.#controls.mouseWorldX;
+    const y = this.#controls.mouseWorldY;
+    Puddle.spawnOrMerge(this, x, y, CONFIG.MOLTEN_BOLT_LAVA_PUDDLE_AMOUNT, undefined, 'lava');
   }
 
   #spawnDebugFlyingObelisk(): void {
@@ -2037,6 +3132,40 @@ export class GameScene extends Phaser.Scene {
     } catch {
       /* offline */
     }
+
+    // ── Pickup-granted special spells (VoidOrb, DarkBolt) ──
+    // Spawn one of each near the player's start so both specials are reachable
+    // for testing. They sit on opposite sides so the "only one collectable at a
+    // time" rule is easy to demonstrate: grab one, then grab the other and the
+    // first one's charges are replaced. Move into per-room Tiled data later.
+    this.#spawnVoidOrbPickup(playerStartPosition.x, playerStartPosition.y);
+    this.#spawnDarkBoltPickup(playerStartPosition.x, playerStartPosition.y);
+  }
+
+  #spawnVoidOrbPickup(playerX: number, playerY: number): void {
+    const pickup = new VoidOrbPickup(
+      this,
+      playerX + CONFIG.VOID_ORB_PICKUP_OFFSET_X,
+      playerY + CONFIG.VOID_ORB_PICKUP_OFFSET_Y,
+    );
+    if (!this.#player) return;
+    // One-shot overlap — collect() destroys the pickup, which removes it from the
+    // arcade physics list, so the callback can't double-fire.
+    this.physics.add.overlap(this.#player, pickup, () => {
+      if (pickup.active) pickup.collect();
+    });
+  }
+
+  #spawnDarkBoltPickup(playerX: number, playerY: number): void {
+    const pickup = new DarkBoltPickup(
+      this,
+      playerX + CONFIG.DARK_BOLT_PICKUP_OFFSET_X,
+      playerY + CONFIG.DARK_BOLT_PICKUP_OFFSET_Y,
+    );
+    if (!this.#player) return;
+    this.physics.add.overlap(this.#player, pickup, () => {
+      if (pickup.active) pickup.collect();
+    });
   }
 
   /**

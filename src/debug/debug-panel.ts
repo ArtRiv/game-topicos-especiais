@@ -1,5 +1,6 @@
 import { RUNTIME_CONFIG } from '../common/runtime-config';
 import { CUSTOM_EVENTS, EVENT_BUS } from '../common/event-bus';
+import { Puddle } from '../game-objects/spells/puddle';
 
 interface ParamDef {
   key: keyof typeof RUNTIME_CONFIG;
@@ -7,6 +8,9 @@ interface ParamDef {
   min: number;
   max: number;
   step: number;
+  /** If true, change immediately refreshes all active lava puddles (re-syncs
+   *  body, restarts FX timers, redraws). Use for any param Puddle reads. */
+  refreshLava?: boolean;
 }
 
 const SECTIONS: { title: string; params: ParamDef[] }[] = [
@@ -34,6 +38,59 @@ const SECTIONS: { title: string; params: ParamDef[] }[] = [
       { key: 'EARTH_FIRE_EXPLOSION_BODY_RADIUS', label: 'Hit Radius (px)', min: 8, max: 256, step: 8 },
     ],
   },
+  {
+    title: 'LAVA PUDDLE — size + body',
+    params: [
+      { key: 'PUDDLE_LAVA_LIFETIME_MS', label: 'Lifetime (ms)', min: 1000, max: 60000, step: 500, refreshLava: true },
+      { key: 'PUDDLE_LAVA_RADIUS_MULTIPLIER', label: 'Overall ×', min: 0.2, max: 3, step: 0.05, refreshLava: true },
+      { key: 'PUDDLE_LAVA_BODY_RADIUS_FRAC', label: 'Hitbox frac', min: 0.2, max: 1.5, step: 0.05, refreshLava: true },
+      { key: 'LAVA_PUDDLE_DAMAGE_PER_TICK', label: 'Damage/tick', min: 0, max: 20, step: 1 },
+      { key: 'LAVA_PUDDLE_TICK_INTERVAL_MS', label: 'Tick (ms)', min: 100, max: 2000, step: 50 },
+    ],
+  },
+  {
+    title: 'LAVA — rim (outer light)',
+    params: [
+      { key: 'PUDDLE_LAVA_RIM_BLOB_COUNT', label: 'Blobs', min: 1, max: 16, step: 1, refreshLava: true },
+      { key: 'PUDDLE_LAVA_RIM_RX_FRAC', label: 'RX frac', min: 0.1, max: 2.0, step: 0.02, refreshLava: true },
+      { key: 'PUDDLE_LAVA_RIM_RY_FRAC', label: 'RY frac', min: 0.1, max: 2.0, step: 0.02, refreshLava: true },
+      { key: 'PUDDLE_LAVA_RIM_SIZE_JITTER', label: 'Size jit', min: 0, max: 1.0, step: 0.01, refreshLava: true },
+      { key: 'PUDDLE_LAVA_RIM_OFFSET_FRAC', label: 'Offset frac', min: 0, max: 1.0, step: 0.02, refreshLava: true },
+      { key: 'PUDDLE_LAVA_RIM_ANGLE_JITTER', label: 'Angle jit (rad)', min: 0, max: 3.14, step: 0.05, refreshLava: true },
+      { key: 'PUDDLE_LAVA_RIM_ELLIPSE_ROTATION_RANGE', label: 'Rotation (rad)', min: 0, max: 3.14, step: 0.05, refreshLava: true },
+      { key: 'PUDDLE_LAVA_RIM_ALPHA', label: 'Alpha', min: 0, max: 1, step: 0.05, refreshLava: true },
+    ],
+  },
+  {
+    title: 'LAVA — core (inner dark)',
+    params: [
+      { key: 'PUDDLE_LAVA_CORE_BLOB_COUNT', label: 'Blobs', min: 1, max: 16, step: 1, refreshLava: true },
+      { key: 'PUDDLE_LAVA_CORE_RX_FRAC', label: 'RX frac', min: 0.1, max: 2.0, step: 0.02, refreshLava: true },
+      { key: 'PUDDLE_LAVA_CORE_RY_FRAC', label: 'RY frac', min: 0.1, max: 2.0, step: 0.02, refreshLava: true },
+      { key: 'PUDDLE_LAVA_CORE_SIZE_JITTER', label: 'Size jit', min: 0, max: 1.0, step: 0.01, refreshLava: true },
+      { key: 'PUDDLE_LAVA_CORE_OFFSET_FRAC', label: 'Offset frac', min: 0, max: 1.0, step: 0.02, refreshLava: true },
+      { key: 'PUDDLE_LAVA_CORE_ANGLE_JITTER', label: 'Angle jit (rad)', min: 0, max: 3.14, step: 0.05, refreshLava: true },
+      { key: 'PUDDLE_LAVA_CORE_ELLIPSE_ROTATION_RANGE', label: 'Rotation (rad)', min: 0, max: 3.14, step: 0.05, refreshLava: true },
+      { key: 'PUDDLE_LAVA_CORE_ALPHA', label: 'Alpha', min: 0, max: 1, step: 0.05, refreshLava: true },
+    ],
+  },
+  {
+    title: 'LAVA — noise & embers',
+    params: [
+      { key: 'PUDDLE_LAVA_NOISE_COUNT', label: 'Noise count', min: 0, max: 40, step: 1, refreshLava: true },
+      { key: 'PUDDLE_LAVA_NOISE_SIZE_MIN_PX', label: 'Noise min px', min: 1, max: 8, step: 1, refreshLava: true },
+      { key: 'PUDDLE_LAVA_NOISE_SIZE_MAX_PX', label: 'Noise max px', min: 1, max: 12, step: 1, refreshLava: true },
+      { key: 'PUDDLE_LAVA_BUBBLE_REDRAW_MS', label: 'Bubble (ms)', min: 0, max: 2000, step: 50, refreshLava: true },
+      { key: 'PUDDLE_LAVA_EMBER_EMIT_INTERVAL_MS', label: 'Ember interval', min: 30, max: 2000, step: 20, refreshLava: true },
+      { key: 'PUDDLE_LAVA_EMBER_PER_EMIT_MIN', label: 'Ember min', min: 0, max: 10, step: 1 },
+      { key: 'PUDDLE_LAVA_EMBER_PER_EMIT_MAX', label: 'Ember max', min: 1, max: 10, step: 1 },
+      { key: 'PUDDLE_LAVA_EMBER_LIFETIME_MS', label: 'Ember life', min: 100, max: 2000, step: 50 },
+      { key: 'PUDDLE_LAVA_EMBER_RISE_PX_MIN', label: 'Rise min px', min: 0, max: 30, step: 1 },
+      { key: 'PUDDLE_LAVA_EMBER_RISE_PX_MAX', label: 'Rise max px', min: 1, max: 40, step: 1 },
+      { key: 'PUDDLE_LAVA_EMBER_SIZE_PX_MIN', label: 'Ember sz min', min: 1, max: 6, step: 1 },
+      { key: 'PUDDLE_LAVA_EMBER_SIZE_PX_MAX', label: 'Ember sz max', min: 1, max: 8, step: 1 },
+    ],
+  },
 ];
 
 const PANEL_CSS = `
@@ -42,6 +99,13 @@ const PANEL_CSS = `
     top: 10px;
     right: 10px;
     width: 280px;
+    height: calc(100vh - 20px);
+    min-width: 220px;
+    min-height: 160px;
+    max-width: 95vw;
+    max-height: calc(100vh - 20px);
+    overflow: auto;
+    resize: both;
     background: rgba(10, 10, 20, 0.92);
     color: #e0e0e0;
     font-family: 'Courier New', monospace;
@@ -150,6 +214,15 @@ export class DebugPanel {
       if (e.key === 'Tab') {
         e.preventDefault();
         this.#panel.classList.toggle('visible');
+        return;
+      }
+      // J — spawn a lava puddle at the current cursor world position.
+      // Ignore when typing in form fields so it doesn't conflict with inputs.
+      if (e.key === 'j' || e.key === 'J') {
+        const target = e.target as HTMLElement | null;
+        const tag = target?.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable) return;
+        EVENT_BUS.emit(CUSTOM_EVENTS.DEBUG_SPAWN_LAVA_PUDDLE);
       }
     });
   }
@@ -166,7 +239,7 @@ export class DebugPanel {
 
     panel.innerHTML = `
       <h2>⚙ DEBUG CONFIG</h2>
-      <div class="hint">Tab — toggle &nbsp;|&nbsp; changes take effect on next cast</div>
+      <div class="hint">Tab — toggle &nbsp;|&nbsp; J — spawn lava at cursor &nbsp;|&nbsp; drag bottom-right to resize</div>
     `;
 
     for (const section of SECTIONS) {
@@ -251,6 +324,10 @@ export class DebugPanel {
       const parsed = parseFloat(slider.value);
       (RUNTIME_CONFIG as Record<string, number | boolean | string>)[param.key] = parsed;
       valueDisplay.textContent = String(parsed);
+      // Lava-related changes: push them into every active lava puddle
+      // immediately so you see the effect while dragging the slider, rather
+      // than waiting for new puddles to spawn.
+      if (param.refreshLava) Puddle.refreshAllLava();
     });
 
     row.appendChild(label);

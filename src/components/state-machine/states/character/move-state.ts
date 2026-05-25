@@ -21,25 +21,23 @@ export class MoveState extends BaseMoveState {
     // Do not process input-driven transitions — they would revert MOVE→IDLE every frame.
     if (controls.isMovementLocked) return;
 
-    // if spell 1 key was pressed, cast spell from slot 0
-    if (controls.isSpell1KeyJustDown) {
+    // Gate slot transitions on slot being non-null. For elements where a slot is owned
+    // by a special handler (EARTH slot 0 → EarthWall, FIRE/EARTH slot 2 → FireBreath/EarthWall),
+    // the slot map is null and we skip the transition entirely — avoids a no-op
+    // CASTING→IDLE bounce, and keeps Phaser's JustDown latches available to the
+    // downstream handlers in GameScene.
+    const slots = SPELL_SLOT_REGISTRY[ElementManager.instance.activeElement];
+    if (controls.isSpell1KeyJustDown && slots?.[0] != null) {
       this._stateMachine.setState(CHARACTER_STATES.CASTING_STATE, 0, controls.mouseWorldX, controls.mouseWorldY);
       return;
     }
 
-    // if spell 2 key was pressed, cast spell from slot 1
-    if (controls.isSpell2KeyJustDown) {
+    if (controls.isSpell2KeyJustDown && slots?.[1] != null) {
       this._stateMachine.setState(CHARACTER_STATES.CASTING_STATE, 1, controls.mouseWorldX, controls.mouseWorldY);
       return;
     }
 
-    // Only read isSpell3KeyJustDown when slot 2 is non-null — Phaser's JustDown is
-    // consumed on first call, and unconditionally reading it would steal the just-down
-    // event from GameScene's FireBreath/EarthWall handlers (key 3 for FIRE / EARTH).
-    if (
-      SPELL_SLOT_REGISTRY[ElementManager.instance.activeElement]?.[2] != null &&
-      controls.isSpell3KeyJustDown
-    ) {
+    if (slots?.[2] != null && controls.isSpell3KeyJustDown) {
       this._stateMachine.setState(CHARACTER_STATES.CASTING_STATE, 2, controls.mouseWorldX, controls.mouseWorldY);
       return;
     }

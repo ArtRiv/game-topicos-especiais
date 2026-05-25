@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { DataManager } from './data-manager.js';
-import { PLAYER_START_MAX_HEALTH, PLAYER_MAX_MANA } from './config.js';
+import { PLAYER_START_MAX_HEALTH, PLAYER_MAX_MANA } from './config';
 import { LEVEL_NAME } from './common.js';
 
 describe('DataManager', () => {

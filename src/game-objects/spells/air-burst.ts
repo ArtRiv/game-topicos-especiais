@@ -9,6 +9,7 @@ import {
   AIR_BURST_MANA_COST,
   AIR_BURST_VFX_OFFSET_PX,
   AIR_BURST_VFX_SCALE,
+  AIR_BURST_VFX_TILT_RAD,
 } from '../../common/config';
 import { registerSpell } from './spell-registry';
 
@@ -59,7 +60,11 @@ export class AirBurst extends Phaser.GameObjects.Zone implements ActiveSpell {
       case DIRECTION.DOWN:
       default:              nx =  0; ny =  1;
     }
-    const angle = Math.atan2(ny, nx);
+    const baseAngle = Math.atan2(ny, nx);
+    // Mirror the local player's leading-edge-up tilt so the trail reads
+    // consistently for remote casters too. Sign flips on dash direction so
+    // "up" stays world-up for both left- and right-dashes.
+    const tilt = (nx >= 0 ? -1 : 1) * AIR_BURST_VFX_TILT_RAD;
     const burst = scene.add.sprite(
       caster.x - nx * AIR_BURST_VFX_OFFSET_PX,
       caster.y - ny * AIR_BURST_VFX_OFFSET_PX,
@@ -68,7 +73,7 @@ export class AirBurst extends Phaser.GameObjects.Zone implements ActiveSpell {
     );
     burst.setOrigin(0.5, 0.5);
     burst.setDepth((caster as unknown as { depth?: number }).depth ?? 3);
-    burst.setRotation(angle);
+    burst.setRotation(baseAngle + tilt);
     burst.setScale(AIR_BURST_VFX_SCALE);
     burst.play(ASSET_KEYS.AIR_BURST);
     burst.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => burst.destroy());
