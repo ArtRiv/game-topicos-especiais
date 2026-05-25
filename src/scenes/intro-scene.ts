@@ -31,15 +31,45 @@ const SONG_START_OFFSET_S = 10.5;
 // Both words appear at hand-picked offsets BEFORE the rapid-beat section.
 // Times are seconds from teste.mp3 start (NOT from scene start).
 // const WORD_HIGH_AT = 12.16;
-const WORD_HIGH_AT = 12.5;
-const WORD_FANTASY_AT = 13.4;
+const WORD_HIGH_AT = 12.55;
+const WORD_FANTASY_AT = 13.35;
 
-// Song-time at which the white flash fires and the scene hands off to
-// MainMenu. Captured via tap-capture (one tap on the moment the visuals
-// should resolve). Decoupled from BEATS[].end so we can tune the transition
-// independently of the last beat's visual fade.
-// const FINISH_AT = 16.881;
-const FINISH_AT = 16.70;
+// How long to hold the final punch pose before kicking off the white flash
+// and scene transition. Smaller = tighter "punch into flash" feel (no awkward
+// static-pose pause). Set to ~0 for instant flash-on-punch, raise to 100+ if
+// you want a beat to read the extreme pose first.
+const POST_LAST_PUNCH_HOLD_MS = 0;
+
+// Three end-of-section "punch" beats — captured via 3-run tap-tempo and
+// averaged. Each fires a multi-target tween on the HIGH/FANTASY title:
+//   - scale       title scale multiplier (1.0 = normal; >1 grows)
+//   - angle       degrees of tilt (signed; alternate signs side-to-side)
+//   - glowFactor  multiplier on the resting glow alpha — drop as scale rises
+//                 so the halo doesn't smear/blur the upscaled glyph
+//   - lineGap     extra px to push HIGH up and FANTASY down (each by this
+//                 amount), preventing the two words overlapping when scaled
+//   - flashAlpha  peak opacity of a brief white flash overlay (0 = none).
+//                 The flash fades back to 0 over ~180ms post-punch.
+// Title transforms ACCUMULATE — final punch leaves the title at its last
+// pose until FINISH_AT wipes everything with the big white flash.
+const PUNCH_BEATS: {
+  time: number;
+  scale: number;
+  angle: number;
+  glowFactor: number;
+  lineGap: number;
+  flashAlpha: number;
+}[] = [
+  { time: 16.341, scale: 1.15, angle: -15, glowFactor: 0.7, lineGap: 4, flashAlpha: 0.15 },
+  { time: 16.478, scale: 1.3, angle: 20, glowFactor: 0.4, lineGap: 10, flashAlpha: 0.25 },
+  { time: 16.61, scale: 1.8, angle: -30, glowFactor: 0.1, lineGap: 22, flashAlpha: 0.4 },
+];
+
+// How long each punch tween takes (ms). Keep below ~120ms so the third punch
+// has time to land before FINISH_AT fires the white flash. ~50ms feels
+// "snappy" while still showing the Back.Out overshoot; drop to 30 for near-
+// instant, raise to 80 for more visible motion.
+const PUNCH_DURATION_MS = 80;
 
 // Music fade-in completes at this SONG-TIME offset. With SONG_START_OFFSET_S=12
 // and this at 12.3, the fade lasts ~300ms after scene start — basically a
@@ -81,7 +111,7 @@ const CLICK_VOLUME = 0.2;
 // 'sine' (pure tone, dull). Square has the most "click" character.
 const CLICK_WAVEFORM: OscillatorType = 'square';
 // Decay length. Shorter = sharper tick; longer = closer to a tone.
-const CLICK_DURATION_MS = 20;
+const CLICK_DURATION_MS = 15;
 
 // Renders "beat N/22" in the top-left while each beat is firing. Helpful with
 // PLAYBACK_RATE < 1.0 so you can see which beat number is currently visible.
@@ -141,7 +171,7 @@ type Beat = { start: number; end: number };
 // Beats 19-22: last 5-run aggregate; user reported reduced confidence past 18
 // because the tail of the section was hardest to tap. Re-capture to refine.
 const BEATS: Beat[] = [
-  { start: 14.731, end: 14.751 }, // 1
+  { start: 14.741, end: 14.751 }, // 1
   { start: 14.85, end: 14.87 }, // 2
   { start: 14.976, end: 14.996 }, // 3
   { start: 15.116, end: 15.136 }, // 4
@@ -188,9 +218,35 @@ const ELEMENT_COLORS = [
 // Flash colors for beats 13..22 — same palette but biased brighter.
 const FLASH_COLORS = [0xffffff, 0xffd84a, 0xff6b3d, 0x4a90e2, 0xa060d0, 0xc8f0a0, 0xb3e0ff];
 
-const FONT_SIZE = 24;
-const LETTER_SPACING = 24; // px between letter origins (~6px visible gap at FONT_SIZE 24)
+const FONT_SIZE = 28;
+const LETTER_SPACING = 28; // px between letter origins (~6px visible gap at FONT_SIZE 28)
 const LINE_GAP = 40; // px between HIGH baseline and FANTASY baseline
+
+// SUPERSAMPLE — render each BitmapText at FONT_SIZE × SUPERSAMPLE and then
+// .setScale(1/SUPERSAMPLE) so the displayed size matches FONT_SIZE but the
+// glyph texture has 2× the resolution. When PUNCH_BEATS scale to 1.8x, the
+// effective per-glyph scale becomes 0.5 × 1.8 = 0.9 — still DOWNSCALING the
+// source texture, which stays crisp. Raise to 3 for even more headroom if
+// you push punch scale above 2.0.
+const SUPERSAMPLE = 2;
+// Convenience: the resting scale every individual BitmapText sits at.
+// Per-letter scale tweens (e.g. fill-pop) MUST end here, not at 1.0, or the
+// letter ends up 2× its intended display size.
+const LETTER_BASE_SCALE = 1 / SUPERSAMPLE;
+
+// ---- BLUR DIAGNOSTIC TOGGLES --------------------------------------------
+// Flip these to isolate what's causing perceived blur on the punch scale-up.
+//
+// ENABLE_GLOW    — 12 additive-blend copies forming the neon halo. The most
+//                  likely culprit: overlapping ADD-blended copies look like
+//                  a soft fuzz when scaled up. Try false first.
+// ENABLE_OUTLINE — 4 white copies offset ±1px building the letter stroke.
+//                  Less likely to read as blur but worth ruling out.
+// If both off and text still looks blurry → it's the BitmapText render
+// itself (font scaling) and we need to bump SUPERSAMPLE to 3.
+const ENABLE_GLOW = false;
+const ENABLE_OUTLINE = true;
+// --------------------------------------------------------------------------
 
 // Single bitmap-font character rendered as 4 offset outline copies (white) +
 // one center fill copy (alpha 0 until "filled"). Lets us re-color individual
@@ -234,6 +290,10 @@ export class IntroScene extends Phaser.Scene {
   #captures: number[] = []; // song-time (s) of each SPACE tap in capture mode
   #captureHud: Phaser.GameObjects.BitmapText | null = null;
   #skipped = false;
+  // Resting Y positions of HIGH / FANTASY containers — used by #punchTitle to
+  // push them apart by `lineGap` and back to base on subsequent punches.
+  #highBaseY = 0;
+  #fantasyBaseY = 0;
 
   constructor() {
     super({ key: SCENE_KEYS.INTRO_SCENE });
@@ -266,8 +326,10 @@ export class IntroScene extends Phaser.Scene {
     MusicManager.instance.stopMenu();
 
     // Pre-build both words as letter containers, alpha 0 until their reveal beat.
-    this.#high = this.#buildWord('HIGH', cx, cy - LINE_GAP / 2);
-    this.#fantasy = this.#buildWord('FANTASY', cx, cy + LINE_GAP / 2);
+    this.#highBaseY = cy - LINE_GAP / 2;
+    this.#fantasyBaseY = cy + LINE_GAP / 2;
+    this.#high = this.#buildWord('HIGH', cx, this.#highBaseY);
+    this.#fantasy = this.#buildWord('FANTASY', cx, this.#fantasyBaseY);
     this.#high.setAlpha(0);
     this.#fantasy.setAlpha(0);
 
@@ -343,8 +405,85 @@ export class IntroScene extends Phaser.Scene {
       });
     });
 
-    // White flash + handoff fires at the captured FINISH_AT song-time.
-    this.time.delayedCall(sceneMs(FINISH_AT), () => this.#finish());
+    // End-of-section "punch" beats — each fires a scale+rotate tween on the
+    // HIGH/FANTASY title containers. Title accumulates state across punches
+    // (no reset between), so the third punch leaves it at the most extreme
+    // pose just before the white flash.
+    PUNCH_BEATS.forEach((punch) => {
+      this.time.delayedCall(sceneMs(punch.time), () => {
+        if (this.#skipped) return;
+        this.#punchTitle(punch);
+      });
+    });
+
+    // White flash + handoff fires right after the last punch lands. Derived
+    // from the last PUNCH_BEATS entry so it stays synced when you tune punch
+    // timings. Adjust POST_LAST_PUNCH_HOLD_MS to tighten or loosen the gap.
+    const lastPunch = PUNCH_BEATS[PUNCH_BEATS.length - 1];
+    const finishAtSongTime = lastPunch.time + (PUNCH_DURATION_MS + POST_LAST_PUNCH_HOLD_MS) / 1000;
+    this.time.delayedCall(sceneMs(finishAtSongTime), () => this.#finish());
+  }
+
+  // Drives a single PUNCH_BEATS row. Tweens (in parallel):
+  //   - title scale + angle on both HIGH and FANTASY containers
+  //   - container Y offset (push the two words apart by `lineGap`)
+  //   - glow alpha down by `glowFactor` (otherwise the halo smears on scale-up)
+  // Plus a one-shot dim white flash at `flashAlpha`. killTweensOf clears any
+  // in-flight punch so back-to-back punches snap cleanly to the new pose.
+  #punchTitle(punch: { scale: number; angle: number; glowFactor: number; lineGap: number; flashAlpha: number }): void {
+    if (this.#high) {
+      this.tweens.killTweensOf(this.#high);
+      this.tweens.add({
+        targets: this.#high,
+        scale: punch.scale,
+        angle: punch.angle,
+        y: this.#highBaseY - punch.lineGap,
+        duration: PUNCH_DURATION_MS,
+        ease: 'Back.Out',
+      });
+    }
+    if (this.#fantasy) {
+      this.tweens.killTweensOf(this.#fantasy);
+      this.tweens.add({
+        targets: this.#fantasy,
+        scale: punch.scale,
+        angle: punch.angle,
+        y: this.#fantasyBaseY + punch.lineGap,
+        duration: PUNCH_DURATION_MS,
+        ease: 'Back.Out',
+      });
+    }
+
+    // Dim the glow halo proportional to glowFactor. Each glow's resting alpha
+    // comes from its ring index in GLOW_RING_ALPHA; we multiply by glowFactor
+    // for a per-ring target.
+    this.#letters.forEach((l) => {
+      l.glows.forEach((g, i) => {
+        const ring = GLOW_OFFSETS[i][2];
+        const baseAlpha = GLOW_RING_ALPHA[ring];
+        this.tweens.killTweensOf(g);
+        this.tweens.add({
+          targets: g,
+          alpha: baseAlpha * punch.glowFactor,
+          duration: PUNCH_DURATION_MS,
+          ease: 'Linear',
+        });
+      });
+    });
+
+    // Dim white flash that fades back to 0 — a softer echo of the big flash
+    // that fires at FINISH_AT. Reuses the existing #flash rect.
+    if (this.#flash && punch.flashAlpha > 0) {
+      this.tweens.killTweensOf(this.#flash);
+      this.#flash.setFillStyle(0xffffff, punch.flashAlpha);
+      this.#flash.setAlpha(1);
+      this.tweens.add({
+        targets: this.#flash,
+        alpha: 0,
+        duration: 180,
+        ease: 'Quad.Out',
+      });
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -353,27 +492,39 @@ export class IntroScene extends Phaser.Scene {
   // -------------------------------------------------------------------------
   #buildWord(text: string, anchorX: number, anchorY: number): Phaser.GameObjects.Container {
     const totalWidth = (text.length - 1) * LETTER_SPACING;
-    const startX = anchorX - totalWidth / 2;
-    const container = this.add.container(0, 0);
+    // Container origin is AT the text's visual center — so setScale/setAngle
+    // rotate around the title's middle instead of the top-left of the screen.
+    // Letters below use coords relative to the container.
+    const container = this.add.container(anchorX, anchorY);
 
     for (let i = 0; i < text.length; i++) {
       const ch = text[i];
-      const x = startX + i * LETTER_SPACING;
-      const y = anchorY;
+      // Relative to container center: letters span -totalWidth/2 .. +totalWidth/2.
+      const x = -totalWidth / 2 + i * LETTER_SPACING;
+      const y = 0;
 
       // Glow ring — added FIRST so it renders below the outlines + fill.
       // Additive blend mode = overlapping copies brighten instead of overdraw,
       // which is what makes the halo read as a neon glow against black.
-      const glows = GLOW_OFFSETS.map(([dx, dy]) => {
-        const t = this.add
-          .bitmapText(x + dx, y + dy, BMFONT_KEY, ch, FONT_SIZE)
-          .setOrigin(0.5)
-          .setTint(0xffffff)
-          .setAlpha(0)
-          .setBlendMode(Phaser.BlendModes.ADD);
-        container.add(t);
-        return t;
-      });
+      //
+      // Each BitmapText is rendered at FONT_SIZE × SUPERSAMPLE then scaled
+      // down by 1/SUPERSAMPLE so the displayed size matches FONT_SIZE while
+      // the underlying glyph texture has supersample-x more resolution. This
+      // is the crispness fix for the PUNCH_BEATS scale-ups.
+      const renderSize = FONT_SIZE * SUPERSAMPLE;
+      const glows: Phaser.GameObjects.BitmapText[] = ENABLE_GLOW
+        ? GLOW_OFFSETS.map(([dx, dy]) => {
+            const t = this.add
+              .bitmapText(x + dx, y + dy, BMFONT_KEY, ch, renderSize)
+              .setOrigin(0.5)
+              .setScale(LETTER_BASE_SCALE)
+              .setTint(0xffffff)
+              .setAlpha(0)
+              .setBlendMode(Phaser.BlendModes.ADD);
+            container.add(t);
+            return t;
+          })
+        : [];
 
       // 4 outline copies, all white, offset ±1px on each axis.
       const offsets: [number, number][] = [
@@ -382,17 +533,25 @@ export class IntroScene extends Phaser.Scene {
         [0, -1],
         [0, 1],
       ];
-      const outlines = offsets.map(([dx, dy]) => {
-        const t = this.add
-          .bitmapText(x + dx, y + dy, BMFONT_KEY, ch, FONT_SIZE)
-          .setOrigin(0.5)
-          .setTint(0xffffff);
-        container.add(t);
-        return t;
-      });
+      const outlines: Phaser.GameObjects.BitmapText[] = ENABLE_OUTLINE
+        ? offsets.map(([dx, dy]) => {
+            const t = this.add
+              .bitmapText(x + dx, y + dy, BMFONT_KEY, ch, renderSize)
+              .setOrigin(0.5)
+              .setScale(LETTER_BASE_SCALE)
+              .setTint(0xffffff);
+            container.add(t);
+            return t;
+          })
+        : [];
 
       // Fill copy on top, hidden initially (alpha 0). Tint set on fill beat.
-      const fill = this.add.bitmapText(x, y, BMFONT_KEY, ch, FONT_SIZE).setOrigin(0.5).setTint(0xffffff).setAlpha(0);
+      const fill = this.add
+        .bitmapText(x, y, BMFONT_KEY, ch, renderSize)
+        .setOrigin(0.5)
+        .setScale(LETTER_BASE_SCALE)
+        .setTint(0xffffff)
+        .setAlpha(0);
       container.add(fill);
 
       this.#letters.push({ glows, outlines, fill, filled: false });
@@ -443,11 +602,14 @@ export class IntroScene extends Phaser.Scene {
       });
     });
 
-    // Scale-pop on the fill glyph — sells the impact of the beat.
-    target.fill.setScale(1.4);
+    // Scale-pop on the fill glyph — sells the impact of the beat. Both the
+    // starting scale and the tween target are MULTIPLIED by LETTER_BASE_SCALE
+    // because the BitmapText sits at 1/SUPERSAMPLE natural scale (crispness
+    // trick). Tweening to plain 1.0 would leave the letter 2× too big.
+    target.fill.setScale(1.4 * LETTER_BASE_SCALE);
     this.tweens.add({
       targets: target.fill,
-      scale: 1,
+      scale: LETTER_BASE_SCALE,
       duration: 90,
       ease: 'Quad.Out',
     });
