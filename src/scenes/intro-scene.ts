@@ -22,36 +22,13 @@ import { MusicManager } from '../common/music-manager';
 
 const BMFONT_KEY = 'press_start_2p';
 
-// Skip into the song so the player doesn't sit through 12s of intro before
-// anything happens. The song is seeked to SONG_START_OFFSET_S on play, and all
-// event timings (WORD_*_AT, BEATS) are SONG-TIME — we subtract the offset
-// when scheduling. Tune this one constant to shift the whole intro forward.
-const SONG_START_OFFSET_S = 10.5;
+const SONG_START_OFFSET_S = 11.0;
 
-// Both words appear at hand-picked offsets BEFORE the rapid-beat section.
-// Times are seconds from teste.mp3 start (NOT from scene start).
-// const WORD_HIGH_AT = 12.16;
 const WORD_HIGH_AT = 12.55;
 const WORD_FANTASY_AT = 13.35;
 
-// How long to hold the final punch pose before kicking off the white flash
-// and scene transition. Smaller = tighter "punch into flash" feel (no awkward
-// static-pose pause). Set to ~0 for instant flash-on-punch, raise to 100+ if
-// you want a beat to read the extreme pose first.
 const POST_LAST_PUNCH_HOLD_MS = 0;
 
-// Three end-of-section "punch" beats — captured via 3-run tap-tempo and
-// averaged. Each fires a multi-target tween on the HIGH/FANTASY title:
-//   - scale       title scale multiplier (1.0 = normal; >1 grows)
-//   - angle       degrees of tilt (signed; alternate signs side-to-side)
-//   - glowFactor  multiplier on the resting glow alpha — drop as scale rises
-//                 so the halo doesn't smear/blur the upscaled glyph
-//   - lineGap     extra px to push HIGH up and FANTASY down (each by this
-//                 amount), preventing the two words overlapping when scaled
-//   - flashAlpha  peak opacity of a brief white flash overlay (0 = none).
-//                 The flash fades back to 0 over ~180ms post-punch.
-// Title transforms ACCUMULATE — final punch leaves the title at its last
-// pose until FINISH_AT wipes everything with the big white flash.
 const PUNCH_BEATS: {
   time: number;
   scale: number;
@@ -61,117 +38,59 @@ const PUNCH_BEATS: {
   flashAlpha: number;
 }[] = [
   { time: 16.341, scale: 1.15, angle: -15, glowFactor: 0.7, lineGap: 4, flashAlpha: 0.15 },
-  { time: 16.478, scale: 1.3, angle: 20, glowFactor: 0.4, lineGap: 10, flashAlpha: 0.25 },
-  { time: 16.61, scale: 1.8, angle: -30, glowFactor: 0.1, lineGap: 22, flashAlpha: 0.4 },
+  { time: 16.463, scale: 1.3, angle: 20, glowFactor: 0.4, lineGap: 10, flashAlpha: 0.25 },
+  { time: 16.597, scale: 1.8, angle: -30, glowFactor: 0.1, lineGap: 22, flashAlpha: 0.4 },
 ];
 
-// How long each punch tween takes (ms). Keep below ~120ms so the third punch
-// has time to land before FINISH_AT fires the white flash. ~50ms feels
-// "snappy" while still showing the Back.Out overshoot; drop to 30 for near-
-// instant, raise to 80 for more visible motion.
 const PUNCH_DURATION_MS = 80;
 
-// Music fade-in completes at this SONG-TIME offset. With SONG_START_OFFSET_S=12
-// and this at 12.3, the fade lasts ~300ms after scene start — basically a
-// quick volume ramp instead of a 12s build.
+// scaleBump and angleBump are ADDED to the last punch's resting pose (currently
+// scale 1.8, angle -30) at the pulse peak, then yoyo back. angleBump is signed —
+// positive rotates one way, negative the other. Set angleBump 0 to keep angle
+// locked while only the scale pulses.
+const PULSE_BEATS: { time: number; scaleBump: number; angleBump: number }[] = [
+  { time: 16.735, scaleBump: 0.15, angleBump: 40 },
+  { time: 16.79, scaleBump: 0.2, angleBump: 20 },
+];
+const PULSE_DURATION_MS = 15;
+// Angle one-way duration. Angle does NOT yoyo (matches punch behavior — each
+// pulse leaves the title at its new tilt until the next pulse/punch/flash
+// overrides). Make consecutive pulses with different angleBump signs if you
+// want a side-to-side wobble.
+const PULSE_ANGLE_DURATION_MS = 8;
+
+// Times (song-time s) that should fire an extra quick white flash on top of
+// whatever fill/flash logic those beats already run. Used to make the rapid
+// 4-beat stutter section read as a single bright "stab" rather than the
+// default fill-then-colored-flash sequence.
+const STUTTER_FLASH_BEATS: number[] = [15.923, 15.961, 15.993, 16.027];
+const STUTTER_FLASH_ALPHA = 0.45;
+const STUTTER_FLASH_FADE_MS = 70;
+
 const MUSIC_FADE_END_AT = 12.3;
 const MUSIC_VOLUME = 0.3;
 
-// ---- MANUAL TUNING KNOBS -------------------------------------------------
-// Uniform nudge applied to EVERY scheduled event (words + 22 beats). Positive
-// = events fire LATER (push back); negative = events fire EARLIER (pull
-// forward). Use this when the whole animation drifts in one direction. If
-// only some beats feel off, edit those individual rows in BEATS below.
 const GLOBAL_BEAT_OFFSET_MS = 0;
 
-// Logs "[intro] beat N @ scene-time Xms (song-time Ys)" on every fire when
-// true. Useful for A/B comparing felt-timing vs. configured-timing. Leave
-// false in shipped builds.
 const DEBUG_LOG_BEATS = false;
 
-// CALIBRATION RATE — slows the song AND all event scheduling proportionally.
-// 1.0 = ship speed. 0.5 = half speed (everything plays for 2× as long).
-// 0.25 = quarter speed (4× as long). Lets you HEAR + SEE each fast beat clearly
-// when tuning. Set back to 1.0 before shipping.
 const PLAYBACK_RATE = 1.0;
 
-// Plays a short synthesized "tick" on every scheduled beat. Originally a
-// calibration aid (compare clicks vs. music to spot drift), but it doubles
-// as an audio sweetener that layers on top of the song. The three knobs
-// below tune its character.
 const BEAT_CLICK = true;
-// Pitch in Hz. Lower (~600-1200) = thumpy/kick-drum. Mid (1500-2500) = snare
-// or rim-shot. High (3000-5000) = laser/zap. Default 2400 = bright tick.
 const CLICK_FREQ_HZ = 2400;
-// Peak volume of the click (linear gain, 0..1). The click decays exponentially
-// from this value to silence over CLICK_DURATION_MS, so the perceived
-// loudness is roughly half of this number.
 const CLICK_VOLUME = 0.2;
-// Wave shape — 'square' (harsh, retro), 'sawtooth' (buzzy), 'triangle' (soft),
-// 'sine' (pure tone, dull). Square has the most "click" character.
 const CLICK_WAVEFORM: OscillatorType = 'square';
-// Decay length. Shorter = sharper tick; longer = closer to a tone.
 const CLICK_DURATION_MS = 15;
 
-// Renders "beat N/22" in the top-left while each beat is firing. Helpful with
-// PLAYBACK_RATE < 1.0 so you can see which beat number is currently visible.
 const SHOW_BEAT_COUNTER = false;
 
-// ---- TAP-CAPTURE MODE ----------------------------------------------------
-// When CAPTURE_MODE = true, the auto-scheduled animation is disabled. Music
-// plays and you tap SPACE on each beat you hear. Each tap records the CURRENT
-// song-time (in real song-seconds, independent of PLAYBACK_RATE). ENTER ends
-// the run, appends it to localStorage under CAPTURE_STORAGE_KEY, and dumps
-// both the current run and the per-index AVERAGE across all stored runs to
-// the browser console — ready to paste into BEATS[]. BACKSPACE wipes saved
-// runs to start over.
-//
-// Workflow:
-//   1. Set CAPTURE_MODE = true, PLAYBACK_RATE = 0.5 (or 1.0 if you can manage).
-//   2. Run the intro, tap SPACE on each beat. ENTER to finish.
-//   3. Repeat 3-5 times (each refresh of the intro = one new run).
-//   4. Read the averaged BEATS array from the console, paste into BEATS[].
-//   5. BACKSPACE clears storage if you want to redo.
-//   6. Set CAPTURE_MODE = false to test the result.
 const CAPTURE_MODE = false;
 const CAPTURE_STORAGE_KEY = 'intro-beat-capture-runs';
-// --------------------------------------------------------------------------
 
-// 22 beat windows, each {start, end} in real-song seconds. Values derived from
-// timing.txt (slowed-time → real-time via × playback-rate). Keep both numbers
-// — duration matters for "how long the fill flash lingers".
 type Beat = { start: number; end: number };
-// const BEATS: Beat[] = [
-//   { start: 14.56, end: 14.585 }, // 1   — 0.5x source
-//   { start: 14.6, end: 14.625 }, // 2
-//   { start: 14.64, end: 14.665 }, // 3   (extrapolated: "same duration")
-//   { start: 15.0325, end: 15.0475 }, // 4
-//   { start: 15.05, end: 15.065 }, // 5
-//   { start: 15.0675, end: 15.0825 }, // 6
-//   { start: 15.085, end: 15.1 }, // 7
-//   { start: 15.115, end: 15.14 }, // 8
-//   { start: 15.505, end: 15.53 }, // 9
-//   { start: 15.545, end: 15.76 }, // 10  — 0.25x source
-//   { start: 15.76, end: 15.906 }, // 11
-//   { start: 15.906, end: 15.914 }, // 12  — 0.10x source (stutter)
-//   { start: 15.916, end: 15.924 }, // 13
-//   { start: 15.926, end: 16.003 }, // 14
-//   { start: 16.006, end: 16.014 }, // 15
-//   { start: 16.016, end: 16.109 }, // 16
-//   { start: 16.127, end: 16.21 }, // 17
-//   { start: 16.217, end: 16.226 }, // 18
-//   { start: 16.308, end: 16.4 }, // 19
-//   { start: 16.419, end: 16.511 }, // 20
-//   { start: 16.529, end: 16.725 }, // 21
-//   { start: 16.8, end: 16.816 }, // 22
-// ];
 
-// Beats 1-18: tap-tempo averages across 5 capture runs (PLAYBACK_RATE 0.10).
-// Spread across runs was ≤±10ms per beat — high confidence.
-// Beats 19-22: last 5-run aggregate; user reported reduced confidence past 18
-// because the tail of the section was hardest to tap. Re-capture to refine.
 const BEATS: Beat[] = [
-  { start: 14.741, end: 14.751 }, // 1
+  { start: 14.730, end: 14.751 }, // 1
   { start: 14.85, end: 14.87 }, // 2
   { start: 14.976, end: 14.996 }, // 3
   { start: 15.116, end: 15.136 }, // 4
@@ -186,25 +105,19 @@ const BEATS: Beat[] = [
   { start: 15.961, end: 15.981 }, // 13
   { start: 15.993, end: 16.013 }, // 14
   { start: 16.027, end: 16.047 }, // 15
-  { start: 16.074, end: 16.094 }, // 16
-  { start: 16.195, end: 16.215 }, // 17
+  { start: 16.065, end: 16.085 }, // 16  (-9ms from 16.074, retuned via 8-run tap avg)
+  { start: 16.205, end: 16.225 }, // 17  (+10ms from 16.195, retuned via 8-run tap avg)
   { start: 16.269, end: 16.289 }, // 18
-  // --- below: lower confidence, re-tap if drift is audible ---
   { start: 16.331, end: 16.351 }, // 19
   { start: 16.467, end: 16.487 }, // 20
   { start: 16.603, end: 16.623 }, // 21
-  { start: 16.717, end: 16.737 }, // 22
+  // Beat 22 removed — its audio cue coincides with Pulse 1 (16.735), which
+  // already triggers a tween + click on that beat. Keeping both would have
+  // double-fired ~18ms apart for the same audible hit.
 ];
 
-// 11 letters in "HIGHFANTASY" → 12 fill beats means one letter gets filled
-// twice (last fill brightens to white). We use beats 0..11 for fills and
-// 12..21 for the shake/flash chain.
 const FILL_BEAT_COUNT = 12;
 
-// Neon element palette — saturated, high-luminance, picked to look "lit" when
-// blended additively against black. Dull/muddy colors (browns, dusty pastels)
-// were swapped out; everything here pushes one channel near max so the additive
-// glow layer keeps its color identity instead of washing to white.
 const ELEMENT_COLORS = [
   0xff2a1f, // fire — neon red-orange
   0xffaa00, // earth/lava — vivid amber (brown looked dead)
@@ -215,54 +128,26 @@ const ELEMENT_COLORS = [
   0xff40d0, // darkness — magenta (pure neon purple shifts pink in additive)
 ];
 
-// Flash colors for beats 13..22 — same palette but biased brighter.
 const FLASH_COLORS = [0xffffff, 0xffd84a, 0xff6b3d, 0x4a90e2, 0xa060d0, 0xc8f0a0, 0xb3e0ff];
 
 const FONT_SIZE = 28;
 const LETTER_SPACING = 28; // px between letter origins (~6px visible gap at FONT_SIZE 28)
 const LINE_GAP = 40; // px between HIGH baseline and FANTASY baseline
 
-// SUPERSAMPLE — render each BitmapText at FONT_SIZE × SUPERSAMPLE and then
-// .setScale(1/SUPERSAMPLE) so the displayed size matches FONT_SIZE but the
-// glyph texture has 2× the resolution. When PUNCH_BEATS scale to 1.8x, the
-// effective per-glyph scale becomes 0.5 × 1.8 = 0.9 — still DOWNSCALING the
-// source texture, which stays crisp. Raise to 3 for even more headroom if
-// you push punch scale above 2.0.
 const SUPERSAMPLE = 2;
-// Convenience: the resting scale every individual BitmapText sits at.
-// Per-letter scale tweens (e.g. fill-pop) MUST end here, not at 1.0, or the
-// letter ends up 2× its intended display size.
 const LETTER_BASE_SCALE = 1 / SUPERSAMPLE;
 
-// ---- BLUR DIAGNOSTIC TOGGLES --------------------------------------------
-// Flip these to isolate what's causing perceived blur on the punch scale-up.
-//
-// ENABLE_GLOW    — 12 additive-blend copies forming the neon halo. The most
-//                  likely culprit: overlapping ADD-blended copies look like
-//                  a soft fuzz when scaled up. Try false first.
-// ENABLE_OUTLINE — 4 white copies offset ±1px building the letter stroke.
-//                  Less likely to read as blur but worth ruling out.
-// If both off and text still looks blurry → it's the BitmapText render
-// itself (font scaling) and we need to bump SUPERSAMPLE to 3.
 const ENABLE_GLOW = false;
 const ENABLE_OUTLINE = true;
 // --------------------------------------------------------------------------
 
-// Single bitmap-font character rendered as 4 offset outline copies (white) +
-// one center fill copy (alpha 0 until "filled"). Lets us re-color individual
-// letters on each beat without rebuilding text objects.
 type Letter = {
-  // Wide additive-blend copies, alpha 0 until fill. Recolored with the fill
-  // color on the letter's fill beat to produce a neon halo around the glyph.
   glows: Phaser.GameObjects.BitmapText[];
   outlines: Phaser.GameObjects.BitmapText[]; // 4 copies, offset ±1px (white)
   fill: Phaser.GameObjects.BitmapText; // center, hidden initially
   filled: boolean;
 };
 
-// Glow ring offsets — three concentric rings at radii 2, 2.8, and 3 pixels.
-// Each entry: [dx, dy, ringIndex] where ringIndex 0=inner, 2=outer (used to
-// pick the per-ring resting alpha so the outer ring fades softer).
 const GLOW_OFFSETS: readonly (readonly [number, number, number])[] = [
   [-2, 0, 0],
   [2, 0, 0],
@@ -290,8 +175,6 @@ export class IntroScene extends Phaser.Scene {
   #captures: number[] = []; // song-time (s) of each SPACE tap in capture mode
   #captureHud: Phaser.GameObjects.BitmapText | null = null;
   #skipped = false;
-  // Resting Y positions of HIGH / FANTASY containers — used by #punchTitle to
-  // push them apart by `lineGap` and back to base on subsequent punches.
   #highBaseY = 0;
   #fantasyBaseY = 0;
 
@@ -310,6 +193,9 @@ export class IntroScene extends Phaser.Scene {
         'assets/fonts/Press_Start_2P/press_start_white-2.png',
         'assets/fonts/Press_Start_2P/press_start_white-2.xml',
       );
+    }
+    if (!this.cache.video.has(ASSET_KEYS.MENU_BG_VIDEO)) {
+      this.load.video(ASSET_KEYS.MENU_BG_VIDEO, 'assets/ui/landscape.mp4', true);
     }
   }
 
@@ -416,11 +302,40 @@ export class IntroScene extends Phaser.Scene {
       });
     });
 
-    // White flash + handoff fires right after the last punch lands. Derived
-    // from the last PUNCH_BEATS entry so it stays synced when you tune punch
-    // timings. Adjust POST_LAST_PUNCH_HOLD_MS to tighten or loosen the gap.
+    // Pulse beats — quick yoyo scale bumps on top of the last punch's pose.
+    PULSE_BEATS.forEach((pulse) => {
+      this.time.delayedCall(sceneMs(pulse.time), () => {
+        if (this.#skipped) return;
+        this.#pulseTitle(pulse.scaleBump, pulse.angleBump);
+      });
+    });
+
+    // Stutter flashes — extra quick white overlay flashes at the 4 rapid
+    // beats. Layered ON TOP of whatever fill/flash that beat already does,
+    // so the section reads as a single white stab instead of fill→colors.
+    STUTTER_FLASH_BEATS.forEach((time) => {
+      this.time.delayedCall(sceneMs(time), () => {
+        if (this.#skipped || !this.#flash) return;
+        this.tweens.killTweensOf(this.#flash);
+        this.#flash.setFillStyle(0xffffff, STUTTER_FLASH_ALPHA);
+        this.#flash.setAlpha(1);
+        this.tweens.add({
+          targets: this.#flash,
+          alpha: 0,
+          duration: STUTTER_FLASH_FADE_MS,
+          ease: 'Quad.Out',
+        });
+      });
+    });
+
+    // White flash + handoff fires right after the LAST title event (punch or
+    // pulse, whichever ends later). Derived so retiming either array
+    // automatically retimes the flash.
     const lastPunch = PUNCH_BEATS[PUNCH_BEATS.length - 1];
-    const finishAtSongTime = lastPunch.time + (PUNCH_DURATION_MS + POST_LAST_PUNCH_HOLD_MS) / 1000;
+    const lastPunchEnd = lastPunch.time + PUNCH_DURATION_MS / 1000;
+    const lastPulse = PULSE_BEATS[PULSE_BEATS.length - 1];
+    const lastPulseEnd = lastPulse ? lastPulse.time + (PULSE_DURATION_MS * 2) / 1000 : 0;
+    const finishAtSongTime = Math.max(lastPunchEnd, lastPulseEnd) + POST_LAST_PUNCH_HOLD_MS / 1000;
     this.time.delayedCall(sceneMs(finishAtSongTime), () => this.#finish());
   }
 
@@ -484,6 +399,40 @@ export class IntroScene extends Phaser.Scene {
         ease: 'Quad.Out',
       });
     }
+  }
+
+  // Quick yoyo bump on top of the last punch's pose. SCALE uses a smooth
+  // sine-style breath; ANGLE uses a snappier short-duration tween (separate
+  // knob: PULSE_ANGLE_DURATION_MS) so the rotation jolts instead of gliding.
+  // Both yoyo back to the held pose. killTweensOf clears prior pulse tweens
+  // so back-to-back pulses can interrupt cleanly.
+  #pulseTitle(scaleBump: number, angleBump: number): void {
+    if (BEAT_CLICK) this.#playClick();
+    const lastPunch = PUNCH_BEATS[PUNCH_BEATS.length - 1];
+    const baseScale = lastPunch.scale;
+    const baseAngle = lastPunch.angle;
+    [this.#high, this.#fantasy].forEach((word) => {
+      if (!word) return;
+      this.tweens.killTweensOf(word);
+      // Smooth scale yoyo.
+      this.tweens.add({
+        targets: word,
+        scale: baseScale + scaleBump,
+        duration: PULSE_DURATION_MS,
+        ease: 'Quad.InOut',
+        yoyo: true,
+      });
+      // Snappy angle SNAP — no yoyo. Punches don't yoyo; pulses now match
+      // that behavior so the angle holds until the next pulse/punch/flash
+      // overrides. Separate tween so its duration/ease can diverge from the
+      // scale tween's smooth breath.
+      this.tweens.add({
+        targets: word,
+        angle: baseAngle + angleBump,
+        duration: PULSE_ANGLE_DURATION_MS,
+        ease: 'Expo.Out',
+      });
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -699,7 +648,7 @@ export class IntroScene extends Phaser.Scene {
     this.#captureHud = this.add.bitmapText(4, 18, BMFONT_KEY, 'taps: 0', 8).setTint(0xffffff).setDepth(200);
 
     const kb = this.input.keyboard!;
-    kb.on('keydown-SPACE', this.#tapBeat, this);
+    kb.on('keydown-Z', this.#tapBeat, this);
     kb.on('keydown-ENTER', this.#saveCaptureRun, this);
     kb.on('keydown-BACKSPACE', this.#clearCaptureStorage, this);
   }
