@@ -244,15 +244,17 @@ export class LobbyScene extends Phaser.Scene {
     this.#viewObjects = [...this.#waitingRoomObjects];
 
     // Re-add #statusText for error/info feedback (lobby:error display)
-    this.#statusText = this.#crispText(cx, cy + 80, '', FONT_SMALL).setOrigin(0.5);
+    // Moved above the player list (was at cy+80=240, which overlapped the list).
+    this.#statusText = this.#crispText(cx, 86, '', FONT_SMALL).setOrigin(0.5);
     this.#viewObjects.push(this.#statusText);
 
     this.#renderConfigBlock(lobby);
     this.#renderPlayerList(lobby.players);
 
     // Show START button only for the host (derived from lobby.hostPlayerId)
+    // Anchored at the bottom of the canvas, below the player-list viewport (296).
     if (this.#isHost) {
-      const startBtn = this.#createButton(cx, cy + 120, 'START GAME', () => {
+      const startBtn = this.#createButton(cx, 304, 'START GAME', () => {
         NetworkManager.getInstance().sendLobbyStart();
       });
       this.#viewObjects.push(startBtn);
@@ -402,26 +404,59 @@ export class LobbyScene extends Phaser.Scene {
   };
 
   #playerListObjects: Phaser.GameObjects.GameObject[] = [];
+  // Scrollable viewport for the player list — used when player count exceeds the
+  // visible row capacity. The container holds every row at its natural Y position;
+  // we adjust container.y to scroll, and a geometry mask clips children to the viewport.
+  #playerListContainer: Phaser.GameObjects.Container | null = null;
+  #playerListMaskGfx: Phaser.GameObjects.Graphics | null = null;
+  #playerListScrollY = 0;
+  #playerListMaxScroll = 0;
+  #playerListWheelHandler: ((pointer: Phaser.Input.Pointer, gameObjects: unknown[], deltaX: number, deltaY: number) => void) | null = null;
+  static readonly #ROW_HEIGHT = 24;          // tighter than the old 36 to fit more rows in viewport
+  static readonly #PLAYER_LIST_TOP = 230;    // viewport top (just below map-cards row at y=220)
+  static readonly #PLAYER_LIST_BOTTOM = 290; // viewport bottom (above Start button at y=304)
 
   #renderPlayerList(players: PlayerInfo[]): void {
+    // Tear down prior render so re-render on lobby:updated is clean.
     this.#playerListObjects.forEach((o) => o.destroy());
     this.#playerListObjects = [];
+    if (this.#playerListContainer) {
+      this.#playerListContainer.destroy(true);
+      this.#playerListContainer = null;
+    }
+    if (this.#playerListMaskGfx) {
+      this.#playerListMaskGfx.destroy();
+      this.#playerListMaskGfx = null;
+    }
+    if (this.#playerListWheelHandler) {
+      this.input.off('wheel', this.#playerListWheelHandler);
+      this.#playerListWheelHandler = null;
+    }
+    this.#playerListScrollY = 0;
 
     const cx = this.cameras.main.centerX;
-    const baseY = 248;
     const TINTS = [0xffffff, 0x00aaff, 0xff4444, 0x44ff44, 0xff44ff];
+    const viewportTop = LobbyScene.#PLAYER_LIST_TOP;
+    const viewportBottom = LobbyScene.#PLAYER_LIST_BOTTOM;
+    const viewportHeight = viewportBottom - viewportTop;
+    const rowH = LobbyScene.#ROW_HEIGHT;
+
+    // Container at the viewport's natural origin; rows are placed at local y = i * rowH
+    // so container.y acts as the scroll offset.
+    this.#playerListContainer = this.add.container(0, viewportTop);
+    this.#playerListObjects.push(this.#playerListContainer);
 
     players.forEach((player, i) => {
-      const rowY = baseY + i * 36;
+      const rowY = i * rowH;
       const tint = TINTS[i % TINTS.length];
-      const dot = this.add.rectangle(cx - 150, rowY + 8, 12, 12, tint);
+      const dot = this.add.rectangle(cx - 150, rowY + 8, 10, 10, tint);
       const name = this.#crispText(cx - 130, rowY, player.name, FONT_SMALL_WHITE);
-      const role = player.id === this.#currentLobby?.hostPlayerId
-        ? this.#crispText(cx + 30, rowY, '(HOST)', FONT_SMALL)
-        : null;
+      this.#playerListContainer!.add([dot, name]);
 
-      this.#playerListObjects.push(dot, name);
-      if (role) this.#playerListObjects.push(role);
+      if (player.id === this.#currentLobby?.hostPlayerId) {
+        const role = this.#crispText(cx + 30, rowY, '(HOST)', FONT_SMALL);
+        this.#playerListContainer!.add(role);
+      }
 
       if (this.#isHost) {
         // Host sees clickable Team A / Team B toggle buttons per row
@@ -436,27 +471,81 @@ export class LobbyScene extends Phaser.Scene {
           nm.sendLobbyAssignTeam(player.id, 1);
         });
 
-        // Active team = bright; inactive = dimmed; unassigned = both buttons visible at default
         const bgA = (btnA as Phaser.GameObjects.Container).getAt(0) as Phaser.GameObjects.Rectangle;
         const bgB = (btnB as Phaser.GameObjects.Container).getAt(0) as Phaser.GameObjects.Rectangle;
         if (isTeamA) {
-          bgA.setFillStyle(0x0066dd);  // active Team A — bright blue
+          bgA.setFillStyle(0x0066dd);
           bgB.setFillStyle(BTN_DISABLED);
         } else if (isTeamB) {
           bgA.setFillStyle(BTN_DISABLED);
-          bgB.setFillStyle(0xcc2200);  // active Team B — bright red
+          bgB.setFillStyle(0xcc2200);
         }
-        // unassigned: both keep their default BTN_COLOR so they're clearly visible
 
-        this.#playerListObjects.push(btnA, btnB);
+        this.#playerListContainer!.add([btnA, btnB]);
       } else {
-        // Non-host sees a read-only team badge
         const teamLabel = player.team === 0 ? 'TEAM A' : player.team === 1 ? 'TEAM B' : 'NO TEAM';
         const teamColor = player.team === 0 ? 0x44aaff : player.team === 1 ? 0xff5533 : 0xaaaaaa;
         const badge = this.#crispText(cx + 80, rowY, teamLabel, { ...FONT_SMALL, tint: teamColor });
-        this.#playerListObjects.push(badge);
+        this.#playerListContainer!.add(badge);
       }
     });
+
+    // Compute the total content height and the max scroll allowed.
+    const contentHeight = players.length * rowH;
+    this.#playerListMaxScroll = Math.max(0, contentHeight - viewportHeight);
+
+    // Geometry mask that clips the container to the viewport rectangle. The mask gfx
+    // is drawn at screen coords (it's NOT added to the container — Phaser uses it as a
+    // stencil only). Hidden via setVisible(false) so the mask shape itself doesn't render.
+    this.#playerListMaskGfx = this.add.graphics();
+    this.#playerListMaskGfx.fillStyle(0xffffff, 1);
+    this.#playerListMaskGfx.fillRect(0, viewportTop, this.cameras.main.width, viewportHeight);
+    this.#playerListMaskGfx.setVisible(false);
+    this.#playerListContainer.setMask(this.#playerListMaskGfx.createGeometryMask());
+
+    // Wire mousewheel scrolling — only enable if content actually overflows.
+    if (this.#playerListMaxScroll > 0) {
+      this.#playerListWheelHandler = (_p, _gos, _dx, deltaY) => {
+        // Snap scroll by one row at a time to keep rows aligned with the viewport.
+        const dir = deltaY > 0 ? 1 : -1;
+        this.#setPlayerListScroll(this.#playerListScrollY + dir * rowH);
+      };
+      this.input.on('wheel', this.#playerListWheelHandler);
+
+      // Visual hint: a small scrollbar at the right edge of the viewport.
+      this.#drawPlayerListScrollbar(viewportTop, viewportHeight, contentHeight);
+    }
+  }
+
+  #setPlayerListScroll(targetY: number): void {
+    if (!this.#playerListContainer) return;
+    const clamped = Phaser.Math.Clamp(targetY, 0, this.#playerListMaxScroll);
+    this.#playerListScrollY = clamped;
+    this.#playerListContainer.y = LobbyScene.#PLAYER_LIST_TOP - clamped;
+  }
+
+  #drawPlayerListScrollbar(top: number, viewportH: number, contentH: number): void {
+    const cw = this.cameras.main.width;
+    const trackX = cw - 8;
+    const trackW = 3;
+    // Track
+    const track = this.add.rectangle(trackX, top, trackW, viewportH, 0x222222).setOrigin(0, 0);
+    // Thumb height proportional to viewport / content ratio
+    const thumbH = Math.max(8, Math.round(viewportH * (viewportH / contentH)));
+    const thumb = this.add.rectangle(trackX, top, trackW, thumbH, 0xffdd55).setOrigin(0, 0);
+    this.#playerListObjects.push(track, thumb);
+    // Reposition thumb whenever scroll changes — quick hack: tween thumb on a 60Hz follow
+    // since #setPlayerListScroll is called sparsely. Use Phaser's update event.
+    const updateThumb = () => {
+      if (!thumb.active) return;
+      const ratio = this.#playerListMaxScroll === 0
+        ? 0
+        : this.#playerListScrollY / this.#playerListMaxScroll;
+      thumb.y = top + ratio * (viewportH - thumbH);
+    };
+    this.events.on(Phaser.Scenes.Events.UPDATE, updateThumb);
+    // Cleanup: when this scrollbar is destroyed (next #renderPlayerList run), stop the update.
+    track.once('destroy', () => this.events.off(Phaser.Scenes.Events.UPDATE, updateThumb));
   }
 
   // BitmapText draws each glyph as a sprite from the pre-rasterized atlas

@@ -36,6 +36,10 @@ export const CUSTOM_EVENTS = {
   NETWORK_CONNECTED: 'NETWORK_CONNECTED',
   NETWORK_DISCONNECTED: 'NETWORK_DISCONNECTED',
   NETWORK_HOST_CHANGED: 'NETWORK_HOST_CHANGED',
+  // 3-player desync diagnostics: fires once ~8s after lobby:started if some
+  // expected peer connection or data channel is missing/not-open. UI / tests
+  // can listen and surface a warning instead of silently presenting a phantom-peer game.
+  NETWORK_MESH_PARTIAL: 'NETWORK_MESH_PARTIAL',
   NETWORK_MATCH_STATE_CHANGED: 'NETWORK_MATCH_STATE_CHANGED',
   NETWORK_MATCH_COUNTDOWN_TICK: 'NETWORK_MATCH_COUNTDOWN_TICK',
   // Phase 9.3 — host-authoritative damage broadcasts (D-01..D-04)

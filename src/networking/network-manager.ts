@@ -44,6 +44,26 @@ type DcMessage =
   | ({ type: 'earth-wall-pillar' } & EarthWallPillarPayload)
   | ({ type: 'earth-wall-pillar-destroy' } & EarthWallPillarDestroyPayload);
 
+/** Plain-object snapshot of NetworkManager state for debugging (browser console + repro scripts). */
+export type NetworkManagerSnapshot = {
+  localPlayerId: string;
+  socketId: string;
+  isConnected: boolean;
+  matchPlayers: { id: string; name: string; socketId: string; team: number | undefined }[];
+  peerConnections: { peerSocketId: string; iceState: string; signalingState: string }[];
+  unreliableChannels: { peerSocketId: string; readyState: string }[];
+  reliableChannels: { peerSocketId: string; readyState: string }[];
+  socketToPlayerId: { socketId: string; playerId: string }[];
+  pendingIceBuffer: { peerSocketId: string; count: number }[];
+  meshHealth: {
+    expectedPeers: number;
+    pcCount: number;
+    unreliableOpen: number;
+    reliableOpen: number;
+    healthy: boolean;
+  };
+};
+
 export class NetworkManager {
   static #instance: NetworkManager | undefined;
 
@@ -58,8 +78,17 @@ export class NetworkManager {
   #matchPlayers: PlayerInfo[] = [];
   #socketToPlayerId = new Map<string, string>();
 
+  // Buffer for ICE candidates that arrive before their PC is created (3p race fix).
+  // Prior bug: candidates were silently dropped → partial mesh, "ghost player".
+  #pendingIceCandidates = new Map<string, RTCIceCandidateInit[]>();
+
   #tickInterval: ReturnType<typeof setInterval> | null = null;
   #lastSentSnapshot: PlayerUpdatePayload | null = null;
+
+  // Mesh-health timer — fires once N seconds after lobby:started to assert all
+  // expected channels opened. Flags partial-mesh state on EVENT_BUS so UI/tests can see it.
+  #meshHealthTimer: ReturnType<typeof setTimeout> | null = null;
+  static #MESH_HEALTH_CHECK_DELAY_MS = 8000;
 
   // Network performance metrics
   #msgSentCount = 0;
@@ -79,6 +108,10 @@ export class NetworkManager {
     if (NetworkManager.#instance) return NetworkManager.#instance;
     const url = serverUrl ?? `${NETWORK_SERVER_URL}:${NETWORK_SERVER_PORT}`;
     NetworkManager.#instance = new NetworkManager(url);
+    // Dev-only: expose to window for browser-console diagnostics + Playwright/manual repro.
+    if (typeof window !== 'undefined' && NETWORK_DEBUG) {
+      (window as unknown as { __NM__: NetworkManager }).__NM__ = NetworkManager.#instance;
+    }
     return NetworkManager.#instance;
   }
 
@@ -126,12 +159,19 @@ export class NetworkManager {
    * Tears down the WebRTC mesh (all peer connections and data channels) while
    * keeping the socket.io signaling connection alive. Used when returning to
    * lobby after a match -- enables rematch without full reconnect (FND-04).
+   * MUST be called by scenes that own a match (GameScene shutdown) to avoid
+   * stale PCs leaking across rematches.
    */
   teardownMesh(): void {
     this.stopGameTick();
     this.#closeAllPeerConnections();
     this.#lastSentSnapshot = null;
     this.#matchPlayers = [];
+    if (this.#meshHealthTimer) {
+      clearTimeout(this.#meshHealthTimer);
+      this.#meshHealthTimer = null;
+    }
+    this.#pendingIceCandidates.clear();
     // DO NOT call this.#socket.disconnect() -- keep signaling alive for lobby
   }
 
@@ -245,16 +285,71 @@ export class NetworkManager {
     }
   }
 
+  /**
+   * Browser-console + repro-script diagnostics. Returns a plain-object snapshot
+   * of all live mesh state. Safe to call any time. Use `nm.debugSnapshot()` in
+   * DevTools to verify all expected channels are open at match start.
+   */
+  debugSnapshot(): NetworkManagerSnapshot {
+    const mySocketId = this.#socket.id ?? '';
+    const expectedPeers = this.#matchPlayers.filter((p) => p.socketId !== mySocketId).length;
+    const unreliableOpen = [...this.#unreliableChannels.values()].filter((c) => c.readyState === 'open').length;
+    const reliableOpen = [...this.#reliableChannels.values()].filter((c) => c.readyState === 'open').length;
+
+    return {
+      localPlayerId: this.#localPlayerId,
+      socketId: mySocketId,
+      isConnected: this.#isConnected,
+      matchPlayers: this.#matchPlayers.map((p) => ({ id: p.id, name: p.name, socketId: p.socketId, team: p.team })),
+      peerConnections: [...this.#peerConnections.entries()].map(([peerSocketId, pc]) => ({
+        peerSocketId,
+        iceState: pc.iceConnectionState,
+        signalingState: pc.signalingState,
+      })),
+      unreliableChannels: [...this.#unreliableChannels.entries()].map(([peerSocketId, ch]) => ({
+        peerSocketId,
+        readyState: ch.readyState,
+      })),
+      reliableChannels: [...this.#reliableChannels.entries()].map(([peerSocketId, ch]) => ({
+        peerSocketId,
+        readyState: ch.readyState,
+      })),
+      socketToPlayerId: [...this.#socketToPlayerId.entries()].map(([socketId, playerId]) => ({ socketId, playerId })),
+      pendingIceBuffer: [...this.#pendingIceCandidates.entries()].map(([peerSocketId, list]) => ({ peerSocketId, count: list.length })),
+      meshHealth: {
+        expectedPeers,
+        pcCount: this.#peerConnections.size,
+        unreliableOpen,
+        reliableOpen,
+        healthy: expectedPeers > 0
+          && this.#peerConnections.size === expectedPeers
+          && unreliableOpen === expectedPeers
+          && reliableOpen === expectedPeers,
+      },
+    };
+  }
+
   // ---- Socket.io event binding (lobby + WebRTC signaling only) ----
+
+  #log(...parts: unknown[]): void {
+    if (!NETWORK_DEBUG) return;
+    const shortId = this.#localPlayerId ? this.#localPlayerId.slice(0, 4) : (this.#socket.id ?? '????').slice(0, 4);
+    // Single-line format with ms-epoch timestamp for cross-window log diffing.
+    // NOTE: use console.log (not .debug) — Chrome DevTools hides debug level by default
+    // unless the user enables "Verbose" in the Levels filter, which is not obvious.
+    console.log(`${Date.now()} [NM:${shortId}]`, ...parts);
+  }
 
   #bindSocketEvents(): void {
     this.#socket.on('connect', () => {
       this.#isConnected = true;
+      this.#log('connected', `socket=${this.#socket.id}`);
       EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_CONNECTED, { socketId: this.#socket.id });
     });
 
     this.#socket.on('disconnect', () => {
       this.#isConnected = false;
+      this.#log('disconnected');
       this.stopGameTick();
       this.#closeAllPeerConnections();
       EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_DISCONNECTED, {});
@@ -289,8 +384,14 @@ export class NetworkManager {
       for (const p of matchConfig.players) {
         this.#socketToPlayerId.set(p.socketId, p.id);
       }
+      this.#log(
+        'lobby-started',
+        `localPlayerId=${me?.id ?? '?'}`,
+        `peers=${matchConfig.players.map((p) => `${p.name}(${p.socketId.slice(0, 4)})`).join(',')}`,
+      );
       EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_LOBBY_STARTED, { matchConfig });
       this.#initWebRTCMesh(matchConfig.players);
+      this.#scheduleMeshHealthCheck();
     });
 
     // Match FSM transitions (LFC-02). The LoadingScene listens for COUNTDOWN/ACTIVE
@@ -329,7 +430,9 @@ export class NetworkManager {
         }
         this.#unreliableChannels.delete(player.socketId);
         this.#reliableChannels.delete(player.socketId);
+        this.#pendingIceCandidates.delete(player.socketId);
       }
+      this.#log('peer-disconnected', `id=${playerId}`, `peers-remaining=${this.#peerConnections.size}`);
       EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_PLAYER_DISCONNECTED, { playerId } as PlayerDisconnectedPayload);
     });
 
@@ -339,8 +442,6 @@ export class NetworkManager {
     });
 
     // --- Phase 9.3: host-authoritative damage inbound broadcasts (D-01..D-04) ---
-    // These ride socket.io (NOT WebRTC) because the host is the game-server. Plan 03 wires the
-    // listeners on GameScene; this layer just bridges them onto EVENT_BUS.
     this.#socket.on('damage:confirmed', (payload: DamageConfirmedPayload) => {
       EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_DAMAGE_CONFIRMED, payload);
     });
@@ -370,8 +471,11 @@ export class NetworkManager {
 
     players.forEach((peer, peerIndex) => {
       if (peer.socketId === mySocketId) return;
-      // Lower-index player creates the offer — prevents simultaneous double-offers
-      if (myIndex < peerIndex) {
+      const role = myIndex < peerIndex ? 'offerer' : 'answerer';
+      this.#log('mesh-init', `peer=${peer.name}(${peer.socketId.slice(0, 4)})`, `role=${role}`);
+      // Lower-index player creates the offer — prevents simultaneous double-offers.
+      // The other side just waits for the offer to arrive on `webrtc:offer`.
+      if (role === 'offerer') {
         void this.#createOffer(peer.socketId);
       }
     });
@@ -393,11 +497,13 @@ export class NetworkManager {
 
     pc.oniceconnectionstatechange = () => {
       const state = pc.iceConnectionState;
+      this.#log('ice-state', `peer=${peerSocketId.slice(0, 4)}`, `state=${state}`);
       if (state === 'disconnected' || state === 'failed' || state === 'closed') {
         const player = this.#matchPlayers.find((p) => p.socketId === peerSocketId);
         this.#unreliableChannels.delete(peerSocketId);
         this.#reliableChannels.delete(peerSocketId);
         this.#peerConnections.delete(peerSocketId);
+        this.#pendingIceCandidates.delete(peerSocketId);
         EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_PLAYER_DISCONNECTED, {
           playerId: player?.id ?? peerSocketId,
         } as PlayerDisconnectedPayload);
@@ -418,6 +524,7 @@ export class NetworkManager {
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
     this.#socket.emit('webrtc:offer', { targetSocketId: peerSocketId, offer });
+    this.#log('offer-sent', `to=${peerSocketId.slice(0, 4)}`);
   }
 
   async #handleOffer(fromSocketId: string, offer: RTCSessionDescriptionInit): Promise<void> {
@@ -429,19 +536,62 @@ export class NetworkManager {
     };
 
     await pc.setRemoteDescription(offer);
+    // Drain any ICE candidates that arrived before the offer (3p race fix).
+    await this.#drainPendingIce(fromSocketId, pc);
+
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
     this.#socket.emit('webrtc:answer', { targetSocketId: fromSocketId, answer });
+    this.#log('answer-sent', `to=${fromSocketId.slice(0, 4)}`);
   }
 
   async #handleAnswer(fromSocketId: string, answer: RTCSessionDescriptionInit): Promise<void> {
     const pc = this.#peerConnections.get(fromSocketId);
-    if (pc) await pc.setRemoteDescription(answer);
+    if (!pc) {
+      this.#log('answer-dropped (no pc)', `from=${fromSocketId.slice(0, 4)}`);
+      return;
+    }
+    await pc.setRemoteDescription(answer);
+    // Even on the offerer side, ICE candidates can land before the remote answer.
+    // Drain any that were buffered while we were waiting for setRemoteDescription.
+    await this.#drainPendingIce(fromSocketId, pc);
   }
 
   async #handleIceCandidate(fromSocketId: string, candidate: RTCIceCandidateInit): Promise<void> {
     const pc = this.#peerConnections.get(fromSocketId);
-    if (pc) await pc.addIceCandidate(candidate);
+    if (pc && pc.remoteDescription) {
+      // Safe to add immediately — remote SDP is set.
+      try {
+        await pc.addIceCandidate(candidate);
+      } catch (err) {
+        if (NETWORK_DEBUG) console.warn('[NET] addIceCandidate failed:', err);
+      }
+      return;
+    }
+    // Race fix: PC missing OR remote SDP not yet set. Buffer for #drainPendingIce.
+    // Prior bug (1v1 hid this): a silent `if (pc)` drop here orphaned ~1 candidate per
+    // 3p mesh start, leaving one connection in 'checking' forever.
+    let buffer = this.#pendingIceCandidates.get(fromSocketId);
+    if (!buffer) {
+      buffer = [];
+      this.#pendingIceCandidates.set(fromSocketId, buffer);
+    }
+    buffer.push(candidate);
+    this.#log('ice-buffered', `from=${fromSocketId.slice(0, 4)}`, `bufSize=${buffer.length}`);
+  }
+
+  async #drainPendingIce(fromSocketId: string, pc: RTCPeerConnection): Promise<void> {
+    const buffer = this.#pendingIceCandidates.get(fromSocketId);
+    if (!buffer || buffer.length === 0) return;
+    this.#log('ice-drain', `from=${fromSocketId.slice(0, 4)}`, `count=${buffer.length}`);
+    this.#pendingIceCandidates.delete(fromSocketId);
+    for (const c of buffer) {
+      try {
+        await pc.addIceCandidate(c);
+      } catch (err) {
+        if (NETWORK_DEBUG) console.warn('[NET] drainPendingIce addIceCandidate failed:', err);
+      }
+    }
   }
 
   #setupDataChannel(ch: RTCDataChannel, fromSocketId: string, kind: 'unreliable' | 'reliable'): void {
@@ -450,6 +600,26 @@ export class NetworkManager {
     } else {
       this.#reliableChannels.set(fromSocketId, ch);
     }
+
+    // Prior bug: only the answerer's `ondatachannel`-supplied channels had an
+    // implicit open event consumed by the runtime — the offerer's `createDataChannel`
+    // channels never had `onopen` wired, so we never knew when they were actually
+    // ready, and never re-broadcast a fresh snapshot to the late-opening peer.
+    ch.onopen = () => {
+      this.#log('channel-open', `peer=${fromSocketId.slice(0, 4)}`, `label=${ch.label}`);
+      // Force a fresh position snapshot to the newly-opened channel — fixes the
+      // Cause #4 "stationary player invisible" bug where #lastSentSnapshot diff-skip
+      // suppresses sends after the first packet, leaving late-opening channels stuck.
+      this.#lastSentSnapshot = null;
+    };
+
+    ch.onclose = () => {
+      this.#log('channel-close', `peer=${fromSocketId.slice(0, 4)}`, `label=${ch.label}`);
+    };
+
+    ch.onerror = (e) => {
+      if (NETWORK_DEBUG) console.warn(`[NM] channel error peer=${fromSocketId.slice(0, 4)} label=${ch.label}`, e);
+    };
 
     ch.onmessage = (e: MessageEvent<string>) => {
       this.#msgRecvCount++;
@@ -520,6 +690,35 @@ export class NetworkManager {
     }
   }
 
+  /**
+   * Schedules a one-shot post-`lobby:started` health check. If, after
+   * #MESH_HEALTH_CHECK_DELAY_MS, any expected peer is missing a peer connection
+   * or an open data channel, emit a warning to the EVENT_BUS so the UI can
+   * surface it instead of silently presenting a phantom-peer game.
+   */
+  #scheduleMeshHealthCheck(): void {
+    if (this.#meshHealthTimer) clearTimeout(this.#meshHealthTimer);
+    this.#meshHealthTimer = setTimeout(() => {
+      const snap = this.debugSnapshot();
+      this.#log('mesh-health-check', JSON.stringify(snap.meshHealth));
+      if (!snap.meshHealth.healthy && snap.meshHealth.expectedPeers > 0) {
+        const reasons: string[] = [];
+        if (snap.peerConnections.length < snap.meshHealth.expectedPeers) {
+          reasons.push(`peer-connections=${snap.peerConnections.length}/${snap.meshHealth.expectedPeers}`);
+        }
+        if (snap.meshHealth.unreliableOpen < snap.meshHealth.expectedPeers) {
+          reasons.push(`unreliable=${snap.meshHealth.unreliableOpen}/${snap.meshHealth.expectedPeers}`);
+        }
+        if (snap.meshHealth.reliableOpen < snap.meshHealth.expectedPeers) {
+          reasons.push(`reliable=${snap.meshHealth.reliableOpen}/${snap.meshHealth.expectedPeers}`);
+        }
+        const msg = `Partial mesh: ${reasons.join(', ')}`;
+        console.warn(`[NM] ${msg}`);
+        EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_MESH_PARTIAL, { snapshot: snap, reasons });
+      }
+    }, NetworkManager.#MESH_HEALTH_CHECK_DELAY_MS);
+  }
+
   #startMetricsLog(): void {
     if (!NETWORK_DEBUG || this.#metricsInterval) return;
     this.#metricsInterval = setInterval(() => {
@@ -535,6 +734,7 @@ export class NetworkManager {
     this.#unreliableChannels.clear();
     this.#reliableChannels.clear();
     this.#socketToPlayerId.clear();
+    this.#pendingIceCandidates.clear();
     if (this.#metricsInterval) {
       clearInterval(this.#metricsInterval);
       this.#metricsInterval = null;

@@ -65,7 +65,7 @@ import { DarkBoltPickup } from '../game-objects/pickups/dark-bolt-pickup';
 import { SpecialSpellInventory } from '../common/special-spell-inventory';
 import { AirBurst } from '../game-objects/spells/air-burst';
 import { VoidOrb } from '../game-objects/spells/void-orb';
-import { DarkBolt } from '../game-objects/spells/dark-bolt';
+import { DarkBolt, DARK_BOLT_ENV_LIGHT_TEXTURE_KEY, ensureDarkBoltEnvLightTexture } from '../game-objects/spells/dark-bolt';
 import { LightningBurstCombo, LightningStrikeCombo } from '../game-objects/spells/lightning-combo';
 import { SteamBurst } from '../game-objects/spells/steam-burst';
 import { Puddle } from '../game-objects/spells/puddle';
@@ -81,7 +81,7 @@ import {
 import { NetworkManager } from '../networking/network-manager';
 import { RemoteInputComponent } from '../components/input/remote-input-component';
 import { MusicManager } from '../common/music-manager';
-import type { PlayerUpdateBroadcast, RoomTransitionPayload, PlayerDisconnectedPayload, PlayerUpdatePayload, SpellCastBroadcast, PlayerInfo, BreathStartBroadcast, BreathUpdateBroadcast, BreathEndBroadcast, EarthWallPillarBroadcast, EarthWallPillarDestroyBroadcast, MatchStateChangedPayload, MatchCountdownTickPayload, DamageConfirmedPayload, SpellDestroyedPayload, EliminationPayload, RespawnPayload } from '../networking/types';
+import type { PlayerUpdateBroadcast, RoomTransitionPayload, PlayerDisconnectedPayload, PlayerUpdatePayload, SpellCastBroadcast, PlayerInfo, BreathStartBroadcast, BreathUpdateBroadcast, BreathEndBroadcast, EarthWallPillarBroadcast, EarthWallPillarDestroyBroadcast, MatchStateChangedPayload, MatchCountdownTickPayload, DamageConfirmedPayload, SpellDestroyedPayload, EliminationPayload, RespawnPayload, MatchConfig } from '../networking/types';
 import { RUNTIME_CONFIG } from '../common/runtime-config';
 import type { Direction } from '../common/types';
 
@@ -191,6 +191,13 @@ export class GameScene extends Phaser.Scene {
   // Phase 9.3 — Pre-declared for Plan 03 to consume (see 09.3-04-SUMMARY.md). When true, all
   // gameplay input (cast/dash) is suppressed for the dead local player until respawn.
   #deathLockActive: boolean = false;
+  // DarkBolt cast windup — flag + visual handles. While active, the player is
+  // locked in place via isMovementLocked and a pulsing red/black glow + crimson
+  // aura render on/around the player sprite. See #beginDarkBoltWindup.
+  #darkBoltWindupActive: boolean = false;
+  #darkBoltCasterGlowFX: { color: number } | undefined;
+  #darkBoltCasterGlowTween: Phaser.Tweens.Tween | undefined;
+  #darkBoltCasterBurst: Phaser.GameObjects.Image | undefined;
   #countdownText: Phaser.GameObjects.BitmapText | null = null;
   // Faded ring around the local player at PLAYER_ATTACK_RANGE_PX so the player can see their reach.
   #rangeRing: Phaser.GameObjects.Graphics | undefined;
@@ -272,6 +279,7 @@ export class GameScene extends Phaser.Scene {
     this.#updateThunderStrikePuddleCombo();
     this.#updateFireWaterSteamCombo();
     this.#updateVoidOrbCombos(delta);
+    this.#updateDarkBoltConsumePuddles();
     this.#updateEarthBumpWallCombo();
     this.#updateFireBreathVsEarthWall();
     this.#handleRadialMenuInput();
@@ -1613,6 +1621,10 @@ export class GameScene extends Phaser.Scene {
     if (this.#deathLockActive) return;
     if (!this.#controls.isSpecialCastJustDown) return;
     if (!this.#player?.active) return;
+    // Block re-cast while a DarkBolt windup is in progress — input would
+    // otherwise stack a second windup on top of the first and consume two
+    // charges for one visible cast.
+    if (this.#darkBoltWindupActive) return;
 
     const inv = SpecialSpellInventory.instance;
     const activeSpellId = inv.activeSpellId;
@@ -1632,12 +1644,139 @@ export class GameScene extends Phaser.Scene {
       targetX = this.#player.x + (dx * range) / d;
       targetY = this.#player.y + (dy * range) / d;
     }
-
-    const factory = SPELL_FACTORY_REGISTRY[activeSpellId as SpellId];
-    if (!factory) return;
     const direction = Math.abs(dx) >= Math.abs(dy)
       ? (dx >= 0 ? DIRECTION.RIGHT : DIRECTION.LEFT)
       : (dy >= 0 ? DIRECTION.DOWN : DIRECTION.UP);
+
+    // DarkBolt gets a windup — the player locks in place and glows red/black
+    // for ~380ms before the bolt actually fires. Telegraphs the spell so it
+    // can be dodged. VoidOrb (and any other special) still fires immediately.
+    if (activeSpellId === SPELL_ID.DARK_BOLT) {
+      this.#beginDarkBoltWindup(targetX, targetY, direction);
+      return;
+    }
+
+    this.#spawnSpecialSpell(activeSpellId, targetX, targetY, direction);
+  }
+
+  /** Begin the DarkBolt cast windup. Locks the player in place via the same
+   *  isMovementLocked flag FireBreath uses, applies a pulsing red/black glow
+   *  to the player sprite, and spawns a growing crimson aura around them. At
+   *  the end of the windup, the bolt spawns and broadcasts. If the player
+   *  dies or the scene tears down mid-windup, #endDarkBoltWindup cleans up
+   *  the visual layers without spawning the bolt. */
+  #beginDarkBoltWindup(targetX: number, targetY: number, direction: Direction): void {
+    if (!this.#player?.active) return;
+    this.#darkBoltWindupActive = true;
+    this.#controls.isMovementLocked = true;
+    (this.#player.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
+
+    // Pulsing red/black glow on the player sprite via pre-FX. Track the FX
+    // handle + tween so #endDarkBoltWindup can tear them down cleanly.
+    type PreFXCapable = Phaser.GameObjects.Sprite & {
+      preFX?: {
+        addGlow: (color?: number, outerStrength?: number, innerStrength?: number, knockout?: boolean) => { color: number };
+        remove: (fx: unknown) => void;
+      };
+    };
+    const playerSprite = this.#player as unknown as PreFXCapable;
+    let glow: { color: number } | undefined;
+    if (playerSprite.preFX) {
+      glow = playerSprite.preFX.addGlow(
+        CONFIG.DARK_BOLT_CASTER_GLOW_COLOR_A,
+        CONFIG.DARK_BOLT_CASTER_GLOW_OUTER_STRENGTH,
+        CONFIG.DARK_BOLT_CASTER_GLOW_INNER_STRENGTH,
+        false,
+      );
+      this.#darkBoltCasterGlowFX = glow;
+    }
+    // Manual color-cycle on the glow handle. Phaser tweens don't drive integer
+    // colour interp cleanly via "color" property; we mutate it from a numeric
+    // 0→1 tween instead and lerp between the two band colors ourselves.
+    if (glow) {
+      this.#darkBoltCasterGlowTween = this.tweens.add({
+        targets: { t: 0 },
+        t: 1,
+        duration: 180,
+        ease: 'Sine.easeInOut',
+        yoyo: true,
+        repeat: -1,
+        onUpdate: (_tw, target) => {
+          if (!glow) return;
+          const t = (target as { t: number }).t;
+          const a = CONFIG.DARK_BOLT_CASTER_GLOW_COLOR_A;
+          const b = CONFIG.DARK_BOLT_CASTER_GLOW_COLOR_B;
+          const ar = (a >> 16) & 0xff, ag = (a >> 8) & 0xff, ab = a & 0xff;
+          const br = (b >> 16) & 0xff, bg = (b >> 8) & 0xff, bb = b & 0xff;
+          const r = Math.round(ar + (br - ar) * t);
+          const g = Math.round(ag + (bg - ag) * t);
+          const bl = Math.round(ab + (bb - ab) * t);
+          glow.color = (r << 16) | (g << 8) | bl;
+        },
+      });
+    }
+
+    // Crimson aura growing around the caster — same ADD-blended radial
+    // gradient texture as the bolt's env-light. Ensure the texture exists
+    // (the bolt is what normally generates it, but the windup spawns BEFORE
+    // the bolt) so the first cast doesn't show an invisible aura.
+    ensureDarkBoltEnvLightTexture(this);
+    const burst = this.add.image(this.#player.x, this.#player.y, DARK_BOLT_ENV_LIGHT_TEXTURE_KEY);
+    burst.setOrigin(0.5, 0.5);
+    burst.setDisplaySize(
+      CONFIG.DARK_BOLT_CASTER_BURST_START_DIAMETER_PX,
+      CONFIG.DARK_BOLT_CASTER_BURST_START_DIAMETER_PX,
+    );
+    burst.setTint(CONFIG.DARK_BOLT_CASTER_BURST_TINT);
+    burst.setBlendMode(Phaser.BlendModes.ADD);
+    burst.setAlpha(CONFIG.DARK_BOLT_CASTER_BURST_START_ALPHA);
+    burst.setDepth(2.88); // beneath the bolt's effect stack
+    this.#darkBoltCasterBurst = burst;
+    this.tweens.add({
+      targets: burst,
+      displayWidth: CONFIG.DARK_BOLT_CASTER_BURST_END_DIAMETER_PX,
+      displayHeight: CONFIG.DARK_BOLT_CASTER_BURST_END_DIAMETER_PX,
+      alpha: CONFIG.DARK_BOLT_CASTER_BURST_END_ALPHA,
+      duration: CONFIG.DARK_BOLT_CAST_WINDUP_MS,
+      ease: 'Sine.easeIn',
+    });
+
+    // End-of-windup → unlock, tear down glow + burst, spawn the bolt.
+    this.time.delayedCall(CONFIG.DARK_BOLT_CAST_WINDUP_MS, () => {
+      this.#endDarkBoltWindup();
+      if (!this.#player?.active) return;
+      this.#spawnSpecialSpell(SPELL_ID.DARK_BOLT, targetX, targetY, direction);
+    });
+  }
+
+  /** Tear down windup visuals + release movement lock. Safe to call multiple
+   *  times (each handle is null-guarded). Called by the delayed-call at the
+   *  end of the windup, and also if the player dies mid-windup so the lock
+   *  doesn't strand them. */
+  #endDarkBoltWindup(): void {
+    this.#darkBoltWindupActive = false;
+    this.#controls.isMovementLocked = false;
+    type PreFXCapable = Phaser.GameObjects.Sprite & {
+      preFX?: { remove: (fx: unknown) => void };
+    };
+    if (this.#darkBoltCasterGlowFX && this.#player) {
+      const ps = this.#player as unknown as PreFXCapable;
+      ps.preFX?.remove(this.#darkBoltCasterGlowFX);
+    }
+    this.#darkBoltCasterGlowFX = undefined;
+    this.#darkBoltCasterGlowTween?.stop();
+    this.#darkBoltCasterGlowTween = undefined;
+    this.#darkBoltCasterBurst?.destroy();
+    this.#darkBoltCasterBurst = undefined;
+  }
+
+  /** Factory for spawning a special spell (VoidOrb / DarkBolt) at the resolved
+   *  target. Extracted from #handleSpecialCastInput so the DarkBolt windup path
+   *  can call it after the lock + telegraph completes. */
+  #spawnSpecialSpell(activeSpellId: string, targetX: number, targetY: number, direction: Direction): void {
+    if (!this.#player?.active) return;
+    const factory = SPELL_FACTORY_REGISTRY[activeSpellId as SpellId];
+    if (!factory) return;
     const spell = factory(this, this.#player.x, this.#player.y, targetX, targetY, direction, this.#player);
     this.#player.spellCastingComponent.spellGroup.add(spell.gameObject);
 
@@ -2464,6 +2603,20 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
+    // ── DarkBolt consumption ────────────────────────────────────────────────
+    // DarkBolt erases ANY other spell or pillar it overlaps. Three pairings
+    // cover the universe of spell hosts: local spellGroup × itself (DarkBolt
+    // vs other local spells), local × remote (DarkBolt vs opponents' spells),
+    // and either side × earthWallGroup (pillars live in their own group).
+    // The dispatch function dedupes via .setData('darkBoltConsumed') so
+    // continuous overlap doesn't keep retriggering the destroy.
+    const localSG = this.#player.spellCastingComponent.spellGroup;
+    this.physics.add.overlap(localSG, localSG, (a, b) => this.#tryConsumeWithDarkBolt(a as Phaser.GameObjects.GameObject, b as Phaser.GameObjects.GameObject));
+    this.physics.add.overlap(localSG, this.#remoteSpellGroup, (a, b) => this.#tryConsumeWithDarkBolt(a as Phaser.GameObjects.GameObject, b as Phaser.GameObjects.GameObject));
+    this.physics.add.overlap(localSG, this.#earthWallGroup, (a, b) => this.#tryConsumeWithDarkBolt(a as Phaser.GameObjects.GameObject, b as Phaser.GameObjects.GameObject));
+    this.physics.add.overlap(this.#remoteSpellGroup, this.#remoteSpellGroup, (a, b) => this.#tryConsumeWithDarkBolt(a as Phaser.GameObjects.GameObject, b as Phaser.GameObjects.GameObject));
+    this.physics.add.overlap(this.#remoteSpellGroup, this.#earthWallGroup, (a, b) => this.#tryConsumeWithDarkBolt(a as Phaser.GameObjects.GameObject, b as Phaser.GameObjects.GameObject));
+
     // Remote spells vs enemies (per room, same behavior as local spells)
     Object.keys(this.#objectsByRoomId).forEach((key) => {
       const roomId = parseInt(key, 10);
@@ -2940,7 +3093,15 @@ export class GameScene extends Phaser.Scene {
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_EARTH_WALL_PILLAR, this.#onRemoteEarthWallPillar, this);
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_EARTH_WALL_PILLAR_DESTROY, this.#onRemoteEarthWallPillarDestroy, this);
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_PLAYER_DISCONNECTED, this.#onRemotePlayerDisconnected, this);
+      EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_MESH_PARTIAL, this.#onMeshPartial, this);
       EVENT_BUS.off(CUSTOM_EVENTS.SPELL_CAST, this.#onLocalSpellCast, this);
+      // IMPORTANT: do NOT call nm.teardownMesh() here. SHUTDOWN fires every time the
+      // scene restarts for a cross-level room transition (via #onNetworkRoomTransition
+      // → this.scene.start(GAME_SCENE)). Tearing down the mesh on every transition
+      // closes every peer connection — all four clients see channel-close as soon as
+      // one player walks through a door, breaking multiplayer entirely.
+      // The mesh should only be torn down on actual match end / return-to-lobby, which
+      // is owned by GameOverScene / LobbyScene, not this scene's lifecycle.
       try { NetworkManager.getInstance().stopGameTick(); } catch { /* offline */ }
       this.#remotePlayers.forEach((p) => p.destroy());
       this.#remotePlayers.clear();
@@ -3140,6 +3301,112 @@ export class GameScene extends Phaser.Scene {
     // first one's charges are replaced. Move into per-room Tiled data later.
     this.#spawnVoidOrbPickup(playerStartPosition.x, playerStartPosition.y);
     this.#spawnDarkBoltPickup(playerStartPosition.x, playerStartPosition.y);
+  }
+
+  /** Dispatch table for "what happens when a DarkBolt touches X". Called by
+   *  several physics.add.overlap pairings registered in #registerColliders;
+   *  one of the two objects passed in is the DarkBolt, the other is the
+   *  target. Per-target behaviour:
+   *
+   *   - DarkBolt + DarkBolt: skip (don't consume self).
+   *   - AOE-centre spells (FireArea, WaterTornado, WaterSpike): wait until
+   *     the bolt centre is within DARK_BOLT_CONSUME_CENTER_RADIUS_PX of the
+   *     spell centre before destroying — edge-grazing shouldn't pop a whole
+   *     tornado out of existence.
+   *   - Lightning effects (ThunderStrike, LightningBeam, lightning combos):
+   *     delay the destroy by DARK_BOLT_LIGHTNING_LINGER_MS so the bolt
+   *     visually "consumes" the lightning. The bolt's depth (DARK_BOLT_DEPTH)
+   *     is already above these so it renders on top during the linger.
+   *   - Everything else: immediate destroy on first touch.
+   *
+   *  The setData('darkBoltConsumed') tag dedupes per-target so a single bolt
+   *  doesn't retrigger the destroy each overlap frame while continuing to
+   *  touch the (still-active) spell during its linger / centre approach.
+   */
+  #tryConsumeWithDarkBolt(
+    a: Phaser.GameObjects.GameObject,
+    b: Phaser.GameObjects.GameObject,
+  ): void {
+    let bolt: DarkBolt;
+    let target: Phaser.GameObjects.GameObject;
+    if (a instanceof DarkBolt && !(b instanceof DarkBolt)) {
+      bolt = a; target = b;
+    } else if (b instanceof DarkBolt && !(a instanceof DarkBolt)) {
+      bolt = b; target = a;
+    } else {
+      return; // both DarkBolts, or neither — nothing to consume
+    }
+    if (!bolt.active || !target.active) return;
+    if (target.getData('darkBoltConsumed')) return;
+
+    // Centre-touch gate for area spells — wait until the bolt is sitting in
+    // the middle of the target before erasing it. Without this, the bolt
+    // pops a tornado the moment it grazes the perimeter, which reads as the
+    // tornado randomly vanishing.
+    if (
+      target instanceof FireArea ||
+      target instanceof WaterTornado ||
+      target instanceof WaterSpike
+    ) {
+      const ts = target as Phaser.GameObjects.Sprite;
+      const dist = Math.hypot(bolt.x - ts.x, bolt.y - ts.y);
+      if (dist > CONFIG.DARK_BOLT_CONSUME_CENTER_RADIUS_PX) return;
+      target.setData('darkBoltConsumed', true);
+      (target as { destroy?: () => void }).destroy?.();
+      return;
+    }
+
+    // Lightning effects — delay destroy so the bolt visibly parks on top.
+    if (
+      target instanceof ThunderStrike ||
+      target instanceof LightningBeam ||
+      target instanceof LightningBurstCombo ||
+      target instanceof LightningStrikeCombo
+    ) {
+      target.setData('darkBoltConsumed', true);
+      this.time.delayedCall(CONFIG.DARK_BOLT_LIGHTNING_LINGER_MS, () => {
+        if (target.active) (target as { destroy?: () => void }).destroy?.();
+      });
+      return;
+    }
+
+    // Everything else (FireBolt, EarthBolt, EarthBump, EarthWallPillar,
+    // IceShard, WindBolt, AirBurst, WaterBall, Puddle, ThunderSplash,
+    // SteamBurst, …) — immediate erasure.
+    target.setData('darkBoltConsumed', true);
+    (target as { destroy?: () => void }).destroy?.();
+  }
+
+  /** DarkBolt + puddles: per-frame sweep that erases any puddle a DarkBolt
+   *  overlaps. Puddles aren't in spellGroup unless electrified (see
+   *  puddle.ts), so the physics.add.overlap registrations in
+   *  #registerColliders don't catch them — this update method covers the
+   *  gap. Snapshots Puddle.all before iterating because puddle.destroy()
+   *  mutates the static set and would invalidate the iterator. */
+  #updateDarkBoltConsumePuddles(): void {
+    if (Puddle.all.size === 0) return;
+    const localChildren = this.#player?.spellCastingComponent?.spellGroup?.getChildren() ?? [];
+    const remoteChildren = this.#remoteSpellGroup.getChildren();
+    const bolts: DarkBolt[] = [];
+    for (const c of localChildren) if (c instanceof DarkBolt && c.active) bolts.push(c);
+    for (const c of remoteChildren) if (c instanceof DarkBolt && c.active) bolts.push(c);
+    if (bolts.length === 0) return;
+
+    const puddleSnapshot: Puddle[] = [];
+    for (const p of Puddle.all) if (p.active && !p.getData('darkBoltConsumed')) puddleSnapshot.push(p);
+
+    for (const puddle of puddleSnapshot) {
+      if (!puddle.active) continue;
+      for (const bolt of bolts) {
+        if (!bolt.active) continue;
+        if (!this.physics.overlap(bolt, puddle)) continue;
+        // Same dispatch as the spellGroup overlaps — puddles fall into the
+        // "everything else" bucket so they erase on first touch.
+        puddle.setData('darkBoltConsumed', true);
+        puddle.destroy();
+        break; // this puddle is gone, move to the next one
+      }
+    }
   }
 
   #spawnVoidOrbPickup(playerX: number, playerY: number): void {
@@ -3574,7 +3841,66 @@ export class GameScene extends Phaser.Scene {
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_EARTH_WALL_PILLAR_DESTROY, this.#onRemoteEarthWallPillarDestroy, this);
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_PLAYER_DISCONNECTED, this.#onRemotePlayerDisconnected, this);
     EVENT_BUS.on(CUSTOM_EVENTS.SPELL_CAST, this.#onLocalSpellCast, this);
+    // 3p desync fix (Cause #3): pre-spawn all known remote players from the
+    // already-received MatchConfig instead of waiting for their first pos packet.
+    // If a peer's WebRTC pos channel never opens (handshake race), the avatar still
+    // exists on screen — a stationary ghost is diagnosable; a missing player is not.
+    EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_MESH_PARTIAL, this.#onMeshPartial, this);
+    this.#preSpawnRemotePlayersFromMatchConfig();
   }
+
+  /**
+   * 3p desync fix: pre-spawn a Player avatar for every peer in MatchConfig that we
+   * haven't already seen, positioned at the local player's spawn point as a sentinel.
+   * Their first inbound 'pos' packet from #onRemotePlayerUpdate snaps them to the
+   * real location via the interpolation pipeline. Safe to call multiple times —
+   * existing avatars are skipped.
+   */
+  #preSpawnRemotePlayersFromMatchConfig(): void {
+    let nm: NetworkManager | null = null;
+    try { nm = NetworkManager.getInstance(); } catch { return; }
+    if (!nm) return;
+    const fallbackX = this.#player?.x ?? 0;
+    const fallbackY = this.#player?.y ?? 0;
+    for (const info of nm.matchPlayers) {
+      if (info.id === nm.localPlayerId) continue;
+      if (this.#remotePlayers.has(info.id)) continue;
+      this.#spawnRemotePlayer(info.id, fallbackX, fallbackY);
+    }
+  }
+
+  #spawnRemotePlayer(playerId: string, x: number, y: number): Player {
+    const tint = this.#resolveRemotePlayerTint(playerId);
+    const ric = new RemoteInputComponent();
+    const remote = new Player({
+      scene: this,
+      position: { x, y },
+      controls: ric,
+      maxLife: CONFIG.PLAYER_START_MAX_HEALTH,
+      currentLife: CONFIG.PLAYER_START_MAX_HEALTH,
+      tintColor: tint,
+    });
+    this.#remotePlayers.set(playerId, remote);
+    remote.setData('playerId', playerId);
+    this.#remotePlayerGroup.add(remote);
+    return remote;
+  }
+
+  #onMeshPartial = (data: { reasons: string[] }): void => {
+    // Surface partial-mesh state on screen so the user knows the match has a desync
+    // risk instead of silently presenting a phantom-peer game.
+    const reasonsText = data.reasons.join(' | ');
+    const msg = this.add
+      .bitmapText(this.cameras.main.centerX, 24, 'press_start_2p', `NETWORK WARNING: ${reasonsText}`, 8)
+      .setOrigin(0.5, 0)
+      .setScrollFactor(0)
+      .setDepth(9999)
+      .setTint(0xffaa00);
+    this.time.delayedCall(6000, () => { if (msg.active) msg.destroy(); });
+    if (CONFIG.NETWORK_DEBUG) {
+      console.warn('[GameScene] NETWORK_MESH_PARTIAL', data);
+    }
+  };
 
   #buildLocalPlayerSnapshot(): PlayerUpdatePayload | null {
     if (!this.#player?.active) return null;
@@ -3603,20 +3929,11 @@ export class GameScene extends Phaser.Scene {
 
     let remote = this.#remotePlayers.get(payload.playerId);
     if (!remote) {
-      const tint = this.#resolveRemotePlayerTint(payload.playerId);
-      const ric = new RemoteInputComponent();
-      remote = new Player({
-        scene: this,
-        position: { x: payload.x, y: payload.y },
-        controls: ric,
-        maxLife: CONFIG.PLAYER_START_MAX_HEALTH,
-        currentLife: CONFIG.PLAYER_START_MAX_HEALTH,
-        tintColor: tint,
-      });
-      this.#remotePlayers.set(payload.playerId, remote);
-      // Phase 9.3 (Plan 03): tag + register for cross-player overlap (PVP-02).
-      remote.setData('playerId', payload.playerId);
-      this.#remotePlayerGroup.add(remote);
+      // First sighting via pos packet — pre-spawn from MatchConfig should usually
+      // have created the avatar already (3p desync fix), but this path remains as
+      // a fallback for late-joining peers / first packet on a peer we don't have in
+      // matchPlayers yet (shouldn't happen in current protocol).
+      remote = this.#spawnRemotePlayer(payload.playerId, payload.x, payload.y);
     }
 
     // Store network target — per-frame interpolation in #interpolateRemotePlayers handles rendering
