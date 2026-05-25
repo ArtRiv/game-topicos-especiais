@@ -1,6 +1,13 @@
 import { io, Socket } from 'socket.io-client';
 import { EVENT_BUS, CUSTOM_EVENTS } from '../common/event-bus.js';
-import { NETWORK_SERVER_URL, NETWORK_SERVER_PORT, NETWORK_TICK_RATE_HZ, NETWORK_DEBUG } from '../common/config';
+import {
+  NETWORK_SERVER_URL,
+  NETWORK_SERVER_PORT,
+  NETWORK_TICK_RATE_HZ,
+  NETWORK_DEBUG,
+  MAX_UNRELIABLE_BUFFERED_BYTES,
+} from '../common/config';
+import { RUNTIME_CONFIG } from '../common/runtime-config';
 import type {
   PlayerUpdatePayload,
   PlayerUpdateBroadcast,
@@ -51,8 +58,8 @@ export type NetworkManagerSnapshot = {
   isConnected: boolean;
   matchPlayers: { id: string; name: string; socketId: string; team: number | undefined }[];
   peerConnections: { peerSocketId: string; iceState: string; signalingState: string }[];
-  unreliableChannels: { peerSocketId: string; readyState: string }[];
-  reliableChannels: { peerSocketId: string; readyState: string }[];
+  unreliableChannels: { peerSocketId: string; readyState: string; bufferedAmount: number }[];
+  reliableChannels: { peerSocketId: string; readyState: string; bufferedAmount: number }[];
   socketToPlayerId: { socketId: string; playerId: string }[];
   pendingIceBuffer: { peerSocketId: string; count: number }[];
   meshHealth: {
@@ -62,6 +69,12 @@ export type NetworkManagerSnapshot = {
     reliableOpen: number;
     healthy: boolean;
   };
+  // Position sends skipped because the peer's unreliable channel had bufferedAmount
+  // above the safety threshold (see MAX_UNRELIABLE_BUFFERED_BYTES). Should remain 0
+  // on a healthy LAN; nonzero indicates backpressure on at least one peer.
+  droppedDueToBuffer: number;
+  /** Currently active outbound tick rate in Hz (last value passed to startGameTick/restartGameTick). */
+  currentTickRateHz: number;
 };
 
 export class NetworkManager {
@@ -84,6 +97,14 @@ export class NetworkManager {
 
   #tickInterval: ReturnType<typeof setInterval> | null = null;
   #lastSentSnapshot: PlayerUpdatePayload | null = null;
+  // Latest snapshot getter — held so restartGameTick() can re-establish the interval
+  // with the new rate without the caller having to re-supply the getter.
+  #snapshotGetter: (() => PlayerUpdatePayload | null) | null = null;
+  // Hz currently in effect (read from RUNTIME_CONFIG on each (re)start of the tick).
+  #currentTickRateHz = NETWORK_TICK_RATE_HZ;
+  // Count of position-send skips caused by the bufferedAmount safety guard.
+  // Should remain 0 on a healthy LAN; nonzero = at least one peer is congested.
+  #droppedDueToBuffer = 0;
 
   // Mesh-health timer — fires once N seconds after lobby:started to assert all
   // expected channels opened. Flags partial-mesh state on EVENT_BUS so UI/tests can see it.
@@ -128,6 +149,15 @@ export class NetworkManager {
     NetworkManager.#instance = undefined;
   }
 
+  /**
+   * FOR TESTING ONLY — creates a non-singleton instance. Used by multi-peer
+   * mesh tests that need to instantiate N NetworkManagers in one process.
+   * Production code MUST use `init()` / `getInstance()` instead.
+   */
+  static _createForTest(serverUrl: string): NetworkManager {
+    return new NetworkManager(serverUrl);
+  }
+
   get localPlayerId(): string {
     return this.#localPlayerId;
   }
@@ -167,6 +197,8 @@ export class NetworkManager {
     this.#closeAllPeerConnections();
     this.#lastSentSnapshot = null;
     this.#matchPlayers = [];
+    this.#snapshotGetter = null;
+    this.#droppedDueToBuffer = 0;
     if (this.#meshHealthTimer) {
       clearTimeout(this.#meshHealthTimer);
       this.#meshHealthTimer = null;
@@ -256,14 +288,45 @@ export class NetworkManager {
   }
 
   /**
-   * Starts the outbound position tick at NETWORK_TICK_RATE_HZ (20 Hz).
+   * Starts the outbound position tick. Rate is read from RUNTIME_CONFIG.NETWORK_TICK_RATE_HZ
+   * on each (re)start, so the debug panel can mutate it live and trigger restartGameTick()
+   * to apply the new rate without a page reload.
+   *
    * snapshotGetter is called each tick to get the local player's current state.
+   * The getter is cached on the instance so restartGameTick() can re-establish the
+   * interval without the caller having to re-supply it.
    */
   startGameTick(snapshotGetter: () => PlayerUpdatePayload | null): void {
+    this.#snapshotGetter = snapshotGetter;
     if (this.#tickInterval) return;
-    const intervalMs = Math.round(1000 / NETWORK_TICK_RATE_HZ);
+    this.#startTickInterval();
+  }
+
+  /**
+   * Apply a new outbound tick rate without reloading. Stops the current interval and
+   * starts a fresh one reading RUNTIME_CONFIG.NETWORK_TICK_RATE_HZ. Safe to call before
+   * startGameTick() — becomes a no-op if no snapshot getter has been registered yet.
+   */
+  restartGameTick(): void {
+    if (this.#tickInterval) {
+      clearInterval(this.#tickInterval);
+      this.#tickInterval = null;
+    }
+    if (this.#snapshotGetter) {
+      this.#startTickInterval();
+    }
+  }
+
+  #startTickInterval(): void {
+    // Clamp runtime value defensively — UI sliders can pass anything.
+    const rawHz = RUNTIME_CONFIG.NETWORK_TICK_RATE_HZ;
+    const hz = Math.max(10, Math.min(120, Math.round(rawHz)));
+    this.#currentTickRateHz = hz;
+    const intervalMs = Math.round(1000 / hz);
+    const getter = this.#snapshotGetter;
+    if (!getter) return;
     this.#tickInterval = setInterval(() => {
-      const payload = snapshotGetter();
+      const payload = getter();
       if (payload) {
         this.sendPlayerUpdate(payload);
         // Phase 9.3: server-bound position mirror for plausibility cache (RESEARCH.md §2).
@@ -309,10 +372,12 @@ export class NetworkManager {
       unreliableChannels: [...this.#unreliableChannels.entries()].map(([peerSocketId, ch]) => ({
         peerSocketId,
         readyState: ch.readyState,
+        bufferedAmount: ch.bufferedAmount,
       })),
       reliableChannels: [...this.#reliableChannels.entries()].map(([peerSocketId, ch]) => ({
         peerSocketId,
         readyState: ch.readyState,
+        bufferedAmount: ch.bufferedAmount,
       })),
       socketToPlayerId: [...this.#socketToPlayerId.entries()].map(([socketId, playerId]) => ({ socketId, playerId })),
       pendingIceBuffer: [...this.#pendingIceCandidates.entries()].map(([peerSocketId, list]) => ({ peerSocketId, count: list.length })),
@@ -326,6 +391,8 @@ export class NetworkManager {
           && unreliableOpen === expectedPeers
           && reliableOpen === expectedPeers,
       },
+      droppedDueToBuffer: this.#droppedDueToBuffer,
+      currentTickRateHz: this.#currentTickRateHz,
     };
   }
 
@@ -431,6 +498,11 @@ export class NetworkManager {
         this.#unreliableChannels.delete(player.socketId);
         this.#reliableChannels.delete(player.socketId);
         this.#pendingIceCandidates.delete(player.socketId);
+        this.#socketToPlayerId.delete(player.socketId);
+        // Mutate the roster so meshHealth.expectedPeers reflects the new match size.
+        // Without this, healthy=false fires forever after the first disconnect because
+        // expectedPeers stays at the original N-1 while peerConnections.size drops.
+        this.#matchPlayers = this.#matchPlayers.filter((p) => p.id !== playerId);
       }
       this.#log('peer-disconnected', `id=${playerId}`, `peers-remaining=${this.#peerConnections.size}`);
       EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_PLAYER_DISCONNECTED, { playerId } as PlayerDisconnectedPayload);
@@ -667,10 +739,19 @@ export class NetworkManager {
   #broadcastUnreliable(data: object): void {
     const msg = JSON.stringify(data);
     for (const ch of this.#unreliableChannels.values()) {
-      if (ch.readyState === 'open') {
-        ch.send(msg);
-        this.#msgSentCount++;
+      if (ch.readyState !== 'open') continue;
+      // Backpressure guard: if the underlying SCTP send buffer is over the safety
+      // threshold for THIS peer, skip the position send for this tick. Real Chrome
+      // refuses send() once bufferedAmount exceeds ~16 MB; this guard fires far
+      // earlier so the mesh degrades to "stale position for one peer" rather than
+      // "all sends throw". Only applies to the unreliable position channel —
+      // spell/event sends on the reliable channel must NOT be dropped silently.
+      if (ch.bufferedAmount > MAX_UNRELIABLE_BUFFERED_BYTES) {
+        this.#droppedDueToBuffer++;
+        continue;
       }
+      ch.send(msg);
+      this.#msgSentCount++;
     }
   }
 

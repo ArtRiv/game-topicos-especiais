@@ -166,6 +166,7 @@ import {
   ELEC_PUDDLE_SPARK_WEIGHT_HI_AT_LOW,
   ELEC_PUDDLE_SPARK_WEIGHT_MID_AT_LOW,
   ELEC_PUDDLE_SPARK_WEIGHT_LO_AT_LOW,
+  NETWORK_TICK_RATE_HZ,
 } from './config';
 
 export const RUNTIME_CONFIG = {
@@ -334,4 +335,9 @@ export const RUNTIME_CONFIG = {
   ELEC_PUDDLE_SPARK_WEIGHT_HI_AT_LOW,
   ELEC_PUDDLE_SPARK_WEIGHT_MID_AT_LOW,
   ELEC_PUDDLE_SPARK_WEIGHT_LO_AT_LOW,
+  // Networking — see src/common/config/network.ts for the description.
+  // The debug panel slider mutates this value at runtime; NetworkManager.startGameTick()
+  // and restartGameTick() read it. Valid range 10–120; anything outside is clamped at
+  // the call site. Changes apply on the next restartGameTick() call.
+  NETWORK_TICK_RATE_HZ,
 };

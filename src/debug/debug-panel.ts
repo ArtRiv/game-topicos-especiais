@@ -1,6 +1,7 @@
 import { RUNTIME_CONFIG } from '../common/runtime-config';
 import { CUSTOM_EVENTS, EVENT_BUS } from '../common/event-bus';
 import { Puddle } from '../game-objects/spells/puddle';
+import { NetworkManager } from '../networking/network-manager';
 
 interface ParamDef {
   key: keyof typeof RUNTIME_CONFIG;
@@ -11,9 +12,21 @@ interface ParamDef {
   /** If true, change immediately refreshes all active lava puddles (re-syncs
    *  body, restarts FX timers, redraws). Use for any param Puddle reads. */
   refreshLava?: boolean;
+  /** If true, change calls NetworkManager.restartGameTick() so the new tick
+   *  rate takes effect immediately. Used for NETWORK_TICK_RATE_HZ. */
+  refreshNetwork?: boolean;
 }
 
 const SECTIONS: { title: string; params: ParamDef[] }[] = [
+  {
+    // Tick-rate slider for live A/B testing during a LAN smoke test.
+    // 20 = original; 30 = conservative; 60 = LAN default; 90/120 = stress only.
+    // restartGameTick() applies the new value without a page reload.
+    title: 'NETWORK',
+    params: [
+      { key: 'NETWORK_TICK_RATE_HZ', label: 'Tick rate (Hz)', min: 10, max: 120, step: 10, refreshNetwork: true },
+    ],
+  },
   {
     title: 'FIRE BOLT',
     params: [
@@ -296,6 +309,32 @@ export class DebugPanel {
     });
     panel.appendChild(sprBtn);
 
+    // Live read-out: current effective tick rate + backpressure-drop counter.
+    // Polled at 500ms so it reflects RUNTIME_CONFIG changes and ongoing mesh state.
+    const netStatus = document.createElement('div');
+    netStatus.className = 'section-title';
+    netStatus.style.color = '#88ff88';
+    netStatus.style.marginTop = '10px';
+    netStatus.textContent = 'NET STATUS: offline';
+    panel.appendChild(netStatus);
+
+    const refreshNetStatus = (): void => {
+      try {
+        const nm = NetworkManager.getInstance();
+        const snap = nm.debugSnapshot();
+        const dropped = snap.droppedDueToBuffer;
+        const droppedColor = dropped === 0 ? '#88ff88' : dropped < 100 ? '#ffcc55' : '#ff6655';
+        netStatus.style.color = droppedColor;
+        netStatus.textContent = `NET: ${snap.currentTickRateHz}Hz | dropped(buffer): ${dropped} | peers: ${snap.peerConnections.length}`;
+      } catch {
+        netStatus.style.color = '#666';
+        netStatus.textContent = 'NET STATUS: offline';
+      }
+    };
+    refreshNetStatus();
+    // Poll every 500ms. setInterval is fine here — the panel persists for the page lifetime.
+    setInterval(refreshNetStatus, 500);
+
     return panel;
   }
 
@@ -328,6 +367,15 @@ export class DebugPanel {
       // immediately so you see the effect while dragging the slider, rather
       // than waiting for new puddles to spawn.
       if (param.refreshLava) Puddle.refreshAllLava();
+      // Network tick-rate change: re-establish the interval at the new rate.
+      // Wrapped in try because the panel can be open before a NM exists.
+      if (param.refreshNetwork) {
+        try {
+          NetworkManager.getInstance().restartGameTick();
+        } catch {
+          /* offline — slider value persists in RUNTIME_CONFIG until a game starts */
+        }
+      }
     });
 
     row.appendChild(label);
