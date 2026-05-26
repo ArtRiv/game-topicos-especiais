@@ -12,7 +12,10 @@
       "Bash(identify /home/aluno/Documentos/game-topicos-especiais/public/assets/spell-ico/fire.png)",
       "Bash(xargs ls)",
       "Bash(pnpm build *)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(pnpm exec *)",
+      "PowerShell(pnpm exec tsc --noEmit 2>&1)",
+      "PowerShell(npm start 2>&1)"
     ]
   }
 }

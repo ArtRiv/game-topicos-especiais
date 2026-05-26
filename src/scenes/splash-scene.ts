@@ -72,7 +72,7 @@ export class SplashScene extends Phaser.Scene {
 
     this.cameras.main.fadeOut(400, 0, 0, 0);
     this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
-      this.scene.start(SCENE_KEYS.INTRO_SCENE);
+      this.scene.start(SCENE_KEYS.OPENING_CUTSCENE_SCENE);
     });
   };
 }
