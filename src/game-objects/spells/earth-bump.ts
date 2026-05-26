@@ -41,6 +41,11 @@ export class EarthBump extends Phaser.Physics.Arcade.Sprite implements ActiveSpe
     return RUNTIME_CONFIG.EARTH_BUMP_KNOCKBACK_DURATION;
   }
 
+  /** Exposed for cross-player knockback in GameScene's overlap-A handler. */
+  get direction(): Direction {
+    return this.#direction;
+  }
+
   get isDamageActive(): boolean {
     return (this.#phase === 'startup' || this.#phase === 'loop') && !this.#isDying;
   }
@@ -81,10 +86,12 @@ export class EarthBump extends Phaser.Physics.Arcade.Sprite implements ActiveSpe
     // Apply basic hit damage
     enemy.hit(this.#direction, this.baseDamage);
 
-    // TODO: Apply knockback using the specific properties
-    // e.g.: enemy.applyKnockback(this.knockbackForce, this.knockbackDuration, this.#direction);
-    // You can use a generic tweens approach here to throw the enemy if it supports it,
-    // or add applyKnockback to CharacterGameObject later.
+    // Apply knockback in the cast direction — pushes the target far away
+    // for a brief window. Order matters: hit() may transition to HurtState,
+    // which sets its own pushback velocity; applying knockback AFTER it
+    // overrides with the larger force so the user sees the bump as a launch
+    // rather than a tap.
+    enemy.applyKnockback(this.#direction, this.knockbackForce, this.knockbackDuration);
   }
 
   #startStartup(): void {

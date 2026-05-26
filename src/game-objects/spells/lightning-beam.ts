@@ -23,6 +23,7 @@ import {
 import { registerSpell } from './spell-registry';
 import type { ManaComponent } from '../../components/game-object/mana-component';
 import type { SpellCastingComponent } from '../../components/game-object/spell-casting-component';
+import { NetworkManager } from '../../networking/network-manager';
 
 /**
  * LightningBeam — channeled / held lightning beam from the caster's hand to the cursor.
@@ -65,6 +66,15 @@ export class LightningBeam extends Phaser.GameObjects.Container implements Activ
   #angleInitialized: boolean = false;
   #length: number = 0;
   #hitThisTick: Set<unknown> = new Set();
+  // Remote-mode aim point (set by caller for replicas). When isRemote = true,
+  // the beam ignores the local mouse pointer and instead tracks this aim.
+  #remoteAimX: number = 0;
+  #remoteAimY: number = 0;
+  /** True for replica beams spawned from a remote caster's SPELL_CAST — the
+   *  beam must NOT self-destroy from the local viewer's mouse state, and
+   *  reads aim from setRemoteAim() (driven by NETWORK_BEAM_UPDATE) instead
+   *  of from the local pointer. */
+  public readonly isRemote: boolean;
 
   constructor(
     scene: Phaser.Scene,
@@ -74,11 +84,16 @@ export class LightningBeam extends Phaser.GameObjects.Container implements Activ
     targetY: number,
     _direction: Direction,
     caster?: Phaser.GameObjects.GameObject,
+    isRemote: boolean = false,
   ) {
+    void _direction;
     // Container starts at the raw caster position; #tick re-anchors using the rotated
     // hand offset each frame, so the literal starting coords here only matter for the
     // single frame before the first scene.update.
     super(scene, casterX, casterY);
+    this.isRemote = isRemote;
+    this.#remoteAimX = targetX;
+    this.#remoteAimY = targetY;
     scene.add.existing(this);
     this.setDepth(3.5);
 
@@ -128,6 +143,27 @@ export class LightningBeam extends Phaser.GameObjects.Container implements Activ
     });
 
     scene.events.on(Phaser.Scenes.Events.UPDATE, this.#tick, this);
+
+    // Local beams broadcast a start event on the next frame (spellId is set
+    // by SpellCastingComponent AFTER construction). Remote beams skip — they
+    // were created in response to a beam-start they don't need to re-emit.
+    if (!isRemote) {
+      scene.time.delayedCall(0, () => {
+        if (!this.active || !this.#caster) return;
+        const sid = this.getData('spellId') as string | undefined;
+        if (!sid) return;
+        try {
+          NetworkManager.getInstance().sendBeamStart({
+            spellId: sid,
+            x: this.#caster.x,
+            y: this.#caster.y,
+            targetX: this.#remoteAimX,
+            targetY: this.#remoteAimY,
+          });
+        } catch { /* offline */ }
+      });
+    }
+
     this.once(Phaser.GameObjects.Events.DESTROY, () => {
       scene.events.off(Phaser.Scenes.Events.UPDATE, this.#tick, this);
       this.#drainTimer.destroy();
@@ -136,6 +172,15 @@ export class LightningBeam extends Phaser.GameObjects.Container implements Activ
       // Without this the cooldown would run while the beam is active and any held cast
       // longer than COOLDOWN_MS would be instantly recastable on release.
       this.#spellCastingComponent?.refreshCooldown(1);
+      // Local beams: tell the mesh the channel is over so remote replicas can
+      // tear themselves down promptly. Without this, remote beams would only
+      // expire when the caster disconnects.
+      if (!isRemote) {
+        const sid = this.getData('spellId') as string | undefined;
+        if (sid) {
+          try { NetworkManager.getInstance().sendBeamEnd({ spellId: sid }); } catch { /* offline */ }
+        }
+      }
     });
   }
 
@@ -145,21 +190,62 @@ export class LightningBeam extends Phaser.GameObjects.Container implements Activ
       this.destroy();
       return;
     }
-    if (!this.scene.input.activePointer.rightButtonDown()) {
+    // LOCAL beam: gated by the local viewer's right-mouse button. REMOTE beam:
+    // gated by an explicit NETWORK_BEAM_END event handled by GameScene — we
+    // can't peek at the caster's mouse from another client.
+    if (!this.isRemote && !this.scene.input.activePointer.rightButtonDown()) {
       this.destroy();
       return;
     }
 
-    // Aim direction is set first (uses the caster's current position vs the cursor).
-    // The hand offset is then applied in beam-local space using that direction.
-    const cam = this.scene.cameras.main;
-    const ptr = this.scene.input.activePointer;
-    const world = cam.getWorldPoint(ptr.x, ptr.y);
-    this.#aimAt(world.x, world.y, delta);
+    let aimX: number;
+    let aimY: number;
+    if (this.isRemote) {
+      aimX = this.#remoteAimX;
+      aimY = this.#remoteAimY;
+    } else {
+      const cam = this.scene.cameras.main;
+      const ptr = this.scene.input.activePointer;
+      const world = cam.getWorldPoint(ptr.x, ptr.y);
+      aimX = world.x;
+      aimY = world.y;
+    }
+    this.#aimAt(aimX, aimY, delta);
+
+    // Local-only: stream aim updates so remote replicas can track the cursor.
+    // Throttled to ~30 Hz to avoid swamping the unreliable channel.
+    if (!this.isRemote && this.#caster) {
+      const now = this.scene.time.now;
+      if (now - this.#lastAimBroadcastMs >= 33) {
+        this.#lastAimBroadcastMs = now;
+        const sid = this.getData('spellId') as string | undefined;
+        if (sid) {
+          try {
+            NetworkManager.getInstance().sendBeamUpdate({
+              spellId: sid,
+              x: this.#caster.x,
+              y: this.#caster.y,
+              targetX: aimX,
+              targetY: aimY,
+            });
+          } catch { /* offline */ }
+        }
+      }
+    }
 
     // Refresh the debug rectangle if arcade debug is currently on. Keep it cheap by
     // only redrawing when the flag is set; clear it otherwise.
     this.#updateDebugOverlay();
+  }
+
+  #lastAimBroadcastMs: number = 0;
+
+  /** Update the remote-mode aim point. Called by GameScene from
+   *  NETWORK_BEAM_UPDATE events. No-op for local beams. */
+  public setRemoteAim(targetX: number, targetY: number): void {
+    if (!this.isRemote) return;
+    this.#remoteAimX = targetX;
+    this.#remoteAimY = targetY;
   }
 
   /** Compute the rotated hand pivot, then aim/stretch the beam toward the cursor.
@@ -209,7 +295,10 @@ export class LightningBeam extends Phaser.GameObjects.Container implements Activ
     this.#beamSprite2.setScale(sxScale, syScale);
   }
 
-  /** Mana drain ticker. Also clears the per-tick hit dedupe set. */
+  /** Mana drain ticker. Also clears the per-tick hit dedupe set AND rotates
+   *  the per-tick spellId so the server's dedupe-by-spellId logic doesn't
+   *  collapse every tick into the same hit (channelled spells need a fresh
+   *  spellId every tick for damage to land more than once). */
   #onDrainTick(): void {
     if (!this.active) return;
     if (this.#manaComponent) {
@@ -220,6 +309,10 @@ export class LightningBeam extends Phaser.GameObjects.Container implements Activ
       this.#manaComponent.consume(LIGHTNING_BEAM_MANA_PER_TICK);
     }
     this.#hitThisTick.clear();
+    // Rotate the tick spellId — same shape as electrified-puddle's per-strike id.
+    // GameScene's cross-player lightning handler reads this via getData('spellId').
+    const tickId = `lbeam-${Math.random().toString(36).slice(2, 10)}-${this.scene.time.now}`;
+    this.setData('spellId', tickId);
   }
 
   /**
@@ -312,5 +405,10 @@ export class LightningBeam extends Phaser.GameObjects.Container implements Activ
 }
 
 registerSpell(SPELL_ID.LIGHTNING_BEAM, (scene, cx, cy, tx, ty, dir, caster) => {
-  return new LightningBeam(scene, cx, cy, tx, ty, dir, caster);
+  // Detect remote replicas: GameScene exposes `player` as the local Player; if
+  // `caster` is anything else (a remote Player) the beam must skip the local
+  // mouse gate and use externally-supplied aim updates instead.
+  const localPlayer = (scene as unknown as { player?: unknown }).player;
+  const isRemote = caster !== undefined && caster !== (localPlayer as unknown);
+  return new LightningBeam(scene, cx, cy, tx, ty, dir, caster, isRemote);
 });

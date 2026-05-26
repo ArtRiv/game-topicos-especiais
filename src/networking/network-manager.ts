@@ -24,6 +24,12 @@ import type {
   EarthWallPillarBroadcast,
   EarthWallPillarDestroyPayload,
   EarthWallPillarDestroyBroadcast,
+  BeamStartPayload,
+  BeamStartBroadcast,
+  BeamUpdatePayload,
+  BeamUpdateBroadcast,
+  BeamEndPayload,
+  BeamEndBroadcast,
   Lobby,
   LobbyConfig,
   MatchConfig,
@@ -49,7 +55,10 @@ type DcMessage =
   | ({ type: 'breath-update' } & BreathUpdatePayload)
   | ({ type: 'breath-end' })
   | ({ type: 'earth-wall-pillar' } & EarthWallPillarPayload)
-  | ({ type: 'earth-wall-pillar-destroy' } & EarthWallPillarDestroyPayload);
+  | ({ type: 'earth-wall-pillar-destroy' } & EarthWallPillarDestroyPayload)
+  | ({ type: 'beam-start' } & BeamStartPayload)
+  | ({ type: 'beam-update' } & BeamUpdatePayload)
+  | ({ type: 'beam-end' } & BeamEndPayload);
 
 /** Plain-object snapshot of NetworkManager state for debugging (browser console + repro scripts). */
 export type NetworkManagerSnapshot = {
@@ -279,6 +288,18 @@ export class NetworkManager {
 
   sendEarthWallPillarDestroy(payload: EarthWallPillarDestroyPayload): void {
     this.#broadcastReliable({ type: 'earth-wall-pillar-destroy', ...payload });
+  }
+
+  sendBeamStart(payload: BeamStartPayload): void {
+    this.#broadcastReliable({ type: 'beam-start', ...payload });
+  }
+
+  sendBeamUpdate(payload: BeamUpdatePayload): void {
+    this.#broadcastUnreliable({ type: 'beam-update', ...payload });
+  }
+
+  sendBeamEnd(payload: BeamEndPayload): void {
+    this.#broadcastReliable({ type: 'beam-end', ...payload });
   }
 
   sendRoomTransitionRequest(payload: RoomTransitionPayload): void {
@@ -731,6 +752,15 @@ export class NetworkManager {
           break;
         case 'earth-wall-pillar-destroy':
           EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_EARTH_WALL_PILLAR_DESTROY, { ...msg, playerId } as EarthWallPillarDestroyBroadcast);
+          break;
+        case 'beam-start':
+          EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_BEAM_START, { ...msg, playerId } as BeamStartBroadcast);
+          break;
+        case 'beam-update':
+          EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_BEAM_UPDATE, { ...msg, playerId } as BeamUpdateBroadcast);
+          break;
+        case 'beam-end':
+          EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_BEAM_END, { ...msg, playerId } as BeamEndBroadcast);
           break;
       }
     };

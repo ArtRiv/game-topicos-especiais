@@ -155,6 +155,13 @@ export class PreloadScene extends Phaser.Scene {
       'assets/spells/darkness/bloodmage-vfx3/sprite-sheet.png',
       { frameWidth: 128, frameHeight: 128 },
     );
+
+    // Star Shield — Starcaller VFX 3 (640×384 = 5×3 grid, 15 frames @ 128×128).
+    this.load.spritesheet(
+      ASSET_KEYS.STAR_SHIELD,
+      'assets/spells/shared/star-shield/sprite-sheet.png',
+      { frameWidth: 128, frameHeight: 128 },
+    );
   }
 
   public create(): void {
@@ -585,6 +592,30 @@ export class PreloadScene extends Phaser.Scene {
       frames: this.anims.generateFrameNumbers(ASSET_KEYS.VOID_ORB_BM_VFX2, { start: 0, end: 11 }),
       frameRate: 18,
       repeat: 0,
+    });
+
+    // Star Shield — Starcaller VFX 3. 15 frames, split into 3 phases:
+    //   INTRO 0..11 — sphere forms around the caster
+    //   LOOP  12    — sustained starry sphere (holds frame 13/1-indexed)
+    //   END   13..14 — fade-out (last two frames)
+    this.anims.create({
+      key: `${ASSET_KEYS.STAR_SHIELD}_INTRO`,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.STAR_SHIELD, { start: 0, end: 11 }),
+      frameRate: 18,
+      repeat: 0,
+    });
+    this.anims.create({
+      key: `${ASSET_KEYS.STAR_SHIELD}_LOOP`,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.STAR_SHIELD, { start: 12, end: 12 }),
+      frameRate: 6,
+      repeat: -1,
+    });
+    this.anims.create({
+      key: `${ASSET_KEYS.STAR_SHIELD}_END`,
+      frames: this.anims.generateFrameNumbers(ASSET_KEYS.STAR_SHIELD, { start: 13, end: 14 }),
+      frameRate: 8,
+      repeat: 0,
+      hideOnComplete: true,
     });
 
     // DarkBolt — 4-frame loop of the Blood Mage skill3 sheet. Frame rate is

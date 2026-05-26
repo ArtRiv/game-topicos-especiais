@@ -8,6 +8,69 @@ export const WIND_BOLT_SPEED = 900;
 export const WIND_BOLT_LIFETIME = 1800; // ms
 export const WIND_BOLT_IMPACT_FORWARD_OFFSET = 8;
 
+// ─── Flame Slash combo (WindBolt + FireArea) ─────────────────────────────────
+// When a WindBolt passes through a FireArea it ignites into a "Flame Slash":
+// the bolt continues at its normal speed but deals bonus damage, tints
+// warm-orange, emits rising ember particles (same pattern as lava puddles),
+// and carries a soft red glow underneath. Idempotent per bolt — repeated
+// FireArea pass-throughs are no-ops.
+export const FLAME_SLASH_DAMAGE_MULT = 1.6;
+// User-picked palette (warm reds, ochres, creams). Cycled per ember and used
+// as the bolt's body tint (picks index 0 — the deepest red).
+export const FLAME_SLASH_PALETTE = [0xda863e, 0xcf573c, 0xe8c170, 0xebede9] as const;
+export const FLAME_SLASH_TINT = FLAME_SLASH_PALETTE[0];
+// Ember emission tuning — mirrors the lava-puddle ember pattern but tighter
+// since the bolt is small and moves fast.
+export const FLAME_SLASH_EMBER_INTERVAL_MS = 40;
+export const FLAME_SLASH_EMBER_PER_EMIT_MIN = 1;
+export const FLAME_SLASH_EMBER_PER_EMIT_MAX = 2;
+export const FLAME_SLASH_EMBER_SIZE_PX_MIN = 1;
+export const FLAME_SLASH_EMBER_SIZE_PX_MAX = 2;
+export const FLAME_SLASH_EMBER_RISE_PX_MIN = 6;
+export const FLAME_SLASH_EMBER_RISE_PX_MAX = 12;
+export const FLAME_SLASH_EMBER_LIFETIME_MS = 280;
+export const FLAME_SLASH_EMBER_SPAWN_RADIUS_PX = 3;
+// Soft glow that follows the bolt — additive blend so it reads as light, not
+// a sprite. White inner core + red outer halo for the "hot tip" look.
+export const FLAME_SLASH_GLOW_INNER_COLOR = 0xffffff;
+export const FLAME_SLASH_GLOW_OUTER_COLOR = 0xcf573c;
+export const FLAME_SLASH_GLOW_INNER_RADIUS_PX = 2;
+export const FLAME_SLASH_GLOW_OUTER_RADIUS_PX = 5;
+export const FLAME_SLASH_GLOW_INNER_ALPHA = 0.75;
+export const FLAME_SLASH_GLOW_OUTER_ALPHA = 0.35;
+
+// ─── WindBolt + FireBolt: split combo ────────────────────────────────────────
+// The FireBolt is cut in half — two smaller FireBolts spawn forward at
+// slight opposite angles. Each child carries reduced damage + smaller scale.
+// Spawned via direct FireBolt construction (not the registry) so we can place
+// them at the mid-point with custom angles; they then participate in the
+// normal damage pipeline.
+export const WIND_FIRE_SPLIT_ANGLE_RAD = 0.35;       // ±20° spread off the original heading
+export const WIND_FIRE_SPLIT_CHILD_SCALE = 0.65;
+export const WIND_FIRE_SPLIT_CHILD_DAMAGE_MULT = 0.5;
+export const WIND_FIRE_SPLIT_FORWARD_OFFSET_PX = 6;  // nudge children forward so they don't re-overlap each other
+
+// ─── WindBolt + WaterTornado: absorbed → cone burst ──────────────────────────
+// The bolt is consumed; the tornado is force-ended; a cone of water puddles is
+// scattered ahead of the bolt's travel direction.
+export const WIND_TORNADO_CONE_RANGE_PX = 56;
+export const WIND_TORNADO_CONE_HALF_ANGLE_RAD = 0.5; // ~±28°
+export const WIND_TORNADO_CONE_PUDDLE_COUNT = 12;
+export const WIND_TORNADO_CONE_PUDDLE_AMOUNT = 2;
+
+// ─── WindBolt + Puddle: push combo ───────────────────────────────────────────
+// On overlap, displace the puddle along the bolt's velocity. Water moves the
+// most, mud less, lava barely at all (heavy molten rock). One-shot per
+// (bolt, puddle) pairing — tracked via a per-bolt Set on the bolt itself.
+export const WIND_PUDDLE_PUSH_PX_WATER = 18;
+export const WIND_PUDDLE_PUSH_PX_MUD = 6;
+export const WIND_PUDDLE_PUSH_PX_LAVA = 2;
+// Push glides over this many ms instead of snapping instantly. Water glides
+// fastest, lava is sluggish.
+export const WIND_PUDDLE_PUSH_DURATION_MS_WATER = 220;
+export const WIND_PUDDLE_PUSH_DURATION_MS_MUD = 280;
+export const WIND_PUDDLE_PUSH_DURATION_MS_LAVA = 340;
+
 // ─── Air Burst (wind super-dash spell) ────────────────────────────────────────
 // Reuses Player.dash() with overridden distance and duration — see Player.dashSuper().
 // The VFX is the 3x3 Air Burst sheet anchored behind the caster relative to the dash

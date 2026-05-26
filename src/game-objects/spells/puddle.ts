@@ -160,14 +160,33 @@ export class Puddle extends Phaser.GameObjects.Graphics {
     lifetimeMs?: number,
     staggerMs: number = 0,
     kind: PuddleKind = 'water',
+    /** Optional deterministic seed. Pass a stable number (e.g. derived from the
+     *  caster's cast position) so every client computes the SAME puddle
+     *  positions for the same spell instance — fixes the WaterTornado
+     *  per-client divergence (each client previously ran Math.random()
+     *  independently → different positions on every browser). */
+    seed?: number,
   ): void {
+    // Tiny LCG: stable across browsers, no external dependency. Only used when
+    // a seed is provided — undefined falls back to Math.random for legacy callers.
+    let s = seed ?? 0;
+    const rand = (): number => {
+      if (seed === undefined) return Math.random();
+      // Numerical Recipes LCG constants — good enough for visual jitter.
+      s = (s * 1664525 + 1013904223) >>> 0;
+      return s / 0x100000000;
+    };
     for (let i = 0; i < count; i++) {
+      // Pre-compute the random values synchronously so the staggered drops
+      // don't re-pull from rand() in a different order than another client
+      // (delayedCall might fire after another cast's drops on a busy frame).
+      const r = Math.sqrt(rand()) * spread;
+      const a = rand() * Math.PI * 2;
+      const px = cx + Math.cos(a) * r;
+      const py = cy + Math.sin(a) * r;
       const drop = (): void => {
         if (!scene.scene.isActive()) return;
-        // sqrt(random) for uniform area distribution — without it puddles clump at the center.
-        const r = Math.sqrt(Math.random()) * spread;
-        const a = Math.random() * Math.PI * 2;
-        Puddle.spawnOrMerge(scene, cx + Math.cos(a) * r, cy + Math.sin(a) * r, amountEach, lifetimeMs, kind);
+        Puddle.spawnOrMerge(scene, px, py, amountEach, lifetimeMs, kind);
       };
       if (staggerMs > 0 && i > 0) {
         scene.time.delayedCall(i * staggerMs, drop);
@@ -186,6 +205,7 @@ export class Puddle extends Phaser.GameObjects.Graphics {
   declare body: Phaser.Physics.Arcade.Body;
   #destroyTimer: Phaser.Time.TimerEvent | undefined;
   #fadeTween: Phaser.Tweens.Tween | undefined;
+  #pushTween: Phaser.Tweens.Tween | undefined;
   // Lava-only: ember emission timer (pure visual — dots that rise up + fade).
   // The "bubble" re-jitter timer that used to live here moved to LavaLayer
   // so every puddle's noise re-randomises in lockstep.
@@ -423,6 +443,47 @@ export class Puddle extends Phaser.GameObjects.Graphics {
     });
   }
 
+  /** Glide the puddle by (dx, dy) over `durationMs`. Used by the
+   *  WindBolt+Puddle push combo. Each frame the tween advances we re-sync
+   *  the body (so the hitbox follows the visual) and, for non-lava puddles,
+   *  re-draw the blob layout at the new position. Lava puddles re-stamp
+   *  into the shared LavaLayer automatically on its next POST_UPDATE.
+   *  A pre-existing push tween on the same puddle is cancelled and replaced
+   *  so successive bolts can chain pushes cleanly. */
+  public nudgeBy(dx: number, dy: number, durationMs: number = 0): void {
+    if (!this.active) return;
+    // Snap path (durationMs <= 0) — kept so callers can opt out of the tween.
+    if (durationMs <= 0) {
+      this.x += dx;
+      this.y += dy;
+      this.#syncBody();
+      if (this.kind === 'lava') this.regenerateLavaLayout();
+      else this.#draw();
+      return;
+    }
+    this.#pushTween?.stop();
+    const targetX = this.x + dx;
+    const targetY = this.y + dy;
+    this.#pushTween = this.scene.tweens.add({
+      targets: this,
+      x: targetX,
+      y: targetY,
+      duration: durationMs,
+      ease: 'Sine.easeOut',
+      onUpdate: () => {
+        this.#syncBody();
+        if (this.kind === 'lava') this.regenerateLavaLayout();
+        else this.#draw();
+      },
+      onComplete: () => {
+        this.#syncBody();
+        if (this.kind === 'lava') this.regenerateLavaLayout();
+        else this.#draw();
+        this.#pushTween = undefined;
+      },
+    });
+  }
+
   get charge(): number {
     return this.#charge;
   }
@@ -496,6 +557,16 @@ export class Puddle extends Phaser.GameObjects.Graphics {
     this.clear();
     const r = this.radius;
 
+    // Deterministic per-puddle blob layout: seed an LCG from the puddle's
+    // world position so every client computes the SAME inner-jitter for the
+    // same puddle. Without this, hitboxes matched but the visual blob
+    // positions diverged frame-to-frame across clients.
+    let seedState = (((this.x | 0) * 73856093) ^ ((this.y | 0) * 19349663) ^ (this.kind === 'mud' ? 0x4d756400 : 0)) >>> 0;
+    const seededRand = (): number => {
+      seedState = (seedState * 1664525 + 1013904223) >>> 0;
+      return seedState / 0x100000000;
+    };
+
     // Per-kind palette and base alpha. Mud reads "thicker" via higher
     // per-blob alpha than water's translucent wet look.
     let baseTint: number;
@@ -523,10 +594,10 @@ export class Puddle extends Phaser.GameObjects.Graphics {
     // 6 jittered overlapping blobs — organic, no two puddles identical.
     const blobs = 6;
     for (let i = 0; i < blobs; i++) {
-      const angle = (i / blobs) * Math.PI * 2 + (Math.random() - 0.5) * 0.6;
-      const dist = r * 0.35 * Math.random();
-      const rx = r * (0.65 + Math.random() * 0.45);
-      const ry = r * (0.45 + Math.random() * 0.4);
+      const angle = (i / blobs) * Math.PI * 2 + (seededRand() - 0.5) * 0.6;
+      const dist = r * 0.35 * seededRand();
+      const rx = r * (0.65 + seededRand() * 0.45);
+      const ry = r * (0.45 + seededRand() * 0.4);
       this.fillStyle(baseTint, baseAlpha);
       this.fillEllipse(Math.cos(angle) * dist, Math.sin(angle) * dist, rx * 2, ry * 2);
     }
@@ -935,6 +1006,8 @@ export class Puddle extends Phaser.GameObjects.Graphics {
   destroy(fromScene?: boolean): void {
     this.#destroyTimer?.destroy();
     this.#fadeTween?.stop();
+    this.#pushTween?.stop();
+    this.#pushTween = undefined;
     this.#sparkTimer?.destroy();
     this.#damageTimer?.destroy();
     this.#lavaEmberTimer?.destroy();

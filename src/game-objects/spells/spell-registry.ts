@@ -69,6 +69,11 @@ export const SPELL_CONFIG: Record<SpellId, { manaCost: number; cooldown: number 
   [SPELL_ID.DARK_BOLT]:      { manaCost: DARK_BOLT_MANA_COST,      cooldown: DARK_BOLT_COOLDOWN },
   [SPELL_ID.WATER_BALL]:     { manaCost: WATER_BALL_MANA_COST,     cooldown: WATER_BALL_COOLDOWN },
   [SPELL_ID.AIR_BURST]:      { manaCost: AIR_BURST_MANA_COST,      cooldown: AIR_BURST_COOLDOWN },
+  // DASH is a VFX-only broadcast — never slotted, mana/cooldown handled by Player.dash() directly.
+  [SPELL_ID.DASH]:           { manaCost: 0, cooldown: 0 },
+  // STAR_SHIELD — special-slot spell, always-available. No mana/cooldown; the
+  // SpecialSpellInventory auto-refills the slot after each cast.
+  [SPELL_ID.STAR_SHIELD]:    { manaCost: 0, cooldown: 0 },
   // LightningBeam is channeled — mana drains per tick from the spell itself. Cooldown
   // is enforced post-channel (the beam calls SpellCastingComponent.refreshCooldown on
   // destroy), so this is the cooldown window AFTER the beam ends, not from cast time.

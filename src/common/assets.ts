@@ -113,6 +113,9 @@ export const ASSET_KEYS = {
   VOID_ORB_DISPLACEMENT: 'VOID_ORB_DISPLACEMENT',// generated at runtime — radial noise map
   // DarkBolt — Hollow-Purple-style erasure projectile. Blood Mage VFX3 sheet, 4 frames @ 128×128.
   DARK_BOLT_BM_VFX3: 'DARK_BOLT_BM_VFX3',
+  // Star Shield — Starcaller VFX 3 sphere. 5×3 sheet, 128×128 per frame (15 total).
+  // Wraps the caster as an invulnerability/reflection bubble.
+  STAR_SHIELD: 'STAR_SHIELD',
 } as const;
 
 export const DASH_ANIMATION_KEYS = {

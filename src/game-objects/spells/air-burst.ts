@@ -7,11 +7,14 @@ import {
   AIR_BURST_COOLDOWN,
   AIR_BURST_DURATION_MS,
   AIR_BURST_MANA_COST,
+  AIR_BURST_SCALE_BOOST,
+  AIR_BURST_ARC_LIFT_PX,
   AIR_BURST_VFX_OFFSET_PX,
   AIR_BURST_VFX_SCALE,
   AIR_BURST_VFX_TILT_RAD,
 } from '../../common/config';
 import { registerSpell } from './spell-registry';
+import { Player } from '../player/player';
 
 /**
  * AirBurst — the wind super-dash spell. The "spell game object" itself is just a stub:
@@ -96,10 +99,46 @@ registerSpell(SPELL_ID.AIR_BURST, (scene, cx, cy, _tx, _ty, _dir, caster) => {
   if (isLocalCaster) {
     localPlayer?.dashSuper?.();
   } else if (caster && typeof (caster as { x?: number }).x === 'number') {
-    // Remote (or non-Player) caster: render just the burst VFX behind them. We don't
-    // know their dash direction explicitly — use their facing if exposed, else fall back
-    // to a small drift along the (caster → cast point) vector.
-    AirBurst.spawnRemoteVfx(scene, caster as Phaser.GameObjects.GameObject & { x: number; y: number; direction?: string });
+    // Remote (or non-Player) caster: render the burst VFX AND the dash roll
+    // behind them so the mage actually animates rolling forward instead of
+    // sliding. The roll-direction is derived from (caster -> target) — the
+    // local caller (GameScene#handleDashInput) sets target one tile ahead in
+    // the WASD direction so this is deterministic.
+    const c = caster as Phaser.GameObjects.Sprite & {
+      x: number;
+      y: number;
+      depth: number;
+      flipX: boolean;
+      tint: number;
+      tintFill: boolean;
+      active: boolean;
+      direction?: string;
+    };
+    AirBurst.spawnRemoteVfx(scene, c);
+
+    let nx = _tx - c.x;
+    let ny = _ty - c.y;
+    const len = Math.hypot(nx, ny);
+    if (len > 0.001) {
+      nx /= len;
+      ny /= len;
+    } else {
+      switch (c.direction ?? _dir) {
+        case DIRECTION.LEFT:  nx = -1; ny = 0; break;
+        case DIRECTION.RIGHT: nx = 1;  ny = 0; break;
+        case DIRECTION.UP:    nx = 0;  ny = -1; break;
+        case DIRECTION.DOWN:
+        default:              nx = 0;  ny = 1;
+      }
+    }
+    Player.spawnDashVfxFor(
+      c,
+      nx,
+      ny,
+      AIR_BURST_DURATION_MS,
+      AIR_BURST_ARC_LIFT_PX,
+      AIR_BURST_SCALE_BOOST,
+    );
   }
 
   return new AirBurst(scene, cx, cy);

@@ -118,7 +118,7 @@ export class WaterTornado extends Phaser.Physics.Arcade.Sprite implements Active
     const scene = this.scene as GameScene;
     const localPlayer: Player | undefined = scene.player?.active ? scene.player : undefined;
 
-    if (localPlayer) {
+    if (localPlayer && !localPlayer.isStarShieldActive) {
       const dx = localPlayer.x - centerX;
       const dy = localPlayer.y - centerY;
       const distSq = dx * dx + dy * dy;
@@ -234,6 +234,14 @@ export class WaterTornado extends Phaser.Physics.Arcade.Sprite implements Active
     // visibly on the ground while the tornado is still spinning, not magically after.
     // Cluster spawn → 7 small puddles within ~48px of the base merge into a natural
     // 2-3 larger pool footprint matching the tornado's reach.
+    //
+    // Multiplayer determinism: derive the seed from the tornado's spawn
+    // position (rounded to int pixels for cross-client agreement) so every
+    // browser computes the SAME puddle positions for the same tornado. Without
+    // this each client ran Math.random() independently → the user could see a
+    // puddle that the opponent's client didn't render, breaking the "I'm
+    // standing in water" feedback parity.
+    const seed = ((this.x | 0) * 73856093) ^ ((this.y | 0) * 19349663);
     Puddle.spawnCluster(
       this.scene,
       this.x,
@@ -243,6 +251,8 @@ export class WaterTornado extends Phaser.Physics.Arcade.Sprite implements Active
       RUNTIME_CONFIG.WATER_TORNADO_PUDDLE_AMOUNT_EACH,
       undefined, // lifetimeMs — use default
       RUNTIME_CONFIG.WATER_TORNADO_PUDDLE_STAGGER_MS, // drip in gradually over the loop
+      'water',
+      seed >>> 0,
     );
 
     this.play(`${ASSET_KEYS.WATER_TORNADO_STARTUP_LOOP}_LOOP`);
@@ -259,6 +269,14 @@ export class WaterTornado extends Phaser.Physics.Arcade.Sprite implements Active
     this.#durationTimer = this.scene.time.delayedCall(WATER_TORNADO_DURATION, () => {
       if (this.active) this.#startFade();
     });
+  }
+
+  /** Force the tornado into its end animation immediately. Used by the
+   *  WindBolt+Tornado combo where the bolt is absorbed and the funnel
+   *  releases a forward cone burst — we want the tornado gone right away.
+   *  No-op if already dying. */
+  public forceEnd(): void {
+    this.#startFade();
   }
 
   #startFade(): void {

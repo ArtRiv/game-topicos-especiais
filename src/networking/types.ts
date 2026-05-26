@@ -53,6 +53,11 @@ export type PlayerUpdatePayload = {
   direction: string;
   state: string;
   element: string;
+  /** Horizontal sprite mirroring. Independent of `direction` because diagonal
+   *  movement (e.g. UP + LEFT) keeps direction=UP for vertical-anim priority
+   *  but separately flipX-true so the side anim's mirroring is honored.
+   *  Optional for backwards-compat with older clients / fixtures. */
+  flipX?: boolean;
 };
 
 /** Inbound: server relays other players' updates */
@@ -99,6 +104,33 @@ export type BreathUpdateBroadcast = BreathUpdatePayload & { playerId: string };
 export type BreathEndPayload = Record<string, never>;
 
 export type BreathEndBroadcast = { playerId: string };
+
+/** LightningBeam channeled spell — start event. */
+export type BeamStartPayload = {
+  spellId: string;     // per-cast UUID (matches the spell-cast UUID emitted by the caster)
+  x: number;           // caster anchor
+  y: number;
+  targetX: number;     // current cursor world position
+  targetY: number;
+};
+
+export type BeamStartBroadcast = BeamStartPayload & { playerId: string };
+
+/** LightningBeam — per-tick aim update (sent at 20 Hz via unreliable channel). */
+export type BeamUpdatePayload = {
+  spellId: string;
+  x: number;
+  y: number;
+  targetX: number;
+  targetY: number;
+};
+
+export type BeamUpdateBroadcast = BeamUpdatePayload & { playerId: string };
+
+/** LightningBeam — end event. */
+export type BeamEndPayload = { spellId: string };
+
+export type BeamEndBroadcast = BeamEndPayload & { playerId: string };
 
 /** EarthWall — single pillar placement */
 export type EarthWallPillarPayload = {

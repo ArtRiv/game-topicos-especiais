@@ -176,6 +176,10 @@ export class WaterSpike extends Phaser.Physics.Arcade.Sprite implements ActiveSp
     // spike to fade — the water is already on the ground from the moment the spike
     // erupts. Cluster spawn → multiple small puddles within the spike's base radius,
     // which merge naturally into 1-3 larger pools.
+    // Deterministic seed (multiplayer) — same shape as WaterTornado: derive
+    // from the spike's spawn position so every client computes identical
+    // puddle layouts.
+    const spikeSeed = (((this.x | 0) * 73856093) ^ ((this.y | 0) * 19349663)) >>> 0;
     Puddle.spawnCluster(
       this.scene,
       this.x,
@@ -183,6 +187,10 @@ export class WaterSpike extends Phaser.Physics.Arcade.Sprite implements ActiveSp
       RUNTIME_CONFIG.WATER_SPIKE_PUDDLE_COUNT,
       RUNTIME_CONFIG.WATER_SPIKE_PUDDLE_SPREAD,
       RUNTIME_CONFIG.WATER_SPIKE_PUDDLE_AMOUNT_EACH,
+      undefined,
+      0,
+      'water',
+      spikeSeed,
     );
 
     this.play(`${ASSET_KEYS.WATER_SPIKE}_RISE`);

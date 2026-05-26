@@ -110,6 +110,9 @@ export class WaterBall extends Phaser.Physics.Arcade.Sprite implements ActiveSpe
     this.play(ASSET_KEYS.WATER_BALL_IMPACT);
     this.once(`animationcomplete-${ASSET_KEYS.WATER_BALL_IMPACT}`, () => {
       // Splash a scatter cluster of puddles where the ball burst.
+      // Deterministic seed (multiplayer) — derive from impact position so
+      // every client computes identical puddle layouts.
+      const wbSeed = (((this.x | 0) * 73856093) ^ ((this.y | 0) * 19349663)) >>> 0;
       Puddle.spawnCluster(
         this.scene,
         this.x,
@@ -117,6 +120,10 @@ export class WaterBall extends Phaser.Physics.Arcade.Sprite implements ActiveSpe
         RUNTIME_CONFIG.WATER_BALL_PUDDLE_COUNT,
         RUNTIME_CONFIG.WATER_BALL_PUDDLE_SPREAD,
         RUNTIME_CONFIG.WATER_BALL_PUDDLE_AMOUNT_EACH,
+        undefined,
+        0,
+        'water',
+        wbSeed,
       );
       this.destroy();
     });

@@ -585,6 +585,7 @@ export class UiScene extends Phaser.Scene {
   static readonly #SPECIAL_ICON_KEY: Record<string, string> = {
     [SPELL_ID.VOID_ORB]: ASSET_KEYS.VOID_ORB_BM_LOOP,
     [SPELL_ID.DARK_BOLT]: ASSET_KEYS.DARK_BOLT_BM_VFX3,
+    [SPELL_ID.STAR_SHIELD]: ASSET_KEYS.STAR_SHIELD,
   };
 
   #createSpecialChargesHud(): void {

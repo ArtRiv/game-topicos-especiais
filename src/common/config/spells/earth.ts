@@ -20,8 +20,8 @@ export const EARTH_BUMP_MANA_COST = 1;
 export const EARTH_BUMP_COOLDOWN = 1000; // ms
 export const EARTH_BUMP_DURATION = 250; // time it stays "fully out" before sinking (was 800)
 export const EARTH_BUMP_BODY_RADIUS = 16;
-export const EARTH_BUMP_KNOCKBACK_FORCE = 300;
-export const EARTH_BUMP_KNOCKBACK_DURATION = 300;
+export const EARTH_BUMP_KNOCKBACK_FORCE = 450;
+export const EARTH_BUMP_KNOCKBACK_DURATION = 220;
 // How far ABOVE the cursor target the bump's sprite anchor sits. Higher =
 // the visible bump appears farther up from the click point. The bump's
 // physics body is centered on the sprite, so this also raises the hitbox.

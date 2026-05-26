@@ -58,6 +58,11 @@ export class Player extends CharacterGameObject {
   // Phase 9.3 — Dash state (D-13/14, RESEARCH.md §3)
   public iFrameUntil: number = 0;
   public isDashing: boolean = false;
+  // Star Shield invulnerability flag. Set by StarShield on spawn, cleared on
+  // destroy. Read by CharacterGameObject.hit() (skip damage), game-scene combo
+  // loops (skip pulls/slows), and the cross-player overlap handlers (reflect
+  // projectiles back at sender instead of registering a hit).
+  public isStarShieldActive: boolean = false;
   #lastDashTime: number = -Infinity;
   // Independent cooldown for the wind super-dash. Tracked here instead of in
   // SpellCastingComponent because AirBurst isn't bound to any spell slot — it
@@ -312,67 +317,81 @@ export class Player extends CharacterGameObject {
     arcLiftPx?: number,
     rollScaleMult?: number,
   ): void {
+    Player.spawnDashVfxFor(this, nx, ny, durationMs, arcLiftPx, rollScaleMult);
+  }
+
+  /**
+   * Shared dash-VFX spawner — used by the local dash path on Player AND by the
+   * remote-cast factory for SPELL_ID.DASH / AIR_BURST so other clients see the
+   * rolling animation on their opponent's mage instead of a silent slide.
+   *
+   * The roll sprite follows `target` (a Phaser sprite — local player or remote
+   * player). While the roll is on screen the target's own texture is hidden,
+   * mirroring the local effect.
+   */
+  static spawnDashVfxFor(
+    target: Phaser.GameObjects.Sprite & { x: number; y: number; depth: number; flipX: boolean; tint: number; tintFill: boolean; active: boolean },
+    nx: number,
+    ny: number,
+    durationMs?: number,
+    arcLiftPx?: number,
+    rollScaleMult?: number,
+  ): void {
     const cfg = RUNTIME_CONFIG;
     const dashMs = durationMs ?? cfg.DASH_DURATION_MS;
     const lift = arcLiftPx ?? 0;
     const scaleMult = rollScaleMult ?? 1;
+    const scene = target.scene;
 
     // Smoke puff at dash origin, behind the player. The base puff art is drawn trailing to
     // the right (assumes a rightward dash). For leftward dashes we mirror it across X and
     // mirror the offset so the puff sits behind the feet instead of in front of them.
     const dashLeft = nx < 0;
     const horizontalOffset = dashLeft ? 12 : -12;
-    const smokeX = this.x + horizontalOffset - nx * 2;
-    const smokeY = this.y + 14 - ny * 4;
-    const smoke = this.scene.add.sprite(smokeX, smokeY, ASSET_KEYS.DASH_SMOKE, 0);
+    const smokeX = target.x + horizontalOffset - nx * 2;
+    const smokeY = target.y + 14 - ny * 4;
+    const smoke = scene.add.sprite(smokeX, smokeY, ASSET_KEYS.DASH_SMOKE, 0);
     smoke.setOrigin(0.5, 0.75);
     smoke.setFlipX(dashLeft);
-    // Same depth as player; added before the roll sprite so the roll renders on top.
-    smoke.setDepth(this.depth);
+    smoke.setDepth(target.depth);
     smoke.setAlpha(cfg.DASH_SMOKE_ALPHA);
     smoke.setScale(cfg.DASH_SMOKE_SCALE);
     smoke.play(DASH_ANIMATION_KEYS.SMOKE);
     smoke.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => smoke.destroy());
 
-    // Roll sprite that follows the player; hide the body texture so only the roll shows.
-    const roll = this.scene.add.sprite(this.x, this.y + 4, ASSET_KEYS.PLAYER_ROLL_1);
+    // Roll sprite that follows the target; hide the target's texture so only the roll shows.
+    const roll = scene.add.sprite(target.x, target.y + 4, ASSET_KEYS.PLAYER_ROLL_1);
     roll.setOrigin(0.5, 0.5);
-    roll.setDepth(this.depth);
+    roll.setDepth(target.depth);
     roll.setScale(cfg.DASH_ROLL_SCALE * scaleMult);
-    roll.setFlipX(this.flipX);
-    if (this.tintFill || this.tint !== 0xffffff) {
-      roll.setTint(this.tint);
+    roll.setFlipX(target.flipX);
+    if (target.tintFill || target.tint !== 0xffffff) {
+      roll.setTint(target.tint);
     }
     roll.play(DASH_ANIMATION_KEYS.ROLL);
 
-    this.setVisible(false);
+    target.setVisible(false);
 
-    // Arc-lift: sin curve over the dash duration → peak at t=0.5, ends at 0.
-    // Recomputed every frame in the follow handler so the visual stays in
-    // sync regardless of any time-scale weirdness.
-    const arcStartMs = this.scene.time.now;
+    const arcStartMs = scene.time.now;
     const followHandler = (): void => {
       if (!roll.active) return;
       let extraY = 0;
       if (lift > 0) {
-        const t = Math.max(0, Math.min(1, (this.scene.time.now - arcStartMs) / dashMs));
+        const t = Math.max(0, Math.min(1, (scene.time.now - arcStartMs) / dashMs));
         extraY = -Math.sin(t * Math.PI) * lift;
       }
-      roll.setPosition(this.x, this.y + 4 + extraY);
+      roll.setPosition(target.x, target.y + 4 + extraY);
     };
-    this.scene.events.on(Phaser.Scenes.Events.UPDATE, followHandler);
+    scene.events.on(Phaser.Scenes.Events.UPDATE, followHandler);
 
     const cleanup = (): void => {
-      this.scene.events.off(Phaser.Scenes.Events.UPDATE, followHandler);
-      if (this.active) this.setVisible(true);
+      scene.events.off(Phaser.Scenes.Events.UPDATE, followHandler);
+      if (target.active) target.setVisible(true);
       roll.destroy();
     };
 
     roll.once(Phaser.Animations.Events.ANIMATION_COMPLETE, cleanup);
-    // Safety net: ensure the roll is cleaned up if the animation event never fires
-    // (e.g. scene shutdown or player destroyed mid-dash). The longer of roll-animation
-    // duration vs the actual dash duration covers super-dashes that outlast the roll.
-    this.scene.time.delayedCall(dashMs + 50, () => {
+    scene.time.delayedCall(dashMs + 50, () => {
       if (roll.active) cleanup();
     });
   }

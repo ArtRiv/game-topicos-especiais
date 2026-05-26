@@ -156,7 +156,11 @@ export abstract class CharacterGameObject extends Phaser.Physics.Arcade.Sprite i
     // pinned, not just slow.
     const body = this.body as Phaser.Physics.Arcade.Body | null;
     if (body) {
-      if (this.isMovementSnared()) {
+      // Knockback wins over snare/slow — overrides any velocity the state
+      // machine just wrote (e.g. HurtState's reset + smaller pushback).
+      if (this.isKnockedBack()) {
+        body.setVelocity(this.#knockbackVx, this.#knockbackVy);
+      } else if (this.isMovementSnared()) {
         body.setVelocity(0, 0);
       } else if (this.#movementMultiplier !== 1) {
         body.setVelocity(
@@ -199,8 +203,61 @@ export abstract class CharacterGameObject extends Phaser.Physics.Arcade.Sprite i
     this.#snareUntilMs = 0;
   }
 
+  // Active knockback state — read every frame in update() so the velocity
+  // survives HurtState's _resetObjectVelocity() / move-state writes. Without
+  // this, the bigger knockback was being clobbered by HurtState's smaller
+  // pushback the instant damage:confirmed arrived, so EarthBump looked like
+  // it only ever did damage.
+  #knockbackUntilMs: number = 0;
+  #knockbackVx: number = 0;
+  #knockbackVy: number = 0;
+
+  /**
+   * Apply a directional knockback to this character. Pins body velocity in the
+   * given direction every frame until `durationMs` elapses. Survives any
+   * intermediate state-machine writes to velocity (e.g. HurtState's tiny
+   * pushback that would otherwise clobber the bigger force). Independent of
+   * HurtState's pushback — does NOT change state machine state, so the
+   * character can still cast / move once the timer expires. Stacks longest:
+   * a longer-running knockback overrides a shorter one mid-flight.
+   */
+  public applyKnockback(direction: Direction, force: number, durationMs: number): void {
+    if (this._isDefeated) return;
+    const body = this.body as Phaser.Physics.Arcade.Body | null;
+    if (!body) return;
+    let vx = 0;
+    let vy = 0;
+    switch (direction) {
+      case 'LEFT':  vx = -force; break;
+      case 'RIGHT': vx = force;  break;
+      case 'UP':    vy = -force; break;
+      case 'DOWN':
+      default:      vy = force;
+    }
+    const newUntil = this.scene.time.now + durationMs;
+    // Stack-longest: keep the later deadline if a longer knockback fires mid-flight.
+    if (newUntil > this.#knockbackUntilMs) {
+      this.#knockbackUntilMs = newUntil;
+      this.#knockbackVx = vx;
+      this.#knockbackVy = vy;
+    }
+    body.setVelocity(vx, vy);
+  }
+
+  /** True iff a knockback applied via applyKnockback is still active. */
+  public isKnockedBack(): boolean {
+    return this.scene.time.now < this.#knockbackUntilMs;
+  }
+
   public hit(direction: Direction, damage: number): void {
     if (this._isDefeated) {
+      return;
+    }
+
+    // Star Shield: total damage immunity while the bubble is active. The
+    // Player subclass owns the flag; checked via duck-typing so this base
+    // class doesn't have to import Player.
+    if ((this as unknown as { isStarShieldActive?: boolean }).isStarShieldActive) {
       return;
     }
 

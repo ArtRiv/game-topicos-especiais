@@ -7,6 +7,7 @@ export type RemotePlayerSnapshot = {
   direction: string;
   state: string;
   element: string;
+  flipX: boolean;
 };
 
 /**
@@ -23,6 +24,7 @@ export class RemoteInputComponent extends InputComponent {
   #targetY = 0;
   #targetDirection = '';
   #targetState = '';
+  #targetFlipX = false;
   #hasTarget = false;
 
   constructor() {
@@ -31,18 +33,20 @@ export class RemoteInputComponent extends InputComponent {
   }
 
   /** Called by NetworkManager when a game:player-update arrives for this player */
-  applySnapshot(data: Pick<PlayerUpdateBroadcast, 'x' | 'y' | 'direction' | 'state' | 'element'>): void {
+  applySnapshot(data: Pick<PlayerUpdateBroadcast, 'x' | 'y' | 'direction' | 'state' | 'element' | 'flipX'>): void {
     this.#snapshot = {
       x: data.x,
       y: data.y,
       direction: data.direction,
       state: data.state,
       element: data.element,
+      flipX: data.flipX ?? false,
     };
     this.#targetX = data.x;
     this.#targetY = data.y;
     this.#targetDirection = data.direction;
     this.#targetState = data.state;
+    this.#targetFlipX = data.flipX ?? false;
     this.#hasTarget = true;
   }
 
@@ -52,12 +56,13 @@ export class RemoteInputComponent extends InputComponent {
   }
 
   /** Returns interpolation target for per-frame lerp in GameScene.update() */
-  getTarget(): { x: number; y: number; direction: string; state: string; hasTarget: boolean } {
+  getTarget(): { x: number; y: number; direction: string; state: string; flipX: boolean; hasTarget: boolean } {
     return {
       x: this.#targetX,
       y: this.#targetY,
       direction: this.#targetDirection,
       state: this.#targetState,
+      flipX: this.#targetFlipX,
       hasTarget: this.#hasTarget,
     };
   }

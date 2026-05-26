@@ -64,6 +64,10 @@ import { VoidOrbPickup } from '../game-objects/pickups/void-orb-pickup';
 import { DarkBoltPickup } from '../game-objects/pickups/dark-bolt-pickup';
 import { SpecialSpellInventory } from '../common/special-spell-inventory';
 import { AirBurst } from '../game-objects/spells/air-burst';
+// Side-effect import: registers SPELL_ID.DASH factory so remote dash casts replay the roll VFX.
+import '../game-objects/spells/dash-vfx';
+// Star Shield — side-effect import registers SPELL_ID.STAR_SHIELD factory.
+import { STAR_SHIELD_REFLECT_SPEED_MULT } from '../game-objects/spells/star-shield';
 import { VoidOrb } from '../game-objects/spells/void-orb';
 import { DarkBolt, DARK_BOLT_ENV_LIGHT_TEXTURE_KEY, ensureDarkBoltEnvLightTexture } from '../game-objects/spells/dark-bolt';
 import { LightningBurstCombo, LightningStrikeCombo } from '../game-objects/spells/lightning-combo';
@@ -77,6 +81,20 @@ import {
   EARTH_WALL_PILLAR_COUNT,
   EARTH_WALL_PILLAR_SPACING,
   EARTH_WALL_FIREBOLT_SPLASH_RADIUS,
+  WIND_FIRE_SPLIT_ANGLE_RAD,
+  WIND_FIRE_SPLIT_CHILD_SCALE,
+  WIND_FIRE_SPLIT_CHILD_DAMAGE_MULT,
+  WIND_FIRE_SPLIT_FORWARD_OFFSET_PX,
+  WIND_TORNADO_CONE_RANGE_PX,
+  WIND_TORNADO_CONE_HALF_ANGLE_RAD,
+  WIND_TORNADO_CONE_PUDDLE_COUNT,
+  WIND_TORNADO_CONE_PUDDLE_AMOUNT,
+  WIND_PUDDLE_PUSH_PX_WATER,
+  WIND_PUDDLE_PUSH_PX_MUD,
+  WIND_PUDDLE_PUSH_PX_LAVA,
+  WIND_PUDDLE_PUSH_DURATION_MS_WATER,
+  WIND_PUDDLE_PUSH_DURATION_MS_MUD,
+  WIND_PUDDLE_PUSH_DURATION_MS_LAVA,
 } from '../common/config';
 import { NetworkManager } from '../networking/network-manager';
 import { RemoteInputComponent } from '../components/input/remote-input-component';
@@ -169,6 +187,11 @@ export class GameScene extends Phaser.Scene {
   #earthWallLastPlacedY: number = -Infinity;
   // Tracks previous-frame left-mouse state so we can detect a fresh click
   #earthWallMouseWasDown: boolean = false;
+  // Multiplayer crumble dedupe: pillars currently being destroyed by an
+  // inbound NETWORK_EARTH_WALL_PILLAR_DESTROY. The DESTROY broadcast hook
+  // skips these so we don't echo a destroy event back to the network when we
+  // were the responder, only when we were the originator of the crumble.
+  #pillarsBeingRemotelyDestroyed: WeakSet<EarthWallPillar> = new WeakSet();
   // Multiplayer: remote players keyed by playerId
   #remotePlayers = new Map<string, Player>();
   #remoteSpellGroup!: Phaser.GameObjects.Group;
@@ -204,6 +227,14 @@ export class GameScene extends Phaser.Scene {
   // EarthBump-vs-EarthWall combo overlap result: maps the bump → set of shattered pillar positions
   // so we only fire shards once per pillar.
   #bumpsThatShattered = new WeakSet<EarthBump>();
+  // Multiplayer: dedupes "the local player got launched by this remote bump".
+  // A bump's hitbox stays active for ~250ms so without this we'd re-apply the
+  // knockback every frame the player stayed inside it.
+  #earthBumpsThatPushedMe = new WeakSet<EarthBump>();
+  // Symmetric for "a remote player got launched by THIS bump my local cast" —
+  // dedupes the cross-player overlap callback so a single overlap doesn't fire
+  // multiple knockback broadcasts on the remote target.
+  #earthBumpsThatPushedRemote = new WeakMap<EarthBump, Set<string>>();
   // WaterTornado-vs-EarthWall grind state: per-tornado map of per-pillar
   // last-event timestamps so erosion ticks / mud drops / splash particles
   // fire on their own cadences without lockstep. WeakMap on the outer key
@@ -289,6 +320,11 @@ export class GameScene extends Phaser.Scene {
     this.#updateLightningBeamCombos();
     this.#updateWaterSpikeEarthWallCombo();
     this.#updateWaterTornadoEarthWallCombo();
+    this.#updateWindBoltEarthWallCombo();
+    this.#updateWindBoltFireAreaCombo();
+    this.#updateWindBoltFireBoltSplitCombo();
+    this.#updateWindBoltWaterTornadoCombo();
+    this.#updateWindBoltPuddlePushCombo();
     this.#interpolateRemotePlayers(delta);
     this.#updateLavaWaterExtinguishCombo(delta);
     this.#updateFireAreaPuddleEvaporateCombo(delta);
@@ -311,6 +347,280 @@ export class GameScene extends Phaser.Scene {
    * wall-onto-spike, spike-travels-into-wall) because it's a pure per-frame
    * overlap check — whichever object spawned, the next frame detects it.
    */
+  /**
+   * WindBolt + EarthWall pillar: the wall blocks the slash. On the first
+   * overlap, spawn a small dust/debris splash at the contact point, deal
+   * minor (1 HP) structural damage to the pillar, and force the bolt into
+   * its impact animation (which auto-destroys). Pure analog of the
+   * WaterSpike+EarthWall combo — multiplayer-deterministic by virtue of
+   * iterating the merged [local, remote] spell list and the explode/takeDamage
+   * methods already syncing through their existing pipelines.
+   */
+  #updateWindBoltEarthWallCombo(): void {
+    if (!this.#player?.spellCastingComponent?.spellGroup) return;
+    const pillars = this.#earthWallGroup.getChildren() as EarthWallPillar[];
+    if (pillars.length === 0) return;
+    const spellChildren = [
+      ...this.#player.spellCastingComponent.spellGroup.getChildren(),
+      ...(this.#remoteSpellGroup?.getChildren() ?? []),
+    ];
+    const bolts = spellChildren.filter(
+      (s): s is WindBolt =>
+        s instanceof WindBolt && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+    );
+    if (bolts.length === 0) return;
+
+    for (const bolt of bolts) {
+      for (const pillar of pillars) {
+        if (!pillar.active || pillar.isBeingDestroyed) continue;
+        if (!this.physics.overlap(bolt, pillar)) continue;
+
+        const pBody = pillar.body as Phaser.Physics.Arcade.Body | null;
+        const ix = pBody ? pBody.center.x : pillar.x;
+        const iy = pBody ? pBody.center.y : pillar.y;
+
+        spawnEarthBlockSplash(this, ix, iy);
+        pillar.takeDamage(1);
+        bolt.explode();
+        break;
+      }
+    }
+  }
+
+  /**
+   * WindBolt + FireArea (Flame Slash): when a WindBolt passes through any
+   * FireArea, ignite it once — it keeps flying at normal speed but tints
+   * orange and deals bonus damage on hit (FLAME_SLASH_DAMAGE_MULT). Mirrors
+   * #updateEarthBoltFireAreaCombo (mark-once boost). Deterministic across
+   * clients: same overlap detected on every peer because the bolt and
+   * fire area both appear in the merged [local, remote] spell list, so
+   * every client tints and computes bonus damage identically.
+   */
+  #updateWindBoltFireAreaCombo(): void {
+    if (!this.#player?.spellCastingComponent?.spellGroup) return;
+    const spellChildren = [
+      ...this.#player.spellCastingComponent.spellGroup.getChildren(),
+      ...(this.#remoteSpellGroup?.getChildren() ?? []),
+    ];
+    const bolts = spellChildren.filter(
+      (s): s is WindBolt =>
+        s instanceof WindBolt &&
+        s.active &&
+        !s.isFlameSlash &&
+        !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+    );
+    if (bolts.length === 0) return;
+    const fireAreas = spellChildren.filter(
+      (s): s is FireArea =>
+        s instanceof FireArea && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+    );
+    if (fireAreas.length === 0) return;
+
+    for (const bolt of bolts) {
+      for (const fireArea of fireAreas) {
+        if (this.physics.overlap(bolt, fireArea)) {
+          bolt.igniteToFlame();
+          break;
+        }
+      }
+    }
+  }
+
+  /**
+   * WindBolt + FireBolt (split): the slash cuts the fireball in half. Both
+   * projectiles are consumed; two smaller FireBolts spawn at the midpoint,
+   * angled ± WIND_FIRE_SPLIT_ANGLE_RAD off the original fireball's heading.
+   * The children inherit the fireball's velocity direction (rotated by the
+   * split angle), get scaled down visually, and a setData('damageMult') flag
+   * is honored by the damage dispatch via the existing baseDamage reads in
+   * the cross-player overlap path (defensive: also dim via scale alone is
+   * acceptable since FIRE_BOLT_DAMAGE is small; we keep damage handling
+   * simple by scaling the child's #damage through setScale + a post-set).
+   *
+   * Multiplayer: each client iterates the merged [local, remote] spell list
+   * → same overlap → identical children spawned at identical positions and
+   * angles. The new children participate in the normal damage pipeline.
+   */
+  #updateWindBoltFireBoltSplitCombo(): void {
+    if (!this.#player?.spellCastingComponent?.spellGroup) return;
+    const localGroup = this.#player.spellCastingComponent.spellGroup;
+    const spellChildren = [
+      ...localGroup.getChildren(),
+      ...(this.#remoteSpellGroup?.getChildren() ?? []),
+    ];
+    const winds = spellChildren.filter(
+      (s): s is WindBolt =>
+        s instanceof WindBolt && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+    );
+    if (winds.length === 0) return;
+    const fires = spellChildren.filter(
+      (s): s is FireBolt =>
+        s instanceof FireBolt && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+    );
+    if (fires.length === 0) return;
+
+    for (const wind of winds) {
+      for (const fire of fires) {
+        if (!fire.active || !wind.active) continue;
+        if (!this.physics.overlap(wind, fire)) continue;
+
+        const midX = (wind.x + fire.x) / 2;
+        const midY = (wind.y + fire.y) / 2;
+
+        // Children inherit the FireBolt's heading (not the WindBolt's) — the
+        // fireball is what's being cut, so its forward axis defines the split.
+        const fireBody = fire.body as Phaser.Physics.Arcade.Body;
+        const heading = Math.atan2(fireBody.velocity.y, fireBody.velocity.x);
+
+        const spawnChild = (angleOffset: number): void => {
+          const a = heading + angleOffset;
+          const sx = midX + Math.cos(a) * WIND_FIRE_SPLIT_FORWARD_OFFSET_PX;
+          const sy = midY + Math.sin(a) * WIND_FIRE_SPLIT_FORWARD_OFFSET_PX;
+          // Aim target one tile out along the angle so the child's constructor
+          // velocity points the right way (FireBolt computes velocity from
+          // angle-to-target).
+          const tx = sx + Math.cos(a) * 32;
+          const ty = sy + Math.sin(a) * 32;
+          const child = new FireBolt(this, sx, sy, tx, ty);
+          child.setScale(WIND_FIRE_SPLIT_CHILD_SCALE);
+          // Carry reduced damage via a setData flag the damage path can read,
+          // but the simplest reliable hook is the existing baseDamage getter
+          // — we just monkey-patch the readonly via Object.defineProperty so
+          // every existing hit handler that reads child.baseDamage sees the
+          // reduced value. Kept local to this combo to avoid bloating FireBolt.
+          const reduced = Math.max(1, Math.round(child.baseDamage * WIND_FIRE_SPLIT_CHILD_DAMAGE_MULT));
+          Object.defineProperty(child, 'baseDamage', {
+            get: () => reduced,
+            configurable: true,
+          });
+          localGroup.add(child);
+        };
+
+        spawnChild(+WIND_FIRE_SPLIT_ANGLE_RAD);
+        spawnChild(-WIND_FIRE_SPLIT_ANGLE_RAD);
+
+        // Consume both originals.
+        fire.explode();
+        wind.explode();
+        break; // wind is gone — move to next wind bolt
+      }
+    }
+  }
+
+  /**
+   * WindBolt + WaterTornado: the bolt is absorbed; the tornado releases a
+   * forward cone of water in the bolt's travel direction (spawns a cluster of
+   * small water puddles inside a cone ±WIND_TORNADO_CONE_HALF_ANGLE_RAD).
+   * The tornado ends immediately (forceEnd) and the bolt explodes.
+   *
+   * Multiplayer: deterministic puddle positions via a seed derived from the
+   * bolt's spawn position so all clients lay the same cone.
+   */
+  #updateWindBoltWaterTornadoCombo(): void {
+    if (!this.#player?.spellCastingComponent?.spellGroup) return;
+    const spellChildren = [
+      ...this.#player.spellCastingComponent.spellGroup.getChildren(),
+      ...(this.#remoteSpellGroup?.getChildren() ?? []),
+    ];
+    const winds = spellChildren.filter(
+      (s): s is WindBolt =>
+        s instanceof WindBolt && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+    );
+    if (winds.length === 0) return;
+    const tornadoes = spellChildren.filter(
+      (s): s is WaterTornado =>
+        s instanceof WaterTornado && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+    );
+    if (tornadoes.length === 0) return;
+
+    for (const wind of winds) {
+      for (const tornado of tornadoes) {
+        if (!this.physics.overlap(wind, tornado)) continue;
+
+        const heading = wind.rotation; // WindBolt's rotation tracks its velocity (set in ctor)
+        // Lay puddles inside a cone ahead of the bolt's impact point.
+        const seed = (((wind.x | 0) * 73856093) ^ ((wind.y | 0) * 19349663)) >>> 0;
+        // LCG so each client computes the same offsets per puddle.
+        let s = seed || 1;
+        const rand = (): number => {
+          s = (s * 1664525 + 1013904223) >>> 0;
+          return s / 0xffffffff;
+        };
+        // Anchor the cone at the bolt's actual hit position — the tornado
+        // sprite is offset 48px UP from its ground point (see WaterTornado
+        // ctor), which would otherwise make every cone read as "up + forward"
+        // regardless of the bolt's heading.
+        const originX = wind.x;
+        const originY = wind.y;
+        for (let i = 0; i < WIND_TORNADO_CONE_PUDDLE_COUNT; i++) {
+          const distFrac = 0.3 + rand() * 0.7; // skewed away from the origin
+          const dist = WIND_TORNADO_CONE_RANGE_PX * distFrac;
+          const angle = heading + (rand() * 2 - 1) * WIND_TORNADO_CONE_HALF_ANGLE_RAD;
+          const px = originX + Math.cos(angle) * dist;
+          const py = originY + Math.sin(angle) * dist;
+          new Puddle(this, px, py, WIND_TORNADO_CONE_PUDDLE_AMOUNT, undefined, 'water');
+        }
+
+        // The tornado is NOT consumed — the bolt only "feeds" it, releasing
+        // a forward cone of water/puddles in the bolt's heading. The funnel
+        // keeps grinding normally.
+        wind.explode();
+        break;
+      }
+    }
+  }
+
+  /**
+   * WindBolt + Puddle: the slash pushes puddles in its travel direction.
+   * Water moves the most, mud less, lava barely at all. One-shot per
+   * (bolt, puddle) — tracked via setData on the bolt. The bolt passes
+   * through (no explode); air over water is a glance, not an impact.
+   *
+   * Multiplayer: deterministic — every client sees the same bolt-puddle
+   * overlap at the same position and applies the same displacement.
+   */
+  #updateWindBoltPuddlePushCombo(): void {
+    if (Puddle.all.size === 0) return;
+    if (!this.#player?.spellCastingComponent?.spellGroup) return;
+    const spellChildren = [
+      ...this.#player.spellCastingComponent.spellGroup.getChildren(),
+      ...(this.#remoteSpellGroup?.getChildren() ?? []),
+    ];
+    const winds = spellChildren.filter(
+      (s): s is WindBolt =>
+        s instanceof WindBolt && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+    );
+    if (winds.length === 0) return;
+
+    for (const wind of winds) {
+      let pushedSet = wind.getData('puddlePushed') as Set<Puddle> | undefined;
+      if (!pushedSet) {
+        pushedSet = new Set<Puddle>();
+        wind.setData('puddlePushed', pushedSet);
+      }
+      const angle = wind.rotation;
+      const dirX = Math.cos(angle);
+      const dirY = Math.sin(angle);
+
+      for (const puddle of Puddle.all) {
+        if (!puddle.active) continue;
+        if (pushedSet.has(puddle)) continue;
+        if (!this.physics.overlap(wind, puddle)) continue;
+
+        const pushPx =
+          puddle.kind === 'water' ? WIND_PUDDLE_PUSH_PX_WATER :
+          puddle.kind === 'mud' ? WIND_PUDDLE_PUSH_PX_MUD :
+          WIND_PUDDLE_PUSH_PX_LAVA;
+        const pushMs =
+          puddle.kind === 'water' ? WIND_PUDDLE_PUSH_DURATION_MS_WATER :
+          puddle.kind === 'mud' ? WIND_PUDDLE_PUSH_DURATION_MS_MUD :
+          WIND_PUDDLE_PUSH_DURATION_MS_LAVA;
+        puddle.nudgeBy(dirX * pushPx, dirY * pushPx, pushMs);
+        pushedSet.add(puddle);
+      }
+    }
+  }
+
   #updateWaterSpikeEarthWallCombo(): void {
     if (!this.#player?.spellCastingComponent?.spellGroup) return;
     const pillars = this.#earthWallGroup.getChildren() as EarthWallPillar[];
@@ -339,7 +649,8 @@ export class GameScene extends Phaser.Scene {
         spawnEarthBlockSplash(this, ix, iy);
 
         // Mud puddle at the impact point — water-on-stone mixes. Tunables in
-        // water.ts (SPIKE_WALL_BLOCK_MUD_*).
+        // water.ts (SPIKE_WALL_BLOCK_MUD_*). Deterministic seed (multiplayer).
+        const spikeMudSeed = (((ix | 0) * 73856093) ^ ((iy | 0) * 19349663)) >>> 0;
         Puddle.spawnCluster(
           this,
           ix,
@@ -350,6 +661,7 @@ export class GameScene extends Phaser.Scene {
           undefined,
           0,
           'mud',
+          spikeMudSeed,
         );
 
         // Minor pillar damage — spike is fast and small, shouldn't break walls.
@@ -436,6 +748,13 @@ export class GameScene extends Phaser.Scene {
           // up over the ~2.5s grind to a believable mud patch. Adjacent water
           // puddles within MERGE_RADIUS get auto-muddied via the mud-wins
           // merge rule. Tunables live in water.ts (TORNADO_GRIND_MUD_*).
+          //
+          // Multiplayer determinism: seed by the per-tick mud-index so every
+          // client computes the same cluster positions for the same grind
+          // event. Without this each client called Math.random()
+          // independently → mud patches diverged visibly between browsers.
+          const mudTickIndex = Math.floor(now / MUD_INTERVAL_MS);
+          const mudSeed = (((ix | 0) * 73856093) ^ ((iy | 0) * 19349663) ^ (mudTickIndex * 83492791)) >>> 0;
           Puddle.spawnCluster(
             this,
             ix,
@@ -446,6 +765,7 @@ export class GameScene extends Phaser.Scene {
             undefined,
             0,
             'mud',
+            mudSeed,
           );
           state.lastMud = now;
         }
@@ -661,10 +981,11 @@ export class GameScene extends Phaser.Scene {
 
     const now = this.time.now;
     for (const c of characters) {
-      // Airborne characters (Player.dashSuper) skip ground hazards entirely
-      // — no slow from mud or lava, no lava tick damage. The mage is jumping
-      // over them, not standing in them.
-      if (c.isFlying) {
+      // Airborne characters (Player.dashSuper) OR Star-Shielded players skip
+      // ground hazards entirely — no slow from mud or lava, no lava tick
+      // damage. The flag-check is duck-typed so non-Player characters fall
+      // through (enemies don't get a shield).
+      if (c.isFlying || (c as unknown as { isStarShieldActive?: boolean }).isStarShieldActive) {
         c.setMovementMultiplier(1);
         continue;
       }
@@ -791,6 +1112,9 @@ export class GameScene extends Phaser.Scene {
 
     for (const orb of orbs) {
       for (const target of playerTargets) {
+        // Star Shield: immune to void-orb pull (works for both local and
+        // remote shielded players — the flag exists on every Player).
+        if ((target as Player).isStarShieldActive) continue;
         const dx = orb.x - target.x;
         const dy = orb.y - target.y;
         const distSq = dx * dx + dy * dy;
@@ -1592,19 +1916,66 @@ export class GameScene extends Phaser.Scene {
         // network broadcasts the cast and remote clients spawn the
         // air-burst VFX behind the remote mage. slotIndex = -1 is the
         // "not-from-a-slot" sentinel that #onLocalSpellCast accepts.
+        // targetX/Y carry the WASD direction vector at one tile out so the
+        // remote-side air-burst tilt + roll point the right way.
+        const { tx: airTx, ty: airTy } = this.#dashTargetFromInput();
         EVENT_BUS.emit(CUSTOM_EVENTS.SPELL_CAST, {
           spellInstanceId: Phaser.Math.RND.uuid(),
           spellId: SPELL_ID.AIR_BURST,
           slotIndex: -1,
           casterX: this.#player.x,
           casterY: this.#player.y,
-          targetX: this.#player.x,
-          targetY: this.#player.y,
+          targetX: airTx,
+          targetY: airTy,
         });
         return;
       }
     }
     this.#player.dash();
+    // Broadcast a vanilla dash so remote clients can replay the roll VFX behind
+    // this mage. The factory keyed on SPELL_ID.DASH (see dash-vfx.ts) runs
+    // VFX-only on remote, and no-ops locally (the local Player.dash already
+    // ran its own VFX). targetX/Y carry the WASD direction so remote sees the
+    // correct roll orientation.
+    const { tx, ty } = this.#dashTargetFromInput();
+    EVENT_BUS.emit(CUSTOM_EVENTS.SPELL_CAST, {
+      spellInstanceId: Phaser.Math.RND.uuid(),
+      spellId: SPELL_ID.DASH,
+      slotIndex: -1,
+      casterX: this.#player.x,
+      casterY: this.#player.y,
+      targetX: tx,
+      targetY: ty,
+    });
+  }
+
+  /**
+   * Returns a world point one tile ahead of the player in the current WASD
+   * direction (fallback: player facing). Used by the dash broadcast so the
+   * remote-side factory can derive a direction vector from (caster -> target).
+   */
+  #dashTargetFromInput(): { tx: number; ty: number } {
+    let dx = 0;
+    let dy = 0;
+    if (this.#controls.isLeftDown) dx -= 1;
+    if (this.#controls.isRightDown) dx += 1;
+    if (this.#controls.isUpDown) dy -= 1;
+    if (this.#controls.isDownDown) dy += 1;
+    if (dx === 0 && dy === 0) {
+      switch (this.#player.direction) {
+        case DIRECTION.LEFT:  dx = -1; break;
+        case DIRECTION.RIGHT: dx = 1;  break;
+        case DIRECTION.UP:    dy = -1; break;
+        case DIRECTION.DOWN:
+        default:              dy = 1;
+      }
+    }
+    const len = Math.hypot(dx, dy) || 1;
+    const TILE = 32;
+    return {
+      tx: this.#player.x + (dx / len) * TILE,
+      ty: this.#player.y + (dy / len) * TILE,
+    };
   }
 
   /**
@@ -1657,6 +2028,12 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.#spawnSpecialSpell(activeSpellId, targetX, targetY, direction);
+
+    // Star Shield is always-available — re-grant a fresh charge so the slot
+    // doesn't go empty. Other specials clear naturally (pickup model).
+    if (activeSpellId === SPELL_ID.STAR_SHIELD) {
+      SpecialSpellInventory.instance.setActive(SPELL_ID.STAR_SHIELD, 1);
+    }
   }
 
   /** Begin the DarkBolt cast windup. Locks the player in place via the same
@@ -2012,6 +2389,7 @@ export class GameScene extends Phaser.Scene {
     // Enemies — current room only (matches FireBreath scoping).
     const enemyGroup = this.#objectsByRoomId[this.#currentRoomId]?.enemyGroup;
 
+    const nm = this.#safeNetworkManager();
     for (const beam of beams) {
       // ── Enemy damage (deduped per drain tick via beam.hitThisTickSet) ──
       if (enemyGroup) {
@@ -2024,6 +2402,64 @@ export class GameScene extends Phaser.Scene {
           beam.hitThisTickSet.add(enemy);
           enemy.hit(beam.aimDirection, beam.baseDamage);
         });
+      }
+
+      // ── Cross-player damage — LightningBeam has no Arcade body so the
+      // standard cross-player overlaps (A/B in #registerColliders) never
+      // fire. Replicate the same protocol manually using isPointInBeam.
+      // Local beam: send spell:hit for every overlapping remote player
+      // (once per drain-tick via beam.hitThisTickSet — same dedupe set used
+      // for enemies). Remote beam: send spell:hit if local player is inside,
+      // so the caster's beam still credits damage on the local target.
+      if (nm) {
+        const beamSpellId = beam.getData('spellId') as string | undefined;
+        const beamCasterId = beam.getData('casterId') as string | undefined;
+        const beamSpellType = (beam.getData('spellType') as string | undefined) ?? 'LightningBeam';
+        const isLocalBeam = beamCasterId === undefined || beamCasterId === nm.localPlayerId;
+
+        if (isLocalBeam) {
+          // Local-cast beam → poke each remote player inside the beam.
+          for (const remote of this.#remotePlayers.values()) {
+            if (!remote.active || remote.isDefeated) continue;
+            if (remote.isStarShieldActive) continue; // shielded targets eat the beam silently
+            if (beam.hitThisTickSet.has(remote)) continue;
+            if (!beam.isPointInBeam(remote.x, remote.y)) continue;
+            beam.hitThisTickSet.add(remote);
+            const targetId = remote.getData('playerId') as string | undefined;
+            if (!targetId || !beamSpellId) continue;
+            if (this.#areSameTeam(nm.localPlayerId, targetId)) continue;
+            nm.sendSpellHit({
+              spellId: beamSpellId,
+              spellType: beamSpellType,
+              casterId: nm.localPlayerId,
+              targetId,
+              hitX: remote.x,
+              hitY: remote.y,
+              damage: beam.baseDamage,
+            });
+          }
+        } else if (
+          beamCasterId &&
+          this.#player?.active &&
+          !this.#player.isDefeated &&
+          !this.#player.isStarShieldActive && // Star Shield: full beam immunity. TODO(star-shield): reflect beam back along its axis.
+          !beam.hitThisTickSet.has(this.#player) &&
+          beam.isPointInBeam(this.#player.x, this.#player.y) &&
+          !this.#areSameTeam(beamCasterId, nm.localPlayerId) &&
+          beamSpellId
+        ) {
+          // Remote-cast beam intersecting the local player. Per-tick dedupe.
+          beam.hitThisTickSet.add(this.#player);
+          nm.sendSpellHit({
+            spellId: beamSpellId,
+            spellType: beamSpellType,
+            casterId: beamCasterId,
+            targetId: nm.localPlayerId,
+            hitX: this.#player.x,
+            hitY: this.#player.y,
+            damage: beam.baseDamage,
+          });
+        }
       }
 
       // ── Puddle combo — every overlapping puddle is (re-)electrified every frame.
@@ -2259,10 +2695,7 @@ export class GameScene extends Phaser.Scene {
     this.#earthWallLastPlacedY = ty;
     this.#earthWallDrawingPillarCount++;
 
-    // When this local pillar is destroyed, notify other clients
-    pillar.once(Phaser.GameObjects.Events.DESTROY, () => {
-      try { NetworkManager.getInstance().sendEarthWallPillarDestroy({ x: tx, y: ty }); } catch { /* offline */ }
-    });
+    this.#registerPillarDestroyBroadcast(pillar, tx, ty);
 
     try {
       NetworkManager.getInstance().sendEarthWallPillar({ x: tx, y: ty });
@@ -2274,8 +2707,23 @@ export class GameScene extends Phaser.Scene {
   }
 
   // Helper for any physics-enabled object/group that should treat Earth Wall as solid.
+  // The processCallback gates collision: shielded players phase through pillars
+  // instead of being blocked by them. Non-Player colliders (enemies) fall
+  // through (don't have the flag) so they remain solid.
   #registerEarthWallSolidCollider(collidable: Phaser.Types.Physics.Arcade.ArcadeColliderType): void {
-    this.physics.add.collider(collidable, this.#earthWallGroup);
+    this.physics.add.collider(
+      collidable,
+      this.#earthWallGroup,
+      undefined,
+      (a, b) => {
+        const maybePlayer = (a as unknown as { isStarShieldActive?: boolean });
+        const maybePlayer2 = (b as unknown as { isStarShieldActive?: boolean });
+        if (maybePlayer.isStarShieldActive || maybePlayer2.isStarShieldActive) {
+          return false;
+        }
+        return true;
+      },
+    );
   }
 
   #registerColliders(): void {
@@ -2730,6 +3178,18 @@ export class GameScene extends Phaser.Scene {
       if (!spellId || !casterId) return;
       // FF pre-check (D-05) — server re-checks, this just saves a round-trip + visual.
       if (this.#areSameTeam(casterId, nm.localPlayerId)) return;
+
+      // Star Shield: total damage immunity. Reflect projectiles back at the
+      // sender; absorb everything else (no spell:hit emission). Dedupe via
+      // setData so a multi-frame overlap doesn't reflect the same spell twice.
+      if (this.#player.isStarShieldActive) {
+        if (!spell.getData('starShieldHandled')) {
+          spell.setData('starShieldHandled', true);
+          this.#handleStarShieldImpact(spell, spellType);
+        }
+        return;
+      }
+
       nm.sendSpellHit({
         spellId,
         spellType,
@@ -2739,8 +3199,19 @@ export class GameScene extends Phaser.Scene {
         hitY: this.#player.y,
         damage: spell.baseDamage ?? 0,
       });
-      // Local visual feedback only — actual damage still gates on damage:confirmed (PVP-05, D-01).
-      spell.explode?.();
+      // EarthBump — apply knockback locally so the player sees themselves
+      // launched immediately. Damage itself is still server-validated above.
+      // Dedupe per spell instance (the bump's hitbox stays active for ~250ms;
+      // we only want to launch the player once per bump).
+      if (spell instanceof EarthBump) {
+        if (!this.#earthBumpsThatPushedMe.has(spell)) {
+          this.#earthBumpsThatPushedMe.add(spell);
+          this.#player.applyKnockback(spell.direction, spell.knockbackForce, spell.knockbackDuration);
+        }
+      } else {
+        // Local visual feedback only — actual damage still gates on damage:confirmed (PVP-05, D-01).
+        spell.explode?.();
+      }
     });
 
     // Overlap B: local spellGroup vs remote players.
@@ -2764,6 +3235,18 @@ export class GameScene extends Phaser.Scene {
         const spellType = (spell.getData('spellType') as string | undefined) ?? (spell.constructor as { name: string }).name;
         if (!spellId || !targetId) return;
         if (this.#areSameTeam(nm.localPlayerId, targetId)) return;
+        // Remote player has Star Shield up — absorb the hit. No spell:hit sent
+        // (so server doesn't broadcast damage:confirmed), spell explodes locally.
+        // The remote client runs its own copy of the shield's reflection logic
+        // against the mirrored spell in its #remoteSpellGroup, so the reflected
+        // projectile arrives via that client's local broadcast.
+        if (remote.isStarShieldActive) {
+          if (!spell.getData('starShieldHandled')) {
+            spell.setData('starShieldHandled', true);
+            spell.explode?.();
+          }
+          return;
+        }
         nm.sendSpellHit({
           spellId,
           spellType,
@@ -2784,6 +3267,138 @@ export class GameScene extends Phaser.Scene {
 
   #safeNetworkManager(): NetworkManager | null {
     try { return NetworkManager.getInstance(); } catch { return null; }
+  }
+
+  /**
+   * Star Shield impact dispatcher. Called for every remote spell that overlaps a
+   * shielded local player. For reflectable PROJECTILES (FireBolt/EarthBolt/
+   * WindBolt/IceShard/WaterBall/DarkBolt) we spawn a fresh LOCAL projectile of
+   * the same type going the opposite direction — that local cast broadcasts
+   * naturally via #onLocalSpellCast, so every peer sees the reflection. For
+   * non-projectile spells (areas / channeled / pulls) the shield just absorbs:
+   * call explode() on the incoming spell and emit nothing.
+   *
+   * The reflected projectile's velocity is the inverse of the incoming velocity
+   * scaled by STAR_SHIELD_REFLECT_SPEED_MULT. Spawn position is the shielded
+   * player's location, target is one tile further along the reflected vector
+   * (factories compute their own velocity from caster→target).
+   */
+  #handleStarShieldImpact(
+    spell: Phaser.GameObjects.GameObject & {
+      active: boolean;
+      x?: number;
+      y?: number;
+      explode?: () => void;
+    },
+    spellType: string,
+  ): void {
+    // Reflectable projectile types — must match SPELL_ID constants on the wire.
+    const REFLECTABLE: ReadonlySet<string> = new Set([
+      SPELL_ID.FIRE_BOLT,
+      SPELL_ID.EARTH_BOLT,
+      SPELL_ID.WIND_BOLT,
+      SPELL_ID.ICE_SHARD,
+      SPELL_ID.WATER_BALL,
+      SPELL_ID.DARK_BOLT,
+    ]);
+    const constructorName = (spell.constructor as { name: string }).name;
+    const wireType =
+      spellType === constructorName
+        ? this.#constructorNameToSpellId(constructorName) ?? spellType
+        : spellType;
+
+    if (!REFLECTABLE.has(wireType)) {
+      // Absorb-only path — no reflection, no damage.
+      spell.explode?.();
+      return;
+    }
+
+    // Compute reflection vector from the incoming projectile's velocity.
+    // Body access via duck-cast — spell's declared shape doesn't expose body,
+    // but in practice every reflectable type is an Arcade.Sprite.
+    const body = (spell as unknown as { body?: Phaser.Physics.Arcade.Body | null }).body ?? null;
+    let vx = body?.velocity.x ?? 0;
+    let vy = body?.velocity.y ?? 0;
+    if (vx === 0 && vy === 0) {
+      // Fallback: project the line caster→player (player just got hit, so the
+      // incoming axis is roughly (player - spell.x, player.y - spell.y)).
+      vx = this.#player.x - (spell.x ?? this.#player.x);
+      vy = this.#player.y - (spell.y ?? this.#player.y);
+    }
+    const len = Math.hypot(vx, vy) || 1;
+    const nx = vx / len;
+    const ny = vy / len;
+
+    // Reflect by inverting direction. Slight speed boost is honored downstream
+    // by the factory's velocity computation — we steer through (cx,cy)→(tx,ty)
+    // and trust the projectile's spawn-time speed. Speed-mult is a TODO if we
+    // want each reflected projectile to actually fly faster than the original;
+    // for v1 the direction reversal alone reads correctly. Reference the
+    // constant so the import isn't dead and the value remains tunable.
+    void STAR_SHIELD_REFLECT_SPEED_MULT;
+    const TILE = 32;
+    const cx = this.#player.x;
+    const cy = this.#player.y;
+    const tx = cx + -nx * TILE;
+    const ty = cy + -ny * TILE;
+
+    // Destroy the incoming projectile so it doesn't keep ticking against us
+    // for the next few frames (its body.enable is normally cleared by explode,
+    // which also broadcasts NETWORK_SPELL_DESTROYED for the original caster).
+    spell.explode?.();
+
+    // Determine the facing direction for the new cast — pick the dominant axis
+    // of the reflection vector.
+    const direction =
+      Math.abs(nx) >= Math.abs(ny)
+        ? -nx >= 0
+          ? DIRECTION.RIGHT
+          : DIRECTION.LEFT
+        : -ny >= 0
+        ? DIRECTION.DOWN
+        : DIRECTION.UP;
+
+    // Spawn a fresh LOCAL projectile via the registry — it lands in our local
+    // spell group, gets tagged as ours, and the SPELL_CAST broadcast below
+    // mirrors it to every other peer (where it's added to THEIR remote spell
+    // group, ready to participate in normal damage overlaps).
+    const factory = SPELL_FACTORY_REGISTRY[wireType as SpellId];
+    if (!factory) return;
+    const reflected = factory(this, cx, cy, tx, ty, direction as Direction, this.#player);
+    this.#player.spellCastingComponent.spellGroup.add(reflected.gameObject);
+
+    const spellInstanceId = Phaser.Math.RND.uuid();
+    reflected.gameObject.setData('spellId', spellInstanceId);
+    reflected.gameObject.setData('spellType', wireType);
+    try {
+      const localId = NetworkManager.getInstance().localPlayerId;
+      if (localId) reflected.gameObject.setData('casterId', localId);
+    } catch { /* offline */ }
+
+    EVENT_BUS.emit(CUSTOM_EVENTS.SPELL_CAST, {
+      spellInstanceId,
+      spellId: wireType,
+      slotIndex: -1, // -1 = not from a slot (matches special-cast convention)
+      casterX: cx,
+      casterY: cy,
+      targetX: tx,
+      targetY: ty,
+    });
+  }
+
+  /** Reverse-lookup: convert a constructor class name back to its SPELL_ID
+   *  constant. Used as a fallback in #handleStarShieldImpact when the spell's
+   *  setData('spellType') is missing (older casts or local-spawned overlap). */
+  #constructorNameToSpellId(name: string): string | undefined {
+    switch (name) {
+      case 'FireBolt':   return SPELL_ID.FIRE_BOLT;
+      case 'EarthBolt':  return SPELL_ID.EARTH_BOLT;
+      case 'WindBolt':   return SPELL_ID.WIND_BOLT;
+      case 'IceShard':   return SPELL_ID.ICE_SHARD;
+      case 'WaterBall':  return SPELL_ID.WATER_BALL;
+      case 'DarkBolt':   return SPELL_ID.DARK_BOLT;
+      default:           return undefined;
+    }
   }
 
   #areSameTeam(playerIdA: string, playerIdB: string): boolean {
@@ -3092,6 +3707,8 @@ export class GameScene extends Phaser.Scene {
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_BREATH_END, this.#onRemoteBreathEnd, this);
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_EARTH_WALL_PILLAR, this.#onRemoteEarthWallPillar, this);
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_EARTH_WALL_PILLAR_DESTROY, this.#onRemoteEarthWallPillarDestroy, this);
+      EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_BEAM_UPDATE, this.#onRemoteBeamUpdate, this);
+      EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_BEAM_END, this.#onRemoteBeamEnd, this);
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_PLAYER_DISCONNECTED, this.#onRemotePlayerDisconnected, this);
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_MESH_PARTIAL, this.#onMeshPartial, this);
       EVENT_BUS.off(CUSTOM_EVENTS.SPELL_CAST, this.#onLocalSpellCast, this);
@@ -3301,6 +3918,14 @@ export class GameScene extends Phaser.Scene {
     // first one's charges are replaced. Move into per-room Tiled data later.
     this.#spawnVoidOrbPickup(playerStartPosition.x, playerStartPosition.y);
     this.#spawnDarkBoltPickup(playerStartPosition.x, playerStartPosition.y);
+
+    // Star Shield: always-available special. If the player has nothing else
+    // equipped, seed the slot with 1 charge so R can cast immediately. After
+    // each cast the slot self-clears (charges → 0); the post-cast hook in
+    // #handleSpecialCastInput re-grants 1 more so the shield stays infinite.
+    if (SpecialSpellInventory.instance.activeSpellId === null) {
+      SpecialSpellInventory.instance.setActive(SPELL_ID.STAR_SHIELD, 1);
+    }
   }
 
   /** Dispatch table for "what happens when a DarkBolt touches X". Called by
@@ -3839,6 +4464,8 @@ export class GameScene extends Phaser.Scene {
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_BREATH_END, this.#onRemoteBreathEnd, this);
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_EARTH_WALL_PILLAR, this.#onRemoteEarthWallPillar, this);
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_EARTH_WALL_PILLAR_DESTROY, this.#onRemoteEarthWallPillarDestroy, this);
+    EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_BEAM_UPDATE, this.#onRemoteBeamUpdate, this);
+    EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_BEAM_END, this.#onRemoteBeamEnd, this);
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_PLAYER_DISCONNECTED, this.#onRemotePlayerDisconnected, this);
     EVENT_BUS.on(CUSTOM_EVENTS.SPELL_CAST, this.#onLocalSpellCast, this);
     // 3p desync fix (Cause #3): pre-spawn all known remote players from the
@@ -3910,6 +4537,7 @@ export class GameScene extends Phaser.Scene {
       direction: this.#player.direction,
       state: this.#player.stateMachine.currentStateName ?? 'IDLE_STATE',
       element: ElementManager.instance.activeElement,
+      flipX: this.#player.flipX,
     };
   }
 
@@ -3939,7 +4567,7 @@ export class GameScene extends Phaser.Scene {
     // Store network target — per-frame interpolation in #interpolateRemotePlayers handles rendering
     const ric = remote.controls as RemoteInputComponent;
     if (typeof ric.applySnapshot === 'function') {
-      ric.applySnapshot({ x: payload.x, y: payload.y, direction: payload.direction, state: payload.state, element: payload.element });
+      ric.applySnapshot({ x: payload.x, y: payload.y, direction: payload.direction, state: payload.state, element: payload.element, flipX: payload.flipX ?? false });
     }
   };
 
@@ -3960,7 +4588,14 @@ export class GameScene extends Phaser.Scene {
       const dirChanged = target.direction && target.direction !== remote.direction;
       if (dirChanged) {
         remote.direction = target.direction as Direction;
-        remote.setFlipX(target.direction === DIRECTION.LEFT);
+      }
+      // Mirror the broadcast flipX directly — derived from the caster's local
+      // flipX so diagonal movement (UP+LEFT etc.) keeps the side-mirroring
+      // consistent across clients. Without this, the caster's `direction` is
+      // UP/DOWN for vertical-priority diagonals while their sprite is still
+      // visibly flipped → remote ignored the flip and showed the wrong side.
+      if (remote.flipX !== target.flipX) {
+        remote.setFlipX(target.flipX);
       }
 
       if (target.state && remote.stateMachine) {
@@ -4086,6 +4721,17 @@ export class GameScene extends Phaser.Scene {
       // Pass the remote Player as the caster so spells that affect the caster (AirBurst)
       // can distinguish "remote dashed → only show VFX" from "local dashed → also move me".
       const remoteCaster = this.#remotePlayers.get(payload.playerId);
+
+      // Direct dispatch for movement-only spells (AIR_BURST / DASH). These
+      // existed only as factory-registered VFX stubs; that path was unreliable
+      // because the factory's local-vs-remote branching depended on a duck-
+      // typed scene.player comparison and silently no-op'd if the remote
+      // caster wasn't pre-spawned yet. Spawn the VFX here directly so the
+      // dispatch path is the same as for FireBreath / EarthWall remote events.
+      if (remoteCaster && (factoryKey === SPELL_ID.AIR_BURST || factoryKey === SPELL_ID.DASH)) {
+        this.#spawnRemoteDashVfx(remoteCaster, payload.x, payload.y, payload.targetX!, payload.targetY!, direction, factoryKey === SPELL_ID.AIR_BURST);
+      }
+
       const spell = factory(
         this,
         payload.x,
@@ -4142,9 +4788,83 @@ export class GameScene extends Phaser.Scene {
     this.#remoteFireBreaths.delete(payload.playerId);
   };
 
+  /** Find the currently-active remote LightningBeam owned by `playerId`. The
+   *  beam's own spellId rotates per-tick (for damage dedupe), so we can't key
+   *  the lookup by spellId — at most one beam per remote caster is permitted,
+   *  so casterId is unique enough. */
+  #findRemoteBeamForPlayer(playerId: string): LightningBeam | undefined {
+    if (!this.#remoteSpellGroup) return undefined;
+    for (const c of this.#remoteSpellGroup.getChildren()) {
+      if (!(c instanceof LightningBeam) || !c.active) continue;
+      if ((c.getData('casterId') as string | undefined) === playerId) return c;
+    }
+    return undefined;
+  }
+
+  /** Render dash VFX behind a remote caster — used for both AIR_BURST (wind
+   *  super-dash, with the wind sheet behind) and DASH (vanilla dash). Called
+   *  directly from #onRemoteSpellCast so the dispatch path is reliable and
+   *  doesn't depend on the factory's duck-typed local-vs-remote branching. */
+  #spawnRemoteDashVfx(
+    caster: Player,
+    _cx: number,
+    _cy: number,
+    tx: number,
+    ty: number,
+    dir: Direction,
+    isAirBurst: boolean,
+  ): void {
+    // Direction vector from the caster's current position toward the cast target.
+    let nx = tx - caster.x;
+    let ny = ty - caster.y;
+    const len = Math.hypot(nx, ny);
+    if (len > 0.001) {
+      nx /= len;
+      ny /= len;
+    } else {
+      switch (caster.direction ?? dir) {
+        case DIRECTION.LEFT:  nx = -1; ny = 0; break;
+        case DIRECTION.RIGHT: nx = 1;  ny = 0; break;
+        case DIRECTION.UP:    nx = 0;  ny = -1; break;
+        case DIRECTION.DOWN:
+        default:              nx = 0;  ny = 1;
+      }
+    }
+
+    if (isAirBurst) {
+      AirBurst.spawnRemoteVfx(this, caster);
+      Player.spawnDashVfxFor(
+        caster,
+        nx,
+        ny,
+        CONFIG.AIR_BURST_DURATION_MS,
+        CONFIG.AIR_BURST_ARC_LIFT_PX,
+        CONFIG.AIR_BURST_SCALE_BOOST,
+      );
+    } else {
+      Player.spawnDashVfxFor(caster, nx, ny);
+    }
+  }
+
+  #onRemoteBeamUpdate = (payload: { playerId: string; targetX: number; targetY: number }): void => {
+    const beam = this.#findRemoteBeamForPlayer(payload.playerId);
+    if (beam) beam.setRemoteAim(payload.targetX, payload.targetY);
+  };
+
+  #onRemoteBeamEnd = (payload: { playerId: string }): void => {
+    const beam = this.#findRemoteBeamForPlayer(payload.playerId);
+    if (beam?.active) beam.destroy();
+  };
+
   #onRemoteEarthWallPillar = (payload: EarthWallPillarBroadcast): void => {
     const pillar = new EarthWallPillar(this, payload.x, payload.y);
     this.#earthWallGroup.add(pillar);
+    // Mirror the local-cast path: any client that destroys this pillar must
+    // tell the rest of the mesh. Without this hook, if a non-caster destroys
+    // their replica first the caster (and other observers) keep their pillar
+    // standing — and subsequent firebolts at "nothing" travel through where
+    // the wall used to be.
+    this.#registerPillarDestroyBroadcast(pillar, payload.x, payload.y);
   };
 
   #onRemoteEarthWallPillarDestroy = (payload: EarthWallPillarDestroyBroadcast): void => {
@@ -4153,9 +4873,25 @@ export class GameScene extends Phaser.Scene {
       (p) => p.active && !p.isBeingDestroyed && Math.abs(p.x - payload.x) < 2 && Math.abs(p.y - payload.y) < 2,
     );
     if (match) {
+      // Tag so the DESTROY hook below knows NOT to re-broadcast (this was a
+      // response to a network event, not a fresh local crumble).
+      this.#pillarsBeingRemotelyDestroyed.add(match);
       match.takeDamage(99999);
     }
   };
+
+  /** Wires the DESTROY → sendEarthWallPillarDestroy broadcast hook for a
+   *  pillar. Idempotent (once-event). Skips the broadcast when the pillar is
+   *  being destroyed in response to an inbound network event — that prevents
+   *  the destroy event from echoing infinitely around the mesh. */
+  #registerPillarDestroyBroadcast(pillar: EarthWallPillar, x: number, y: number): void {
+    pillar.once(Phaser.GameObjects.Events.DESTROY, () => {
+      if (this.#pillarsBeingRemotelyDestroyed.has(pillar)) return;
+      try {
+        NetworkManager.getInstance().sendEarthWallPillarDestroy({ x, y });
+      } catch { /* offline */ }
+    });
+  }
 
   #onRemotePlayerDisconnected = (payload: PlayerDisconnectedPayload): void => {
     const remote = this.#remotePlayers.get(payload.playerId);
