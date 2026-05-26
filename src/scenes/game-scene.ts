@@ -148,6 +148,10 @@ export class GameScene extends Phaser.Scene {
   };
   #collisionLayer!: Phaser.Tilemaps.TilemapLayer;
   #enemyCollisionLayer!: Phaser.Tilemaps.TilemapLayer;
+  // STAGES uses per-polygon static colliders (parsed from the `colliders` object
+  // layer in map.json) instead of cell-granular tile collision. Empty for non-
+  // STAGES levels — those still rely on #collisionLayer / #enemyCollisionLayer.
+  #staticCollidersGroup!: Phaser.Physics.Arcade.StaticGroup;
   #doorTransitionGroup!: Phaser.GameObjects.Group;
   #currentRoomId!: number;
   #lockedDoorGroup!: Phaser.GameObjects.Group;
@@ -2283,6 +2287,9 @@ export class GameScene extends Phaser.Scene {
     this.#collisionLayer.setCollision([this.#collisionLayer.tileset[0].firstgid]);
     this.#enemyCollisionLayer.setCollision([this.#collisionLayer.tileset[0].firstgid]);
     this.physics.add.collider(this.#player, this.#collisionLayer);
+    // STAGES: also collide player with per-polygon static colliders + border walls.
+    // For non-STAGES levels the group is empty, so this is a no-op.
+    this.physics.add.collider(this.#player, this.#staticCollidersGroup);
     this.#registerEarthWallSolidCollider(this.#player);
 
     // collision between player and game objects in the dungeon/room/world
@@ -2340,6 +2347,8 @@ export class GameScene extends Phaser.Scene {
       if (this.#objectsByRoomId[roomId].enemyGroup !== undefined) {
         // collide with walls, doors, etc
         this.physics.add.collider(this.#objectsByRoomId[roomId].enemyGroup, this.#enemyCollisionLayer);
+        // STAGES: also collide enemies with per-polygon static colliders.
+        this.physics.add.collider(this.#objectsByRoomId[roomId].enemyGroup, this.#staticCollidersGroup);
 
         // register collisions between player and enemies
         this.physics.add.overlap(this.#player, this.#objectsByRoomId[roomId].enemyGroup, () => {
@@ -2556,11 +2565,18 @@ export class GameScene extends Phaser.Scene {
           }
           pot.break();
         });
+        // STAGES: pots also break against per-polygon static colliders + border walls.
+        this.physics.add.collider(this.#objectsByRoomId[roomId].pots, this.#staticCollidersGroup, (pot) => {
+          if (!(pot instanceof Pot)) {
+            return;
+          }
+          pot.break();
+        });
       }
     });
 
     // Register spell projectile vs walls collider (FireBolt and EarthBolt explode on walls)
-    this.physics.add.collider(this.#player.spellCastingComponent.spellGroup, this.#collisionLayer, (spellObj) => {
+    const explodeOnWall: Phaser.Types.Physics.Arcade.ArcadePhysicsCallback = (spellObj) => {
       if (spellObj instanceof FireBolt) {
         spellObj.explode();
       }
@@ -2582,10 +2598,13 @@ export class GameScene extends Phaser.Scene {
       if (spellObj instanceof WaterBall) {
         spellObj.explode();
       }
-    });
+    };
+    this.physics.add.collider(this.#player.spellCastingComponent.spellGroup, this.#collisionLayer, explodeOnWall);
+    // STAGES: spells also explode against per-polygon static colliders + border walls.
+    this.physics.add.collider(this.#player.spellCastingComponent.spellGroup, this.#staticCollidersGroup, explodeOnWall);
 
     // Remote spells also explode on walls
-    this.physics.add.collider(this.#remoteSpellGroup, this.#collisionLayer, (spellObj) => {
+    const explodeRemoteOnWall: Phaser.Types.Physics.Arcade.ArcadePhysicsCallback = (spellObj) => {
       if (spellObj instanceof FireBolt) {
         spellObj.explode();
       }
@@ -2601,7 +2620,9 @@ export class GameScene extends Phaser.Scene {
       if (spellObj instanceof WaterBall) {
         spellObj.explode();
       }
-    });
+    };
+    this.physics.add.collider(this.#remoteSpellGroup, this.#collisionLayer, explodeRemoteOnWall);
+    this.physics.add.collider(this.#remoteSpellGroup, this.#staticCollidersGroup, explodeRemoteOnWall);
 
     // ── DarkBolt consumption ────────────────────────────────────────────────
     // DarkBolt erases ANY other spell or pillar it overlaps. Three pairings
@@ -3184,22 +3205,71 @@ export class GameScene extends Phaser.Scene {
   }
 
   #createLevel(): void {
-    // create main background
-    this.add.image(0, 0, ASSET_KEYS[`${this.#levelData.level}_BACKGROUND`], 0).setOrigin(0);
-    // create main foreground
-    this.add.image(0, 0, ASSET_KEYS[`${this.#levelData.level}_FOREGROUND`], 0).setOrigin(0).setDepth(2);
+    const level = this.#levelData.level;
+    // STAGES renders its own multi-tileset visuals; WORLD/DUNGEON_1 use pre-baked BG/FG PNGs.
+    const hasPrebakedBgFg = level !== 'STAGES';
+    if (hasPrebakedBgFg) {
+      // create main background
+      this.add.image(0, 0, ASSET_KEYS[`${level}_BACKGROUND`], 0).setOrigin(0);
+      // create main foreground
+      this.add.image(0, 0, ASSET_KEYS[`${level}_FOREGROUND`], 0).setOrigin(0).setDepth(2);
+    }
 
     // create tilemap from Tiled json data
     const map = this.make.tilemap({
-      key: ASSET_KEYS[`${this.#levelData.level}_LEVEL`],
+      key: ASSET_KEYS[`${level}_LEVEL`],
     });
 
     // The first parameter is the name of the tileset in Tiled and the second parameter is the key
     // of the tileset image used when loading the file in preload.
-    const collisionTiles = map.addTilesetImage(TILED_TILESET_NAMES.COLLISION, ASSET_KEYS.COLLISION);
+    // STAGES embeds its collision marker in its own 32-px tileset (STAGES_COLLISION) so the
+    // collision data lines up with the 32-px tile grid the visible layers use.
+    const collisionAssetKey = level === 'STAGES' ? ASSET_KEYS.STAGES_COLLISION : ASSET_KEYS.COLLISION;
+    const collisionTiles = map.addTilesetImage(TILED_TILESET_NAMES.COLLISION, collisionAssetKey);
     if (collisionTiles === null) {
       console.log(`encountered error while creating collision tiles from tiled`);
       return;
+    }
+
+    // STAGES: register the 6 decoration tilesets and render the 6 visible tile layers
+    // (Base / Shadows / Props / Foreground / Structure / Trees) at increasing depth so
+    // tree canopies / structures stay above gameplay objects.
+    if (level === 'STAGES') {
+      const stagesTilesets: Phaser.Tilemaps.Tileset[] = [];
+      const addStagesTileset = (tiledName: string, assetKey: string): void => {
+        const ts = map.addTilesetImage(tiledName, assetKey);
+        if (ts !== null) stagesTilesets.push(ts);
+        else console.warn(`STAGES: failed to add tileset ${tiledName}`);
+      };
+      addStagesTileset('TX Plant',         ASSET_KEYS.STAGES_TX_PLANT);
+      addStagesTileset('TX Tileset Grass', ASSET_KEYS.STAGES_TX_TILESET_GRASS);
+      addStagesTileset('TX Shadow Plant',  ASSET_KEYS.STAGES_TX_SHADOW_PLANT);
+      addStagesTileset('TX Tileset Wall',  ASSET_KEYS.STAGES_TX_TILESET_WALL);
+      addStagesTileset('TX Struct',        ASSET_KEYS.STAGES_TX_STRUCT);
+      addStagesTileset('TX Props',         ASSET_KEYS.STAGES_TX_PROPS);
+
+      // Render the visible tile layers in TMX paint order. Tree canopies and the
+      // foreground layer use a very high depth so they always render above the
+      // y-sorted character sprites (CharacterGameObject sets depth = this.y on
+      // every update, capping at ~MAP_HEIGHT*TILE_SIZE = 1088). Without this,
+      // the player and spells "walk over" tree leaves like rugs.
+      const CANOPY_DEPTH = 10000;
+      const STAGES_VISIBLE_LAYERS: { name: string; depth: number }[] = [
+        { name: 'Base',       depth: 0 },
+        { name: 'Shadows',    depth: 0 },
+        { name: 'Props',      depth: 0 },
+        { name: 'Structure',  depth: 0 },
+        { name: 'Trees',      depth: CANOPY_DEPTH },
+        { name: 'Foreground', depth: CANOPY_DEPTH + 1 },
+      ];
+      for (const { name, depth } of STAGES_VISIBLE_LAYERS) {
+        const layer = map.createLayer(name, stagesTilesets, 0, 0);
+        if (layer === null) {
+          console.warn(`STAGES: failed to create layer ${name}`);
+          continue;
+        }
+        layer.setDepth(depth);
+      }
     }
 
     const collisionLayer = map.createLayer(TILED_LAYER_NAMES.COLLISION, collisionTiles, 0, 0);
@@ -3217,6 +3287,33 @@ export class GameScene extends Phaser.Scene {
     }
     this.#enemyCollisionLayer = enemyCollisionLayer;
     this.#enemyCollisionLayer.setDepth(2).setVisible(false);
+
+    // STAGES: build static colliders from the `colliders` object layer (one
+    // rect per polygon shape painted by the .tsx tilesets, plus 4 border walls
+    // around the playable area so the player can't walk into the void).
+    // Replaces the cell-granular tile collision that made every tree look like
+    // it had a 32×32 hitbox even when the trunk polygon was 16×24.
+    this.#staticCollidersGroup = this.physics.add.staticGroup();
+    if (level === 'STAGES') {
+      const collidersLayer = map.getObjectLayer('colliders');
+      if (collidersLayer !== null) {
+        for (const obj of collidersLayer.objects) {
+          const w = obj.width ?? 0;
+          const h = obj.height ?? 0;
+          if (w <= 0 || h <= 0) continue;
+          const ox = obj.x ?? 0;
+          const oy = obj.y ?? 0;
+          // Rectangle origin is centre by default — offset so (ox, oy) ends up
+          // at the top-left, matching the Tiled JSON convention for rect objects.
+          const rect = this.add.rectangle(ox + w / 2, oy + h / 2, w, h, 0xff0000, CONFIG.DEBUG_COLLISION_ALPHA);
+          rect.setDepth(2);
+          this.physics.add.existing(rect, true);
+          this.#staticCollidersGroup.add(rect);
+        }
+      } else {
+        console.warn('STAGES: `colliders` object layer missing from map.json');
+      }
+    }
 
     // initialize objects
     this.#objectsByRoomId = {};

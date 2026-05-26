@@ -37,6 +37,7 @@ export type MapPoolEntry = {
 export const MAP_POOL: readonly MapPoolEntry[] = [
   { id: 'WORLD', displayName: 'Open Field', thumbnailKey: 'MAP_THUMB_WORLD' },
   { id: 'DUNGEON_1', displayName: 'Dungeon', thumbnailKey: 'MAP_THUMB_DUNGEON_1' },
+  { id: 'STAGES', displayName: 'Arena', thumbnailKey: 'MAP_THUMB_STAGES' },
 ] as const;
 
 export type MatchConfig = {

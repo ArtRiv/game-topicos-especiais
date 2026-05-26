@@ -253,7 +253,10 @@ export class LoadingScene extends Phaser.Scene {
     const wait = Math.max(remainingCinematic, remainingMin);
     this.time.delayedCall(wait, () => {
       this.scene.stop(SCENE_KEYS.LOADING_SCENE);
-      this.scene.start(SCENE_KEYS.PRELOAD_SCENE);
+      // Forward matchConfig so PreloadScene can map mapId → DataManager.currentArea
+      // before booting GameScene. Without this, the lobby's map selection would
+      // never reach the actual level loader.
+      this.scene.start(SCENE_KEYS.PRELOAD_SCENE, { matchConfig: this.#matchConfig });
     });
   }
 }

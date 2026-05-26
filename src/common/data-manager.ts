@@ -60,6 +60,7 @@ export class DataManager {
           bossDefeated: false,
         },
         WORLD: {},
+        STAGES: {},
       },
     };
   }
@@ -122,6 +123,7 @@ export class DataManager {
           bossDefeated: false,
         },
         WORLD: {},
+        STAGES: {},
       },
     };
   }

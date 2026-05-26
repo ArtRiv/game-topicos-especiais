@@ -361,6 +361,20 @@
     ]
   },
   {
+    "path": "assets/stages",
+    "files": [
+      { "type": "tilemapTiledJSON", "key": "STAGES_LEVEL",            "url": "map.json"               },
+      { "type": "image",            "key": "STAGES_COLLISION",        "url": "collision32.png"        },
+      { "type": "image",            "key": "STAGES_TX_PLANT",         "url": "TX Plant.png"           },
+      { "type": "image",            "key": "STAGES_TX_TILESET_GRASS", "url": "TX Tileset Grass.png"   },
+      { "type": "image",            "key": "STAGES_TX_SHADOW_PLANT",  "url": "TX Shadow Plant.png"    },
+      { "type": "image",            "key": "STAGES_TX_TILESET_WALL",  "url": "TX Tileset Wall.png"    },
+      { "type": "image",            "key": "STAGES_TX_STRUCT",        "url": "TX Struct.png"          },
+      { "type": "image",            "key": "STAGES_TX_PROPS",         "url": "TX Props.png"           },
+      { "type": "image",            "key": "MAP_THUMB_STAGES",        "url": "thumbnail.png"          }
+    ]
+  },
+  {
     "path": "assets/player/roll",
     "files": [
       { "type": "image", "key": "PLAYER_ROLL_1", "url": "role-1.png" },

@@ -54,6 +54,10 @@ export class LobbyScene extends Phaser.Scene {
       ASSET_KEYS.MAP_THUMB_DUNGEON_1,
       'assets/levels/dungeon-1/thumbnail.png',
     );
+    this.load.image(
+      ASSET_KEYS.MAP_THUMB_STAGES,
+      'assets/stages/thumbnail.png',
+    );
     this.load.bitmapFont(
       BMFONT_KEY,
       'assets/fonts/Press_Start_2P/press_start_white-2.png',
@@ -236,16 +240,19 @@ export class LobbyScene extends Phaser.Scene {
     const cx = this.cameras.main.centerX;
     const cy = this.cameras.main.centerY;
 
-    const title = this.#crispText(cx, 40, 'WAITING ROOM', FONT_TITLE).setOrigin(0.5);
+    // Title bar background — adds a subtle banner behind the title for visual anchor.
+    const titleBg = this.add.rectangle(cx, 24, this.cameras.main.width, 36, 0x111933).setOrigin(0.5);
+    const titleUnderline = this.add.rectangle(cx, 42, 200, 1, 0xffdd55).setOrigin(0.5);
+    const title = this.#crispText(cx, 24, 'WAITING ROOM', FONT_TITLE).setOrigin(0.5);
     const hostName = lobby.players.find((p) => p.id === lobby.hostPlayerId)?.name ?? '?';
-    const subtitle = this.#crispText(cx, 70, `Host: ${hostName}`, FONT_SMALL).setOrigin(0.5);
+    const subtitle = this.#crispText(cx, 56, `Host: ${hostName}`, FONT_SMALL).setOrigin(0.5);
 
-    this.#waitingRoomObjects = [title, subtitle];
+    this.#waitingRoomObjects = [titleBg, titleUnderline, title, subtitle];
     this.#viewObjects = [...this.#waitingRoomObjects];
 
-    // Re-add #statusText for error/info feedback (lobby:error display)
-    // Moved above the player list (was at cy+80=240, which overlapped the list).
-    this.#statusText = this.#crispText(cx, 86, '', FONT_SMALL).setOrigin(0.5);
+    // Status line (errors / info) — placed just below the subtitle so it never
+    // overlaps the config block or the player list below.
+    this.#statusText = this.#crispText(cx, 70, '', FONT_SMALL).setOrigin(0.5);
     this.#viewObjects.push(this.#statusText);
 
     this.#renderConfigBlock(lobby);
@@ -278,22 +285,33 @@ export class LobbyScene extends Phaser.Scene {
     const cfg = lobby.config;
     const mapDisplay = MAP_POOL.find((m) => m.id === cfg.mapId)?.displayName ?? cfg.mapId;
 
-    // Capacity header (visible to everyone)
+    // Subtle panel behind the whole config block (capacity header + format row +
+    // map cards + card name labels). Centered at y=144, height 132 → spans y=78
+    // to y=210 — covers capacity (y=86) through card-name labels (~y=202).
+    const panel = this.add.rectangle(cx, 144, this.cameras.main.width - 16, 132, 0x0a0f1f, 0.6).setOrigin(0.5);
+    const panelBorder = this.add.rectangle(cx, 144, this.cameras.main.width - 16, 132)
+      .setOrigin(0.5)
+      .setStrokeStyle(1, 0x2a3a55);
+    this.#configBlockObjects.push(panel, panelBorder);
+
+    // Capacity header (visible to everyone) — simplified: format & map are shown
+    // explicitly below, so no need to duplicate them here.
     this.#capacityHeader = this.#crispText(
       cx,
-      96,
-      `Players ${lobby.players.length}/${cfg.maxPlayers} — ${cfg.format} on ${mapDisplay}`,
+      86,
+      `Players ${lobby.players.length}/${cfg.maxPlayers}`,
       FONT,
     ).setOrigin(0.5, 0);
     this.#configBlockObjects.push(this.#capacityHeader);
 
     if (this.#isHost) {
-      // Host: Format <select> at y=116
-      const formatLabel = this.#crispText(cx - 150, 127, 'Format:', FONT_SMALL_WHITE).setOrigin(0, 0.5);
+      // Format row — centered horizontal pair: "Format:" label + <select>.
+      // Anchored so the pair reads as one unit above the map cards.
+      const formatLabel = this.#crispText(cx - 8, 104, 'Format:', FONT_SMALL_WHITE).setOrigin(1, 0.5);
       const formats: LobbyFormat[] = ['1v1', '2v2', '3v3', '4v4', '5v5', '6v6', '7v7', '8v8', '9v9', '10v10'];
       const optionsHtml = formats.map((f) => `<option value="${f}">${f}</option>`).join('');
-      const formatDom = this.add.dom(cx + 30, 127).createFromHTML(
-        `<select style="background:#111;color:#fff;border:1px solid #555;padding:4px;font-size:10px;font-family:monospace">${optionsHtml}</select>`,
+      const formatDom = this.add.dom(cx + 4, 104).createFromHTML(
+        `<select style="background:#111;color:#fff;border:1px solid #555;padding:2px 4px;font-size:10px;font-family:monospace">${optionsHtml}</select>`,
       ).setOrigin(0, 0.5);
       const selectEl = (formatDom.node as HTMLElement).querySelector('select') as HTMLSelectElement;
       selectEl.value = cfg.format;
@@ -303,12 +321,16 @@ export class LobbyScene extends Phaser.Scene {
       this.#formatSelectDom = formatDom;
       this.#configBlockObjects.push(formatLabel, formatDom);
 
-      // Host: Map preview cards at y=180 (label at y=140)
-      const mapLabel = this.#crispText(cx - 150, 140, 'Map:', FONT_SMALL_WHITE).setOrigin(0, 0);
+      // Map label — centered above the cards row.
+      const mapLabel = this.#crispText(cx, 124, 'Map:', FONT_SMALL_WHITE).setOrigin(0.5, 0);
       this.#configBlockObjects.push(mapLabel);
+
+      // Map preview cards (3-up). Cards are 96x64 to preserve the source
+      // thumbnail aspect ratio (PNGs are 96x64 at the asset).
+      // Center y at 158 → cards span y=126 to y=190.
       MAP_POOL.forEach((entry, i) => {
         const cardX = cx + (i - (MAP_POOL.length - 1) / 2) * (96 + 8);
-        const cardY = 180;
+        const cardY = 158;
         const isSelected = entry.id === cfg.mapId;
         const border = this.add.rectangle(cardX, cardY, 96, 64).setStrokeStyle(
           isSelected ? 2 : 1,
@@ -318,7 +340,7 @@ export class LobbyScene extends Phaser.Scene {
         const thumb = this.textures.exists(entry.thumbnailKey)
           ? this.add.image(cardX, cardY, entry.thumbnailKey)
           : this.add.rectangle(cardX, cardY, 96, 64, 0x223366);
-        const cardLabel = this.#crispText(cardX, cardY + 40, entry.displayName, FONT_SMALL_WHITE).setOrigin(0.5, 0);
+        const cardLabel = this.#crispText(cardX, cardY + 36, entry.displayName, FONT_SMALL_WHITE).setOrigin(0.5, 0);
         bg.on('pointerover', () => bg.setFillStyle(0x222222));
         bg.on('pointerout', () => bg.setFillStyle(0x111111));
         bg.on('pointerdown', () => {
@@ -327,10 +349,31 @@ export class LobbyScene extends Phaser.Scene {
         this.#configBlockObjects.push(border, bg, thumb, cardLabel);
       });
     } else {
-      // Non-host: read-only labels at the same anchors
-      const fmtLabel = this.#crispText(cx, 116, `Format: ${cfg.format}`, FONT_SMALL_WHITE).setOrigin(0.5, 0);
-      const mapReadLabel = this.#crispText(cx, 140, `Map: ${mapDisplay}`, FONT_SMALL_WHITE).setOrigin(0.5, 0);
+      // Non-host: read-only labels mirroring the host control positions.
+      const fmtLabel = this.#crispText(cx, 104, `Format: ${cfg.format}`, FONT_SMALL_WHITE).setOrigin(0.5, 0.5);
+      const mapReadLabel = this.#crispText(cx, 124, `Map: ${mapDisplay}`, FONT_SMALL_WHITE).setOrigin(0.5, 0);
       this.#configBlockObjects.push(fmtLabel, mapReadLabel);
+
+      // Still render the cards (read-only — no pointer handlers, dimmer overlay
+      // on non-selected cards) so non-hosts get the same visual map preview.
+      MAP_POOL.forEach((entry, i) => {
+        const cardX = cx + (i - (MAP_POOL.length - 1) / 2) * (96 + 8);
+        const cardY = 158;
+        const isSelected = entry.id === cfg.mapId;
+        const border = this.add.rectangle(cardX, cardY, 96, 64).setStrokeStyle(
+          isSelected ? 2 : 1,
+          isSelected ? 0xffdd55 : 0x333333,
+        );
+        const bg = this.add.rectangle(cardX, cardY, 96, 64, 0x111111);
+        const thumb = this.textures.exists(entry.thumbnailKey)
+          ? this.add.image(cardX, cardY, entry.thumbnailKey)
+          : this.add.rectangle(cardX, cardY, 96, 64, 0x223366);
+        if (!isSelected) thumb.setAlpha(0.45);
+        const cardLabel = this.#crispText(cardX, cardY + 36, entry.displayName, FONT_SMALL_WHITE)
+          .setOrigin(0.5, 0)
+          .setAlpha(isSelected ? 1 : 0.5);
+        this.#configBlockObjects.push(border, bg, thumb, cardLabel);
+      });
     }
   }
 
@@ -412,9 +455,9 @@ export class LobbyScene extends Phaser.Scene {
   #playerListScrollY = 0;
   #playerListMaxScroll = 0;
   #playerListWheelHandler: ((pointer: Phaser.Input.Pointer, gameObjects: unknown[], deltaX: number, deltaY: number) => void) | null = null;
-  static readonly #ROW_HEIGHT = 24;          // tighter than the old 36 to fit more rows in viewport
-  static readonly #PLAYER_LIST_TOP = 230;    // viewport top (just below map-cards row at y=220)
-  static readonly #PLAYER_LIST_BOTTOM = 290; // viewport bottom (above Start button at y=304)
+  static readonly #ROW_HEIGHT = 22;          // tighter than the old 36 to fit more rows in viewport
+  static readonly #PLAYER_LIST_TOP = 214;    // viewport top (below map-card name row at y=194+8)
+  static readonly #PLAYER_LIST_BOTTOM = 288; // viewport bottom (above Start button at y=304)
 
   #renderPlayerList(players: PlayerInfo[]): void {
     // Tear down prior render so re-render on lobby:updated is clean.
@@ -449,25 +492,33 @@ export class LobbyScene extends Phaser.Scene {
     players.forEach((player, i) => {
       const rowY = i * rowH;
       const tint = TINTS[i % TINTS.length];
-      const dot = this.add.rectangle(cx - 150, rowY + 8, 10, 10, tint);
+
+      // Zebra-stripe row background — improves scanability when many players are present.
+      const rowBg = this.add.rectangle(cx, rowY + 8, this.cameras.main.width - 32, rowH - 4,
+        i % 2 === 0 ? 0x111a2e : 0x0c1626, 0.55).setOrigin(0.5);
+      const dot = this.add.rectangle(cx - 150, rowY + 8, 8, 8, tint);
       const name = this.#crispText(cx - 130, rowY, player.name, FONT_SMALL_WHITE);
-      this.#playerListContainer!.add([dot, name]);
+      this.#playerListContainer!.add([rowBg, dot, name]);
 
       if (player.id === this.#currentLobby?.hostPlayerId) {
-        const role = this.#crispText(cx + 30, rowY, '(HOST)', FONT_SMALL);
+        // HOST badge — placed right after the max name width (12 chars * 8px from cx-130).
+        // Gold-tinted so it's visually distinct from team labels and won't be mistaken
+        // for a clickable control. Fixed position avoids collision with team buttons.
+        const role = this.#crispText(cx - 30, rowY, 'HOST', { size: 8, tint: 0xffdd55 });
         this.#playerListContainer!.add(role);
       }
 
       if (this.#isHost) {
-        // Host sees clickable Team A / Team B toggle buttons per row
+        // Host sees clickable Team A / Team B toggle buttons per row.
+        // Buttons are smaller (28px wide) so a HOST badge + A + B fit without overlap.
         const isTeamA = player.team === 0;
         const isTeamB = player.team === 1;
         const nm = NetworkManager.getInstance();
 
-        const btnA = this.#createButton(cx + 90, rowY + 8, 'A', () => {
+        const btnA = this.#createCompactButton(cx + 90, rowY + 8, 'A', () => {
           nm.sendLobbyAssignTeam(player.id, 0);
         });
-        const btnB = this.#createButton(cx + 130, rowY + 8, 'B', () => {
+        const btnB = this.#createCompactButton(cx + 124, rowY + 8, 'B', () => {
           nm.sendLobbyAssignTeam(player.id, 1);
         });
 
@@ -558,6 +609,21 @@ export class LobbyScene extends Phaser.Scene {
 
   #createButton(x: number, y: number, label: string, onClick: () => void): Phaser.GameObjects.Container {
     const bg = this.add.rectangle(0, 0, label.length * 10 + 24, 28, BTN_COLOR).setInteractive();
+    const text = this.#crispText(0, 0, label, FONT_SMALL_WHITE).setOrigin(0.5);
+    const container = this.add.container(x, y, [bg, text]);
+
+    bg.on('pointerover', () => bg.setFillStyle(BTN_HOVER));
+    bg.on('pointerout', () => bg.setFillStyle(BTN_COLOR));
+    bg.on('pointerdown', onClick);
+
+    return container;
+  }
+
+  // Compact 28×16 button used for per-row team toggles (Team A / Team B) in the
+  // player list. Smaller than #createButton so a HOST badge + A + B fit in one
+  // row without overlapping the player name area.
+  #createCompactButton(x: number, y: number, label: string, onClick: () => void): Phaser.GameObjects.Container {
+    const bg = this.add.rectangle(0, 0, 28, 16, BTN_COLOR).setInteractive();
     const text = this.#crispText(0, 0, label, FONT_SMALL_WHITE).setOrigin(0.5);
     const container = this.add.container(x, y, [bg, text]);
 

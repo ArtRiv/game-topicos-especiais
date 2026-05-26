@@ -15,7 +15,22 @@
       "Bash(npx tsc *)",
       "Bash(pnpm exec *)",
       "PowerShell(pnpm exec tsc --noEmit 2>&1)",
-      "PowerShell(npm start 2>&1)"
+      "PowerShell(npm start 2>&1)",
+      "PowerShell(npx vite --config config/vite.config.js --port 5173 2>&1)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:5173/)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:5173/assets/stages/map.json)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code} %{size_download}\\\\n\" 'http://localhost:5173/assets/stages/TX%20Tileset%20Grass.png')",
+      "Bash(curl -s -o /dev/null -w \"%{http_code} %{size_download}\\\\n\" 'http://localhost:5173/assets/stages/thumbnail.png')",
+      "Bash(curl -s -o /dev/null -w \"%{http_code} %{size_download}\\\\n\" 'http://localhost:5173/assets/stages/collision32.png')",
+      "Bash(node \"c:/Users/gugao/Desktop/estudos/Faculdade/game-topicos-especiais/scripts/build-stages-map.mjs\")",
+      "PowerShell(Test-NetConnection -ComputerName localhost -Port 3000 -InformationLevel Quiet -WarningAction SilentlyContinue)",
+      "PowerShell(pnpm build 2>&1)",
+      "PowerShell(npx tsc --noEmit 2>&1)",
+      "PowerShell(npm run 2>&1)",
+      "PowerShell(Get-Item public/assets/levels/world/thumbnail.png, public/assets/levels/dungeon-1/thumbnail.png, public/assets/stages/thumbnail.png 2>&1 | ForEach-Object { Add-Type -AssemblyName System.Drawing; $img = [System.Drawing.Image]::FromFile\\($_.FullName\\); Write-Output \"$\\($_.Name\\): $\\($img.Width\\)x$\\($img.Height\\)\"; $img.Dispose\\(\\) })",
+      "Bash(node scripts/build-stages-map.mjs)",
+      "PowerShell(npx vite build 2>&1)",
+      "PowerShell(npx vitest run --reporter=basic 2>&1)"
     ]
   }
 }
