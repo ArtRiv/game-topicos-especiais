@@ -1,15 +1,33 @@
 import * as Phaser from 'phaser';
 import { SCENE_KEYS } from './scene-keys';
 import { ASSET_KEYS, ASSET_PACK_KEYS, DASH_ANIMATION_KEYS } from '../common/assets';
-import { LevelData } from '../common/types';
+import { LevelData, LevelName } from '../common/types';
 import { DataManager } from '../common/data-manager';
 import { MusicManager } from '../common/music-manager';
+import type { MatchConfig } from '../networking/types';
+import { isLevelName } from '../common/utils';
+
+type PreloadSceneData = { matchConfig?: MatchConfig };
+
+// Lookup table: lobby mapId → starting room/door for that level. Kept here (not
+// in DataManager) because the spawn point is a per-map fact, not player state.
+const MAP_ID_TO_SPAWN: Record<string, { level: LevelName; startRoomId: number; startDoorId: number }> = {
+  WORLD:     { level: 'WORLD',     startRoomId: 1, startDoorId: 1 },
+  DUNGEON_1: { level: 'DUNGEON_1', startRoomId: 3, startDoorId: 3 },
+  STAGES:    { level: 'STAGES',    startRoomId: 1, startDoorId: 1 },
+};
 
 export class PreloadScene extends Phaser.Scene {
+  #matchConfig: MatchConfig | undefined;
+
   constructor() {
     super({
       key: SCENE_KEYS.PRELOAD_SCENE,
     });
+  }
+
+  public init(data?: PreloadSceneData): void {
+    this.#matchConfig = data?.matchConfig;
   }
 
   public preload(): void {
@@ -45,6 +63,10 @@ export class PreloadScene extends Phaser.Scene {
     this.load.image(
       ASSET_KEYS.MAP_THUMB_DUNGEON_1,
       'assets/levels/dungeon-1/thumbnail.png',
+    );
+    this.load.image(
+      ASSET_KEYS.MAP_THUMB_STAGES,
+      'assets/stages/thumbnail.png',
     );
 
     // Combo / new-spell sprites loaded as per-frame PNGs (frameNNNN.png), assembled into
@@ -166,6 +188,20 @@ export class PreloadScene extends Phaser.Scene {
 
   public create(): void {
     this.#createAnimations();
+
+    // Lobby map selection only takes effect here — DataManager.currentArea is
+    // hardcoded at construction (DUNGEON_1), and nothing else updates it from
+    // the match config. Offline boot (DEV_SKIP_TO_GAMEPLAY / no matchConfig)
+    // falls through to whatever DataManager already holds.
+    const mapId = this.#matchConfig?.config?.mapId;
+    if (mapId !== undefined) {
+      const spawn = MAP_ID_TO_SPAWN[mapId];
+      if (spawn !== undefined && isLevelName(spawn.level)) {
+        DataManager.instance.updateAreaData(spawn.level, spawn.startRoomId, spawn.startDoorId);
+      } else {
+        console.warn(`PreloadScene: unknown mapId "${mapId}" — falling back to DataManager default`);
+      }
+    }
 
     const sceneData: LevelData = {
       level: DataManager.instance.data.currentArea.name,

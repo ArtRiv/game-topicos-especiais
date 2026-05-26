@@ -41,6 +41,12 @@ export class InventoryManager {
         compass: false,
         keys: 0,
       },
+      STAGES: {
+        map: false,
+        bossKey: false,
+        compass: false,
+        keys: 0,
+      },
     };
   }
 
@@ -97,6 +103,7 @@ export class InventoryManager {
     this.#areaInventory = {
       DUNGEON_1: { map: false, bossKey: false, compass: false, keys: 0 },
       WORLD: { map: false, bossKey: false, compass: false, keys: 0 },
+      STAGES: { map: false, bossKey: false, compass: false, keys: 0 },
     };
   }
 }

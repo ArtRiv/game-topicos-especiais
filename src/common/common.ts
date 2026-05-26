@@ -23,6 +23,7 @@ export const INTERACTIVE_OBJECT_TYPE = {
 export const LEVEL_NAME = {
   WORLD: 'WORLD',
   DUNGEON_1: 'DUNGEON_1',
+  STAGES: 'STAGES',
 } as const;
 
 export const DUNGEON_ITEM = {
