@@ -54,18 +54,188 @@ type ConnectBeat = { kind: 'connect' };
 type DialogueBeat = SayBeat | InputBeat | ConnectBeat;
 
 const DIALOGUE_BEATS: DialogueBeat[] = [
-  { kind: 'say',     face: MageFace.NEUTRAL,    text: 'Ah... mais um mago se apresenta diante da arena.' },
-  { kind: 'say',     face: MageFace.SMILE,      text: 'Voce veio reivindicar a Pedra Mistica, nao foi?' },
-  { kind: 'say',     face: MageFace.STRICT,     text: 'Antes de atravessar, precisarei de algumas informacoes.' },
-  { kind: 'input',   face: MageFace.NEUTRAL,    text: 'Primeiro: como te invocam, mago?',                                                                              field: 'nick', default: 'Player' },
-  { kind: 'say',     face: MageFace.SMILE,      text: 'Otimo. Anotado em meu pergaminho.' },
-  { kind: 'say',     face: MageFace.EXPLAINING, text: 'Agora, a parte mais importante. Eu preciso da Runa do Portal do seu cla.' },
-  { kind: 'say',     face: MageFace.EXPLAINING, text: 'Os anciaos a inscrevem em uma forma estranha, algo como "192.168.1.10". Ou apenas "localhost", se voce mesmo for o anfitriao do ritual.' },
-  { kind: 'input',   face: MageFace.THINKING,   text: 'Qual e a sua Runa?',                                                                                            field: 'ip',   default: 'localhost' },
-  { kind: 'say',     face: MageFace.MYSTICAL,   text: 'Muito bem. Que os ventos te guiem ate a arena, mago.' },
+  { kind: 'say', face: MageFace.NEUTRAL, text: 'Ah... mais um mago se apresenta diante da arena.' },
+  { kind: 'say', face: MageFace.SMILE, text: 'Voce veio reivindicar a Pedra Mistica, nao foi?' },
+  { kind: 'say', face: MageFace.STRICT, text: 'Antes de atravessar, precisarei de algumas informacoes.' },
+  { kind: 'input', face: MageFace.NEUTRAL, text: 'Primeiro: como te invocam, mago?', field: 'nick', default: 'Player' },
+  // Default reaction to a nickname. Replaced by NICKNAME_EASTER_EGGS when one
+  // of the entries matches (case- and accent-insensitive, see #findNickEasterEgg).
+  { kind: 'say', face: MageFace.SMILE, text: 'Otimo. Anotado em meu pergaminho.' },
+  {
+    kind: 'say',
+    face: MageFace.EXPLAINING,
+    text: 'Agora, a parte mais importante. Eu preciso da Runa do Portal do seu cla.',
+  },
+  {
+    kind: 'say',
+    face: MageFace.EXPLAINING,
+    text: 'Os anciaos a inscrevem em uma forma estranha, algo como "192.168.1.10". Ou apenas "localhost", se voce mesmo for o anfitriao do ritual.',
+  },
+  { kind: 'input', face: MageFace.THINKING, text: 'Qual e a sua Runa?', field: 'ip', default: 'localhost' },
+  { kind: 'say', face: MageFace.MYSTICAL, text: 'Muito bem. Que os ventos te guiem ate a arena, mago.' },
   { kind: 'connect' },
 ];
 
+// ---------------------------------------------------------------------------
+// Nickname easter eggs
+// ---------------------------------------------------------------------------
+// When the player types one of the `match` strings as their nickname, the
+// gatekeeper reacts with `lines` instead of the default "Otimo. Anotado..."
+// beat. After the reaction, the flow continues normally with the IP prompt.
+//
+// Matching rules (see #normalizeNickname):
+//   • case-insensitive ("Davi", "DAVI", "davi" all match the same entry)
+//   • accents/diacritics folded ("joão" matches "joao")
+//   • whitespace trimmed
+//   • exact-string match only (not a substring) — so "caio_xX" won't trigger
+//     "caio"; add the variant explicitly if you want it to.
+//
+// The first entry whose `match` list contains the normalized nickname wins,
+// so put more specific entries (e.g. ["davi silva"]) above more generic
+// ones (e.g. ["davi"]).
+// ---------------------------------------------------------------------------
+type NickEasterEgg = {
+  match: string[];
+  lines: { face: MageFace; text: string }[];
+};
+
+const NICKNAME_EASTER_EGGS: NickEasterEgg[] = [
+  {
+    match: ['gustavo', 'guga'],
+    lines: [
+      { face: MageFace.THINKING, text: 'Gustavo... tive um aluno com esse nome.' },
+      { face: MageFace.SMILE, text: 'Aprovava os rituais dos colegas com entusiasmo genuino.' },
+      {
+        face: MageFace.LAUGH,
+        text: 'O problema e que metade deles explodia logo depois. Ele nunca entendia muito bem por que.',
+      },
+    ],
+  },
+  {
+    match: ['caio'],
+    lines: [
+      { face: MageFace.THINKING, text: 'Caio... curioso.' },
+      {
+        face: MageFace.EXPLAINING,
+        text: 'Tive um aluno assim. Talentoso, mas com uma relacao complicada com artefatos de invocacao a distancia.',
+      },
+      {
+        face: MageFace.LAUGH,
+        text: 'Certa vez, um cristal de conjuracao remota comecou a drenar ouro da bolsa dele sozinho. Nunca descobrimos como.',
+      },
+    ],
+  },
+  {
+    match: ['davi', 'dave', 'david'],
+    lines: [
+      { face: MageFace.SURPRISED, text: 'Davi...' },
+      {
+        face: MageFace.SMILE,
+        text: 'Esse nome me traz memorias. Um aluno que, quando todos recuaram diante dos Tomos da Configuracao Arcana...',
+      },
+      {
+        face: MageFace.MYSTICAL,
+        text: 'Simplesmente os pegou e os carregou nas costas. Sem reclamar. Chegou junto comigo ate o fim.',
+      },
+    ],
+  },
+  {
+    match: ['nicolas', 'nico'],
+    lines: [
+      { face: MageFace.THINKING, text: 'Nicolas... ah.' },
+      { face: MageFace.SMILE, text: 'Tinha um aluno com esse nome que consultava o Oraculo para absolutamente tudo.' },
+      {
+        face: MageFace.LAUGH,
+        text: 'Ate para saber se estava com fome. Dizia que o Oraculo era infaivel. O Oraculo, convenhamos, as vezes inventava respostas.',
+      },
+    ],
+  },
+  {
+    match: ['jesse', 'jessee'],
+    lines: [
+      { face: MageFace.SMILE, text: 'Jesse. Um aluno fiel as antigas escrituras.' },
+      {
+        face: MageFace.EXPLAINING,
+        text: 'Enquanto todos adotavam novos encantamentos, ele insistia nos feiticos classicos. Verbosos. Com invocacao completa.',
+      },
+      { face: MageFace.LAUGH, text: 'Funcionava. Demorava. Mas funcionava.' },
+    ],
+  },
+  {
+    match: ['arthur', 'artur', 'art'],
+    lines: [
+      { face: MageFace.THINKING, text: 'Arthur...' },
+      {
+        face: MageFace.SMILE,
+        text: 'Tive um aluno com esse nome que sabia exatamente onde cada maldicao estava escondida na masmorra.',
+      },
+      {
+        face: MageFace.MYSTICAL,
+        text: 'Quando algo quebrava, ele ja estava la antes de alguem perceber. O tipo raro de mago que entende o feiticio por dentro.',
+      },
+    ],
+  },
+  {
+    match: ['ederson'],
+    lines: [
+      { face: MageFace.SURPRISED, text: 'Ederson...' },
+      { face: MageFace.LAUGH, text: 'Esse nome tem uma energia muito especifica. Cara de Boi, por acaso?' },
+    ],
+  },
+  {
+    match: ['boi'],
+    lines: [
+      { face: MageFace.LAUGH, text: 'Boi?' },
+      { face: MageFace.SMILE, text: 'Eu tambem atendo por esse nome. Boa!' },
+    ],
+  },
+
+  // ── Genéricos charmosos ──────────────────────────────────────────────────
+  {
+    match: ['joao', 'joão'],
+    lines: [
+      { face: MageFace.SMILE, text: 'Joao. Um dos nomes mais antigos do grimorio.' },
+      {
+        face: MageFace.NEUTRAL,
+        text: 'Aventureiros assim costumam ser dificeis de surpreender. Vamos ver se o portal consegue.',
+      },
+    ],
+  },
+  {
+    match: ['pedro'],
+    lines: [
+      { face: MageFace.NEUTRAL, text: 'Pedro. Nome solido. Como uma pedra, curiosamente.' },
+      { face: MageFace.SMILE, text: 'Os melhores aventureiros que conheci nao precisavam de um nome chamativo.' },
+    ],
+  },
+  {
+    match: ['ana', 'anna'],
+    lines: [
+      { face: MageFace.SMILE, text: 'Ana. Curto, direto, sem enfeites.' },
+      { face: MageFace.MYSTICAL, text: 'Ha algo poderoso em nomes assim. Nao desperdicam nem uma silaba.' },
+    ],
+  },
+  {
+    match: ['maria'],
+    lines: [
+      { face: MageFace.EXPLAINING, text: 'Maria. Tive dezenas de alunas com esse nome ao longo dos anos.' },
+      {
+        face: MageFace.SMILE,
+        text: 'Curiosamente, todas muito mais organizadas que os demais. Coincidencia, certamente.',
+      },
+    ],
+  },
+
+  // ── Palavrões ────────────────────────────────────────────────────────────
+  {
+    match: ['cu', 'pinto', 'pau', 'merda', 'porra', 'caralho', 'foda', 'fdp', 'corno'],
+    lines: [
+      { face: MageFace.STRICT, text: 'O grimorio registrou esse nome sem nem piscar.' },
+      { face: MageFace.NEUTRAL, text: 'Nao e a primeira vez que alguem tenta cruzar o portal assim.' },
+      { face: MageFace.SMILE, text: 'Pode entrar. Ja vi coisa pior em revisao de ritual.' },
+    ],
+  },
+];
 // ---------------------------------------------------------------------------
 // LOBBY_TUNING — live-editable layout knobs for the connect dialogue
 // ---------------------------------------------------------------------------
@@ -88,7 +258,7 @@ export const LOBBY_TUNING = {
   PORTRAIT_X: 61,
   PORTRAIT_Y: 258,
   PORTRAIT_SIZE_PX: 98,
-  FRAME_CROP_INSET_PX: 23,       // how many source-pixels to crop inward on each side of every face frame (kills padding between sprites)
+  FRAME_CROP_INSET_PX: 23, // how many source-pixels to crop inward on each side of every face frame (kills padding between sprites)
 
   // Background-removal threshold. With the flood-fill + feathered alpha pass
   // in #processPortraitSheet, pixels near pure white that are reachable from
@@ -115,8 +285,8 @@ export const LOBBY_TUNING = {
   HINT_Y: 263,
 
   // Advance prompt position inside the box
-  PROMPT_OFFSET_X: 12,           // from box right edge
-  PROMPT_OFFSET_Y: 4,            // from box bottom edge
+  PROMPT_OFFSET_X: 12, // from box right edge
+  PROMPT_OFFSET_Y: 4, // from box bottom edge
 
   // Error/status line
   ERROR_OFFSET_BELOW_BOX: 17,
@@ -151,18 +321,9 @@ export class LobbyScene extends Phaser.Scene {
     // are not available yet when map cards first render. Load the two map
     // thumbnails here so `this.textures.exists(...)` is true by create() time
     // and the blue fallback rectangle never shows.
-    this.load.image(
-      ASSET_KEYS.MAP_THUMB_WORLD,
-      'assets/levels/world/thumbnail.png',
-    );
-    this.load.image(
-      ASSET_KEYS.MAP_THUMB_DUNGEON_1,
-      'assets/levels/dungeon-1/thumbnail.png',
-    );
-    this.load.image(
-      ASSET_KEYS.MAP_THUMB_STAGES,
-      'assets/stages/thumbnail.png',
-    );
+    this.load.image(ASSET_KEYS.MAP_THUMB_WORLD, 'assets/levels/world/thumbnail.png');
+    this.load.image(ASSET_KEYS.MAP_THUMB_DUNGEON_1, 'assets/levels/dungeon-1/thumbnail.png');
+    this.load.image(ASSET_KEYS.MAP_THUMB_STAGES, 'assets/stages/thumbnail.png');
     this.load.bitmapFont(
       BMFONT_KEY,
       'assets/fonts/Press_Start_2P/press_start_white-2.png',
@@ -263,9 +424,9 @@ export class LobbyScene extends Phaser.Scene {
         const push = (x: number, y: number) => {
           if (x < fx0 || x >= fx1 || y < fy0 || y >= fy1) return;
           const idx = (y * W + x) * 4;
-          if (d[idx + 3] === 0) return;       // already cleared
+          if (d[idx + 3] === 0) return; // already cleared
           if (!isBg(idx)) return;
-          d[idx + 3] = 0;                     // mark cleared in-place
+          d[idx + 3] = 0; // mark cleared in-place
           stack.push(x, y);
         };
         for (let x = fx0; x < fx1; x++) {
@@ -297,9 +458,9 @@ export class LobbyScene extends Phaser.Scene {
           const q = y * W + x;
           if (alphaSnapshot[q] === 0) continue;
           let transparentNeighbors = 0;
-          if (x > 0     && alphaSnapshot[q - 1] === 0) transparentNeighbors++;
+          if (x > 0 && alphaSnapshot[q - 1] === 0) transparentNeighbors++;
           if (x < W - 1 && alphaSnapshot[q + 1] === 0) transparentNeighbors++;
-          if (y > 0     && alphaSnapshot[q - W] === 0) transparentNeighbors++;
+          if (y > 0 && alphaSnapshot[q - W] === 0) transparentNeighbors++;
           if (y < H - 1 && alphaSnapshot[q + W] === 0) transparentNeighbors++;
           if (transparentNeighbors === 0) continue;
           const newAlpha = transparentNeighbors >= 3 ? 64 : transparentNeighbors === 2 ? 128 : 192;
@@ -331,7 +492,10 @@ export class LobbyScene extends Phaser.Scene {
       for (let fi = 0; fi < 8; fi++) {
         const fx0 = fi * frameW;
         const fx1 = fx0 + frameW;
-        let minX = fx1, minY = frameH, maxX = fx0 - 1, maxY = -1;
+        let minX = fx1,
+          minY = frameH,
+          maxX = fx0 - 1,
+          maxY = -1;
         for (let y = 0; y < frameH; y++) {
           for (let x = fx0; x < fx1; x++) {
             const alpha = a[(y * W + x) * 4 + 3];
@@ -386,7 +550,10 @@ export class LobbyScene extends Phaser.Scene {
     if (this.textures.exists(outKey)) {
       this.textures.remove(outKey);
     }
-    this.textures.addSpriteSheet(outKey, finalCanvas as unknown as HTMLImageElement, { frameWidth: finalFrameSize, frameHeight: finalFrameSize });
+    this.textures.addSpriteSheet(outKey, finalCanvas as unknown as HTMLImageElement, {
+      frameWidth: finalFrameSize,
+      frameHeight: finalFrameSize,
+    });
 
     // Update any currently-visible portrait so the debug panel re-process
     // shows changes without a full view-rebuild.
@@ -459,6 +626,10 @@ export class LobbyScene extends Phaser.Scene {
   #dialogueAcceptingAdvance = false;
   #dialogueKeyHandler: ((event: KeyboardEvent) => void) | null = null;
   #dialoguePointerHandler: (() => void) | null = null;
+  // Transient queue of override lines spliced in by NICKNAME_EASTER_EGGS.
+  // #runDialogueBeat drains from here first; once empty, the scripted beat
+  // at #dialogueBeatIndex plays as usual.
+  #easterEggQueue: { face: MageFace; text: string }[] = [];
 
   // Boxes/labels created by #showConnectView that we want to live-resize from
   // the debug panel without a full view-rebuild. Held as named refs so the
@@ -477,10 +648,10 @@ export class LobbyScene extends Phaser.Scene {
     const bg = this.add.rectangle(0, 0, this.cameras.main.width, this.cameras.main.height, 0x000000, 1).setOrigin(0);
 
     // NPC portrait. Frame index drives the face (0..7 → MageFace).
-    const portrait = this.add.image(t.PORTRAIT_X, t.PORTRAIT_Y, ASSET_KEYS.NPC_MAGE_PORTRAITS, MageFace.NEUTRAL)
+    const portrait = this.add
+      .image(t.PORTRAIT_X, t.PORTRAIT_Y, ASSET_KEYS.NPC_MAGE_PORTRAITS, MageFace.NEUTRAL)
       .setOrigin(0.5);
-    const frameW = this.textures.get(ASSET_KEYS.NPC_MAGE_PORTRAITS).getSourceImage().width / 8;
-    portrait.setScale(t.PORTRAIT_SIZE_PX / frameW);
+    portrait.setScale(t.PORTRAIT_SIZE_PX / this.#processedFrameSize);
     this.#portrait = portrait;
 
     // Dialogue box.
@@ -502,15 +673,31 @@ export class LobbyScene extends Phaser.Scene {
       .setLineSpacing(4)
       .setResolution(2);
 
-    this.#dialoguePrompt = this.#crispText(t.BOX_X + t.BOX_W - t.PROMPT_OFFSET_X, t.BOX_Y + t.BOX_H - t.PROMPT_OFFSET_Y, '>>', { size: 8, tint: 0xcccccc })
+    this.#dialoguePrompt = this.#crispText(
+      t.BOX_X + t.BOX_W - t.PROMPT_OFFSET_X,
+      t.BOX_Y + t.BOX_H - t.PROMPT_OFFSET_Y,
+      '>>',
+      { size: 8, tint: 0xcccccc },
+    )
       .setOrigin(1, 1)
       .setAlpha(0);
 
-    this.#dialogueErrorText = this.#crispText(cx, t.BOX_Y + t.BOX_H + t.ERROR_OFFSET_BELOW_BOX, '', { size: 8, tint: 0xff5555 })
-      .setOrigin(0.5);
+    this.#dialogueErrorText = this.#crispText(cx, t.BOX_Y + t.BOX_H + t.ERROR_OFFSET_BELOW_BOX, '', {
+      size: 8,
+      tint: 0xff5555,
+    }).setOrigin(0.5);
     this.#statusText = this.#dialogueErrorText;
 
-    this.#viewObjects = [bg, portrait, this.#boxFill, this.#boxBorder, this.#dialogueTitle, this.#dialogueText, this.#dialoguePrompt, this.#dialogueErrorText];
+    this.#viewObjects = [
+      bg,
+      portrait,
+      this.#boxFill,
+      this.#boxBorder,
+      this.#dialogueTitle,
+      this.#dialogueText,
+      this.#dialoguePrompt,
+      this.#dialogueErrorText,
+    ];
 
     this.#dialogueBeatIndex = 0;
     this.#dialogueInputValue = { nick: 'Player', ip: 'localhost' };
@@ -533,8 +720,7 @@ export class LobbyScene extends Phaser.Scene {
 
     if (this.#portrait) {
       this.#portrait.setPosition(t.PORTRAIT_X, t.PORTRAIT_Y);
-      const frameW = this.textures.get(ASSET_KEYS.NPC_MAGE_PORTRAITS).getSourceImage().width / 8;
-      this.#portrait.setScale(t.PORTRAIT_SIZE_PX / frameW);
+      this.#portrait.setScale(t.PORTRAIT_SIZE_PX / this.#processedFrameSize);
     }
     if (this.#boxFill) {
       this.#boxFill.setPosition(t.BOX_X, t.BOX_Y);
@@ -572,6 +758,16 @@ export class LobbyScene extends Phaser.Scene {
   }
 
   #runDialogueBeat(): void {
+    // Drain easter-egg lines (if any) before consulting the scripted beat at
+    // #dialogueBeatIndex. The easter-egg queue is populated by #confirmInputBeat
+    // when a nickname matches a NICKNAME_EASTER_EGGS entry; #dialogueBeatIndex
+    // has already been advanced past the default reaction beat at that point.
+    if (this.#easterEggQueue.length > 0) {
+      const line = this.#easterEggQueue.shift()!;
+      this.#playOverrideSayLine(line);
+      return;
+    }
+
     const beat = DIALOGUE_BEATS[this.#dialogueBeatIndex];
     if (!beat) return;
 
@@ -604,6 +800,47 @@ export class LobbyScene extends Phaser.Scene {
         this.#mountInlineInput(beat);
       }
     });
+  }
+
+  // Plays a one-off `say`-style line from the easter-egg queue. Mirrors the
+  // `say` branch of #runDialogueBeat but draws its text/face from the override
+  // line instead of from DIALOGUE_BEATS. Click/Enter triggers the same
+  // advance path (#advanceDialogue), which falls through to the next queue
+  // entry on the next call to #runDialogueBeat.
+  #playOverrideSayLine(line: { face: MageFace; text: string }): void {
+    if (this.#dialoguePrompt) this.#dialoguePrompt.setAlpha(0);
+    if (this.#dialogueTypeTimer) {
+      this.#dialogueTypeTimer.remove();
+      this.#dialogueTypeTimer = null;
+    }
+    this.#destroyInlineInput();
+    this.#dialogueTypeComplete = false;
+    this.#dialogueAcceptingAdvance = false;
+    this.#dialogueAwaitingInput = false;
+
+    if (this.#portrait) this.#portrait.setFrame(line.face);
+    this.#dialogueTypeProgress = 0;
+    this.#dialogueBlipCounter = 0;
+    if (this.#dialogueText) this.#dialogueText.setText('');
+    this.#startDialogueTyping(line.text, () => {
+      this.#showAdvancePrompt();
+      this.#dialogueAcceptingAdvance = true;
+    });
+  }
+
+  // Normalize for easter-egg lookup: lowercase, fold diacritics, trim.
+  // "João  " → "joao".
+  #normalizeNickname(raw: string): string {
+    return raw.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+  }
+
+  #findNickEasterEgg(nick: string): NickEasterEgg | null {
+    const norm = this.#normalizeNickname(nick);
+    if (!norm) return null;
+    for (const egg of NICKNAME_EASTER_EGGS) {
+      if (egg.match.some((m) => this.#normalizeNickname(m) === norm)) return egg;
+    }
+    return null;
   }
 
   #startDialogueTyping(fullText: string, onComplete: () => void): void {
@@ -653,9 +890,11 @@ export class LobbyScene extends Phaser.Scene {
     const current = this.#dialogueInputValue[beat.field] ?? beat.default;
     const maxlen = beat.field === 'nick' ? 12 : 64;
     const widthPx = beat.field === 'nick' ? t.INPUT_WIDTH_NICK_PX : t.INPUT_WIDTH_IP_PX;
-    this.#dialogueInput = this.add.dom(inputX, inputY).createFromHTML(
-      `<input type="text" value="${current}" maxlength="${maxlen}" style="width:${widthPx}px;background:#111;color:#fff;border:1px solid #555;padding:4px;font-size:10px;font-family:monospace;text-align:center;outline:none">`,
-    );
+    this.#dialogueInput = this.add
+      .dom(inputX, inputY)
+      .createFromHTML(
+        `<input type="text" value="${current}" maxlength="${maxlen}" style="width:${widthPx}px;background:#111;color:#fff;border:1px solid #555;padding:4px;font-size:10px;font-family:monospace;text-align:center;outline:none">`,
+      );
     this.#viewObjects.push(this.#dialogueInput);
 
     const el = this.#dialogueInput.node as HTMLElement;
@@ -669,15 +908,32 @@ export class LobbyScene extends Phaser.Scene {
       }
     });
 
-    this.#dialogueInputHint = this.#crispText(t.HINT_X, t.HINT_Y, 'ENTER PARA CONFIRMAR', { size: 8, tint: 0x888888 })
-      .setOrigin(0.5);
+    this.#dialogueInputHint = this.#crispText(t.HINT_X, t.HINT_Y, 'ENTER PARA CONFIRMAR', {
+      size: 8,
+      tint: 0x888888,
+    }).setOrigin(0.5);
     this.#viewObjects.push(this.#dialogueInputHint);
   }
 
   #confirmInputBeat(beat: InputBeat, raw: string): void {
     const trimmed = raw.trim() || beat.default;
     this.#dialogueInputValue[beat.field] = trimmed;
-    if (beat.field === 'nick') this.#playerName = trimmed;
+    if (beat.field === 'nick') {
+      this.#playerName = trimmed;
+      // If the nickname matches an easter egg, queue its lines and skip past
+      // the scripted default reaction beat ("Otimo. Anotado...") that
+      // immediately follows the nick input. After the queue drains, the
+      // script resumes at the next scripted beat (the IP-prompt setup).
+      const egg = this.#findNickEasterEgg(trimmed);
+      if (egg) {
+        this.#easterEggQueue = egg.lines.slice();
+        this.#dialogueBeatIndex += 2; // step over input beat + default reaction
+        this.#destroyInlineInput();
+        this.#dialogueAwaitingInput = false;
+        this.#runDialogueBeat();
+        return;
+      }
+    }
     this.#destroyInlineInput();
     this.#dialogueAwaitingInput = false;
     this.#dialogueBeatIndex++;
@@ -737,9 +993,7 @@ export class LobbyScene extends Phaser.Scene {
     EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_CONNECTED, this.#onConnected, this);
     EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_DISCONNECTED, this.#onDialogueConnectFail, this);
     if (this.#portrait) this.#portrait.setFrame(MageFace.SURPRISED);
-    const ipBeatIndex = DIALOGUE_BEATS.findIndex(
-      (b) => b.kind === 'input' && b.field === 'ip',
-    );
+    const ipBeatIndex = DIALOGUE_BEATS.findIndex((b) => b.kind === 'input' && b.field === 'ip');
     this.#dialogueBeatIndex = ipBeatIndex >= 0 ? ipBeatIndex : 0;
     if (this.#dialogueErrorText) this.#dialogueErrorText.setText('A Runa nao respondeu. Tente outra.');
     this.#runDialogueBeat();
@@ -854,7 +1108,7 @@ export class LobbyScene extends Phaser.Scene {
       const rowY = baseY + i * 36;
       const bg = this.add.rectangle(cx, rowY + 12, 380, 30, 0x223366).setInteractive();
       const c = lobby.config;
-      const md = MAP_POOL.find(m => m.id === c.mapId)?.displayName ?? c.mapId;
+      const md = MAP_POOL.find((m) => m.id === c.mapId)?.displayName ?? c.mapId;
       const rowText = `${lobby.players[0]?.name ?? '?'}'s lobby — ${c.format} • ${md} • ${lobby.players.length}/${c.maxPlayers}`;
       const label = this.#crispText(cx - 185, rowY, rowText, FONT_SMALL_WHITE);
 
@@ -874,7 +1128,7 @@ export class LobbyScene extends Phaser.Scene {
 
   get #isHost(): boolean {
     if (!this.#currentLobby) return false;
-    const me = this.#currentLobby.players.find(p => p.socketId === this.#localSocketId);
+    const me = this.#currentLobby.players.find((p) => p.socketId === this.#localSocketId);
     return me !== undefined && me.id === this.#currentLobby.hostPlayerId;
   }
 
@@ -936,19 +1190,18 @@ export class LobbyScene extends Phaser.Scene {
     // map cards + card name labels). Centered at y=144, height 132 → spans y=78
     // to y=210 — covers capacity (y=86) through card-name labels (~y=202).
     const panel = this.add.rectangle(cx, 144, this.cameras.main.width - 16, 132, 0x0a0f1f, 0.6).setOrigin(0.5);
-    const panelBorder = this.add.rectangle(cx, 144, this.cameras.main.width - 16, 132)
+    const panelBorder = this.add
+      .rectangle(cx, 144, this.cameras.main.width - 16, 132)
       .setOrigin(0.5)
       .setStrokeStyle(1, 0x2a3a55);
     this.#configBlockObjects.push(panel, panelBorder);
 
     // Capacity header (visible to everyone) — simplified: format & map are shown
     // explicitly below, so no need to duplicate them here.
-    this.#capacityHeader = this.#crispText(
-      cx,
-      86,
-      `Players ${lobby.players.length}/${cfg.maxPlayers}`,
-      FONT,
-    ).setOrigin(0.5, 0);
+    this.#capacityHeader = this.#crispText(cx, 86, `Players ${lobby.players.length}/${cfg.maxPlayers}`, FONT).setOrigin(
+      0.5,
+      0,
+    );
     this.#configBlockObjects.push(this.#capacityHeader);
 
     if (this.#isHost) {
@@ -957,9 +1210,12 @@ export class LobbyScene extends Phaser.Scene {
       const formatLabel = this.#crispText(cx - 8, 104, 'Format:', FONT_SMALL_WHITE).setOrigin(1, 0.5);
       const formats: LobbyFormat[] = ['1v1', '2v2', '3v3', '4v4', '5v5', '6v6', '7v7', '8v8', '9v9', '10v10'];
       const optionsHtml = formats.map((f) => `<option value="${f}">${f}</option>`).join('');
-      const formatDom = this.add.dom(cx + 4, 104).createFromHTML(
-        `<select style="background:#111;color:#fff;border:1px solid #555;padding:2px 4px;font-size:10px;font-family:monospace">${optionsHtml}</select>`,
-      ).setOrigin(0, 0.5);
+      const formatDom = this.add
+        .dom(cx + 4, 104)
+        .createFromHTML(
+          `<select style="background:#111;color:#fff;border:1px solid #555;padding:2px 4px;font-size:10px;font-family:monospace">${optionsHtml}</select>`,
+        )
+        .setOrigin(0, 0.5);
       const selectEl = (formatDom.node as HTMLElement).querySelector('select') as HTMLSelectElement;
       selectEl.value = cfg.format;
       selectEl.addEventListener('change', () => {
@@ -979,10 +1235,9 @@ export class LobbyScene extends Phaser.Scene {
         const cardX = cx + (i - (MAP_POOL.length - 1) / 2) * (96 + 8);
         const cardY = 158;
         const isSelected = entry.id === cfg.mapId;
-        const border = this.add.rectangle(cardX, cardY, 96, 64).setStrokeStyle(
-          isSelected ? 2 : 1,
-          isSelected ? 0xffdd55 : 0x444444,
-        );
+        const border = this.add
+          .rectangle(cardX, cardY, 96, 64)
+          .setStrokeStyle(isSelected ? 2 : 1, isSelected ? 0xffdd55 : 0x444444);
         const bg = this.add.rectangle(cardX, cardY, 96, 64, 0x111111).setInteractive();
         const thumb = this.textures.exists(entry.thumbnailKey)
           ? this.add.image(cardX, cardY, entry.thumbnailKey)
@@ -1007,10 +1262,9 @@ export class LobbyScene extends Phaser.Scene {
         const cardX = cx + (i - (MAP_POOL.length - 1) / 2) * (96 + 8);
         const cardY = 158;
         const isSelected = entry.id === cfg.mapId;
-        const border = this.add.rectangle(cardX, cardY, 96, 64).setStrokeStyle(
-          isSelected ? 2 : 1,
-          isSelected ? 0xffdd55 : 0x333333,
-        );
+        const border = this.add
+          .rectangle(cardX, cardY, 96, 64)
+          .setStrokeStyle(isSelected ? 2 : 1, isSelected ? 0xffdd55 : 0x333333);
         const bg = this.add.rectangle(cardX, cardY, 96, 64, 0x111111);
         const thumb = this.textures.exists(entry.thumbnailKey)
           ? this.add.image(cardX, cardY, entry.thumbnailKey)
@@ -1101,9 +1355,11 @@ export class LobbyScene extends Phaser.Scene {
   #playerListMaskGfx: Phaser.GameObjects.Graphics | null = null;
   #playerListScrollY = 0;
   #playerListMaxScroll = 0;
-  #playerListWheelHandler: ((pointer: Phaser.Input.Pointer, gameObjects: unknown[], deltaX: number, deltaY: number) => void) | null = null;
-  static readonly #ROW_HEIGHT = 22;          // tighter than the old 36 to fit more rows in viewport
-  static readonly #PLAYER_LIST_TOP = 214;    // viewport top (below map-card name row at y=194+8)
+  #playerListWheelHandler:
+    | ((pointer: Phaser.Input.Pointer, gameObjects: unknown[], deltaX: number, deltaY: number) => void)
+    | null = null;
+  static readonly #ROW_HEIGHT = 22; // tighter than the old 36 to fit more rows in viewport
+  static readonly #PLAYER_LIST_TOP = 214; // viewport top (below map-card name row at y=194+8)
   static readonly #PLAYER_LIST_BOTTOM = 288; // viewport bottom (above Start button at y=304)
 
   #renderPlayerList(players: PlayerInfo[]): void {
@@ -1141,8 +1397,9 @@ export class LobbyScene extends Phaser.Scene {
       const tint = TINTS[i % TINTS.length];
 
       // Zebra-stripe row background — improves scanability when many players are present.
-      const rowBg = this.add.rectangle(cx, rowY + 8, this.cameras.main.width - 32, rowH - 4,
-        i % 2 === 0 ? 0x111a2e : 0x0c1626, 0.55).setOrigin(0.5);
+      const rowBg = this.add
+        .rectangle(cx, rowY + 8, this.cameras.main.width - 32, rowH - 4, i % 2 === 0 ? 0x111a2e : 0x0c1626, 0.55)
+        .setOrigin(0.5);
       const dot = this.add.rectangle(cx - 150, rowY + 8, 8, 8, tint);
       const name = this.#crispText(cx - 130, rowY, player.name, FONT_SMALL_WHITE);
       this.#playerListContainer!.add([rowBg, dot, name]);
@@ -1169,8 +1426,13 @@ export class LobbyScene extends Phaser.Scene {
           nm.sendLobbyAssignTeam(player.id, 1);
         });
 
-        const bgA = (btnA as Phaser.GameObjects.Container).getAt(0) as Phaser.GameObjects.Rectangle;
-        const bgB = (btnB as Phaser.GameObjects.Container).getAt(0) as Phaser.GameObjects.Rectangle;
+        // Container.getAt returns GameObject; tsc requires the cast to call
+        // Rectangle.setFillStyle below. ESLint's "unnecessary assertion" rule
+        // disagrees with tsc here, so we silence it locally.
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
+        const bgA = btnA.getAt(0) as Phaser.GameObjects.Rectangle;
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
+        const bgB = btnB.getAt(0) as Phaser.GameObjects.Rectangle;
         if (isTeamA) {
           bgA.setFillStyle(0x0066dd);
           bgB.setFillStyle(BTN_DISABLED);
@@ -1236,9 +1498,7 @@ export class LobbyScene extends Phaser.Scene {
     // since #setPlayerListScroll is called sparsely. Use Phaser's update event.
     const updateThumb = () => {
       if (!thumb.active) return;
-      const ratio = this.#playerListMaxScroll === 0
-        ? 0
-        : this.#playerListScrollY / this.#playerListMaxScroll;
+      const ratio = this.#playerListMaxScroll === 0 ? 0 : this.#playerListScrollY / this.#playerListMaxScroll;
       thumb.y = top + ratio * (viewportH - thumbH);
     };
     this.events.on(Phaser.Scenes.Events.UPDATE, updateThumb);
