@@ -19,6 +19,7 @@ import { UiScene } from './scenes/ui-scene';
 import { GameOverScene } from './scenes/game-over-scene';
 import { RadialMenuScene } from './scenes/radial-menu-scene';
 import { DebugPanel } from './debug/debug-panel';
+import { LobbyDebugPanel } from './debug/lobby-debug-panel';
 import { installCustomCursor } from './common/cursor';
 import { DEV_SKIP_TO_GAMEPLAY } from './common/config';
 import { startMenuVideoPrefetch } from './common/menu-video-prefetch';
@@ -126,5 +127,6 @@ void (async () => {
   }
 
   new DebugPanel();
+  new LobbyDebugPanel(game);
   installCustomCursor();
 })();

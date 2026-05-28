@@ -127,6 +127,8 @@ export const ASSET_KEYS = {
   // Star Shield — Starcaller VFX 3 sphere. 5×3 sheet, 128×128 per frame (15 total).
   // Wraps the caster as an invulnerability/reflection bubble.
   STAR_SHIELD: 'STAR_SHIELD',
+  // Lobby gatekeeper NPC portrait sheet (4×2 grid of mage faces).
+  NPC_MAGE_PORTRAITS: 'NPC_MAGE_PORTRAITS',
 } as const;
 
 export const DASH_ANIMATION_KEYS = {
