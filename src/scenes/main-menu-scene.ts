@@ -2,6 +2,9 @@ import * as Phaser from 'phaser';
 import { SCENE_KEYS } from './scene-keys';
 import { MusicManager } from '../common/music-manager';
 import { startScene } from './scene-transition';
+import { ASSET_KEYS } from '../common/assets';
+import { getMenuVideoSrc } from '../common/menu-video-prefetch';
+import { attachRandomHoverEffect } from '../common/text-hover-effect';
 
 // ---------------------------------------------------------------------------
 // MainMenuScene — cinematic intro synced to menu music drop (D-05).
@@ -20,14 +23,14 @@ const MENU_SPACING = 26;
 // Offset (ms) from menu_music.ogg start to the drop. Title slam fires here.
 const MUSIC_DROP_MS = 2_000;
 
-const MENU_BG_VIDEO_KEY = 'MENU_BG_VIDEO';
-const MENU_BG_VIDEO_PATH = 'assets/ui/landscape.mp4';
+const MENU_BG_VIDEO_KEY = ASSET_KEYS.MENU_BG_VIDEO;
 
 // Tint palette per UI-SPEC §Typography / §Color.
 const TINT_DISPLAY = 0xffffff;       // title
 const TINT_HEADING = 0xe8d9a8;       // subtitle parchment
 const TINT_MENU_IDLE = 0xffffff;
-const TINT_MENU_HOVER = 0xffc857;    // accent gold — reserved for hover ONLY
+// Hover color is now driven per-character by the lightning effect's layered
+// gradient (de9e41 / e8c170 / e7d5b3). See text-lightning-effect.ts TUNING.
 
 // Module-level flag — first-visit cinematic gate (D-05). Persists across
 // scene restarts within the same browser session so back-nav from stubs
@@ -56,9 +59,10 @@ export class MainMenuScene extends Phaser.Scene {
   }
 
   public preload(): void {
-    if (!this.cache.video.has(MENU_BG_VIDEO_KEY)) {
-      this.load.video(MENU_BG_VIDEO_KEY, MENU_BG_VIDEO_PATH, true);
-    }
+    // Video is NOT queued here on purpose — we want to feed Phaser the blob URL
+    // from the module-load prefetch (main.ts), which may resolve mid-splash.
+    // #drawBackground awaits the prefetch promise and runs an out-of-band
+    // loader for the video, guaranteeing it's fully cached before display.
     if (!this.cache.bitmapFont.has(BMFONT_KEY)) {
       this.load.bitmapFont(
         BMFONT_KEY,
@@ -104,6 +108,8 @@ export class MainMenuScene extends Phaser.Scene {
       title.setAlpha(1);
       subtitle.setAlpha(1);
       menuItems.forEach((m) => m.setAlpha(1));
+      // Title is already visible — enable hover right away.
+      title.setInteractive({ useHandCursor: true });
     } else {
       // First visit — hide everything, then reveal at the song drop.
       title.setAlpha(0);
@@ -127,6 +133,9 @@ export class MainMenuScene extends Phaser.Scene {
           alpha: 1,
           duration: 150,
           ease: 'Linear',
+          // Enable title interactivity only once the reveal completes —
+          // hovering an invisible title would be confusing UX.
+          onComplete: () => title.setInteractive({ useHandCursor: true }),
         });
 
         // Subtitle: α 0 -> 1 + y offset +8 -> 0, 200ms Quad.Out, delay 150ms.
@@ -160,29 +169,69 @@ export class MainMenuScene extends Phaser.Scene {
   // ---------------------------------------------------------------------------
   // Background — landscape.mp4 cover-fit + vignette overlay (D-06).
   //
-  // pixelArt:true defines NEAREST as the global filter, which causes ugly
-  // artefacts when downsampling 1920×1080 video to 480×320. We override the
-  // video texture's filter to LINEAR (smooth) on play. Vignette overlay is
-  // 0x000000 α 0.4 over the full canvas, beneath the text.
+  // Layering:
+  //   1. Black rectangle  — full-canvas fill, prevents flash-of-nothing.
+  //   2. landscape.mp4    — added once the prefetched blob URL resolves and
+  //                         Phaser's video cache has the asset. Faded in
+  //                         300ms once `play` fires.
+  //   3. Vignette         — 0x000000 α 0.4 (D-06 / UI-SPEC §Color).
+  //
+  // The video is loaded out-of-band (NOT in this scene's preload()) because
+  // we want to feed Phaser the blob URL produced by main.ts's module-load
+  // fetch — that prefetch starts before Phaser exists, so by the time the
+  // user clicks through Splash → Intro → Menu the bytes are in memory.
+  //
+  // pixelArt:true makes NEAREST the global filter, causing artefacts when
+  // downsampling 1920×1080 video to 480×320, so we force LINEAR on the video
+  // texture once it's available.
   // ---------------------------------------------------------------------------
   #drawBackground(cx: number, cy: number, w: number, h: number): void {
-    const vid = this.add.video(cx, cy, MENU_BG_VIDEO_KEY).setOrigin(0.5);
+    // 1. Black fill so the canvas isn't transparent while the video loads.
+    this.add.rectangle(0, 0, w, h, 0x000000, 1).setOrigin(0).setDepth(-3);
 
-    vid.on('play', () => {
-      const vEl = vid.video as HTMLVideoElement;
-      const vw = (vEl && vEl.videoWidth) || vid.width || 1920;
-      const vh = (vEl && vEl.videoHeight) || vid.height || 1080;
-      const cover = Math.max(w / vw, h / vh);
-      vid.setDisplaySize(Math.round(vw * cover), Math.round(vh * cover));
-      if (vid.texture) {
-        // Phaser.Textures.FilterMode.LINEAR === 0
-        vid.texture.setFilter(Phaser.Textures.FilterMode.LINEAR);
+    // 3. Vignette overlay between video (-2) and text/menu (depth 0).
+    this.add.graphics().fillStyle(0x000000, 0.4).fillRect(0, 0, w, h).setDepth(-1);
+
+    // 2. Video — kick off the actual load using the (likely already-resolved)
+    //    blob URL from the prefetch. If the cache already has the asset from
+    //    a previous visit, skip the load step and go straight to attach.
+    //    Negative depth keeps the video AND vignette below the text/menu
+    //    items (which default to depth 0).
+    const attach = (): void => {
+      const vid = this.add.video(cx, cy, MENU_BG_VIDEO_KEY).setOrigin(0.5).setAlpha(0).setDepth(-2);
+
+      vid.on('play', () => {
+        const vEl = vid.video as HTMLVideoElement | null;
+        const vw = (vEl && vEl.videoWidth) || vid.width || 1920;
+        const vh = (vEl && vEl.videoHeight) || vid.height || 1080;
+        const cover = Math.max(w / vw, h / vh);
+        vid.setDisplaySize(Math.round(vw * cover), Math.round(vh * cover));
+        if (vid.texture) {
+          // Phaser.Textures.FilterMode.LINEAR === 0
+          vid.texture.setFilter(Phaser.Textures.FilterMode.LINEAR);
+        }
+        this.tweens.add({ targets: vid, alpha: 1, duration: 300, ease: 'Quad.Out' });
+      });
+
+      vid.play(true);
+    };
+
+    if (this.cache.video.has(MENU_BG_VIDEO_KEY)) {
+      attach();
+      return;
+    }
+
+    void getMenuVideoSrc().then((src) => {
+      // Scene may have been shut down between the await and now; bail if so.
+      if (!this.scene.isActive(SCENE_KEYS.MAIN_MENU_SCENE)) return;
+      if (this.cache.video.has(MENU_BG_VIDEO_KEY)) {
+        attach();
+        return;
       }
+      this.load.video(MENU_BG_VIDEO_KEY, src, true);
+      this.load.once('complete', attach);
+      this.load.start();
     });
-    vid.play(true);
-
-    // Vignette overlay: 0x000000 α 0.4 (D-06 / UI-SPEC §Color).
-    this.add.graphics().fillStyle(0x000000, 0.4).fillRect(0, 0, w, h);
   }
 
   #drawTitle(
@@ -200,6 +249,21 @@ export class MainMenuScene extends Phaser.Scene {
       .bitmapText(cx, titleY + 48, BMFONT_KEY, '- ONLINE EDITION -', 16)
       .setOrigin(0.5)
       .setTint(TINT_HEADING);
+
+    // Elemental hover effect on the title. We don't call setInteractive
+    // here — interactivity is enabled by the caller (create()) only AFTER
+    // the title is fully revealed, so the title isn't clickable while it's
+    // invisible during the cinematic hold. No scale tween on hover: at
+    // 32px a 5% bump is large enough to read as jitter on this pixel-art
+    // font, so the elemental effect carries the whole hover feel.
+    const hoverFx = attachRandomHoverEffect(this, title);
+    title.on('pointerover', () => hoverFx.reroll().start());
+    title.on('pointerout', () => {
+      title.setTint(TINT_DISPLAY);
+      hoverFx.stop();
+    });
+    title.once(Phaser.GameObjects.Events.DESTROY, () => hoverFx.destroy());
+
     return { title, subtitle };
   }
 
@@ -228,15 +292,21 @@ export class MainMenuScene extends Phaser.Scene {
         .setInteractive({ useHandCursor: true });
       items.push(item);
 
+      // Random elemental hover effect (currently only lightning is wired in).
+      // Re-rolled on every pointerover so re-hovering the same item picks a
+      // new element once fire/water/earth come online.
+      const hoverFx = attachRandomHoverEffect(this, item);
       item.on('pointerover', () => {
-        item.setTint(TINT_MENU_HOVER);
         this.tweens.add({ targets: item, scaleX: 1.05, scaleY: 1.05, duration: 100, ease: 'Quad.Out' });
+        hoverFx.reroll().start();
       });
       item.on('pointerout', () => {
         item.setTint(TINT_MENU_IDLE);
         this.tweens.add({ targets: item, scaleX: 1, scaleY: 1, duration: 100, ease: 'Quad.Out' });
+        hoverFx.stop();
       });
       item.on('pointerup', entry.action);
+      item.once(Phaser.GameObjects.Events.DESTROY, () => hoverFx.destroy());
     });
 
     return items;

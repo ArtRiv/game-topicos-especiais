@@ -30,7 +30,9 @@
       "PowerShell(Get-Item public/assets/levels/world/thumbnail.png, public/assets/levels/dungeon-1/thumbnail.png, public/assets/stages/thumbnail.png 2>&1 | ForEach-Object { Add-Type -AssemblyName System.Drawing; $img = [System.Drawing.Image]::FromFile\\($_.FullName\\); Write-Output \"$\\($_.Name\\): $\\($img.Width\\)x$\\($img.Height\\)\"; $img.Dispose\\(\\) })",
       "Bash(node scripts/build-stages-map.mjs)",
       "PowerShell(npx vite build 2>&1)",
-      "PowerShell(npx vitest run --reporter=basic 2>&1)"
+      "PowerShell(npx vitest run --reporter=basic 2>&1)",
+      "Bash(pnpm lint *)",
+      "Bash(grep -A 1 \"text-lightning-effect\\\\.ts$\")"
     ]
   }
 }

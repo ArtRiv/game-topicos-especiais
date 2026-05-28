@@ -194,9 +194,8 @@ export class IntroScene extends Phaser.Scene {
         'assets/fonts/Press_Start_2P/press_start_white-2.xml',
       );
     }
-    if (!this.cache.video.has(ASSET_KEYS.MENU_BG_VIDEO)) {
-      this.load.video(ASSET_KEYS.MENU_BG_VIDEO, 'assets/ui/landscape.mp4', true);
-    }
+    // Menu background video is prefetched at module load (src/main.ts) and
+    // attached by MainMenuScene; no need to queue it on the Phaser Loader here.
   }
 
   public create(): void {

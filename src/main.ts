@@ -21,6 +21,14 @@ import { RadialMenuScene } from './scenes/radial-menu-scene';
 import { DebugPanel } from './debug/debug-panel';
 import { installCustomCursor } from './common/cursor';
 import { DEV_SKIP_TO_GAMEPLAY } from './common/config';
+import { startMenuVideoPrefetch } from './common/menu-video-prefetch';
+
+// Fire-and-forget HTTP prefetch of the 12 MB landscape.mp4 the moment this
+// module is evaluated — well before Phaser is constructed and well before
+// SplashScene runs. By the time MainMenuScene calls load.video(), the bytes
+// are already in the browser's HTTP cache (or in our in-memory blob URL),
+// so the video pops in instantly instead of after a 1-2s buffer.
+startMenuVideoPrefetch();
 
 // ---------------------------------------------------------------------------
 // Phaser game configuration

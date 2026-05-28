@@ -24,6 +24,12 @@ export class SplashScene extends Phaser.Scene {
         'assets/fonts/Press_Start_2P/press_start_white-2.xml',
       );
     }
+    // NOTE: menu background video (assets/ui/landscape.mp4) is NOT loaded
+    // here. It is prefetched at module load time by src/main.ts via
+    // startMenuVideoPrefetch(), then attached by MainMenuScene out-of-band
+    // using the resolved blob URL. Queueing it on the Phaser Loader here
+    // would race the user's "press anything" click and force a duplicate
+    // network request.
     MusicManager.instance.loadTracks(this);
   }
 
