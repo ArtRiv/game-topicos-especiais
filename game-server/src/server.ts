@@ -45,8 +45,10 @@ function broadcastMatchState(lobbyId: string, room: GameRoom): void {
 }
 
 /**
- * Schedule the 4 countdown-tick broadcasts (3, 2, 1, FIGHT) + the final LOADING→ACTIVE transition.
- * Replaces the Phase 7 50ms auto-advance stub. (LFC-08, LFC-09)
+ * Schedule the 5 countdown-tick broadcasts (5, 4, 3, 2, 1) + the final COUNTDOWN→ACTIVE transition.
+ * Phase 14 (D-18 step 6, TDM-05 server half): replaces the old 3 → 2 → 1 → FIGHT sequence with a
+ * 5 → 4 → 3 → 2 → 1 cadence for the intro cinematic. The client #onCountdownTick just renders
+ * payload.label, so the label change happens here (server-driven).
  *
  * Identity-bound safety: every callback verifies `gameRooms.get(lobbyId) === room` AND
  * `room.state === 'COUNTDOWN'` before emitting, so a destroyed/replaced room cannot leak ticks.
@@ -57,10 +59,11 @@ function broadcastMatchState(lobbyId: string, room: GameRoom): void {
  */
 function startCountdown(lobbyId: string, room: GameRoom): void {
   const TICKS: readonly { atMs: number; remaining: number; label: string }[] = [
-    { atMs: 0,    remaining: 3, label: '3' },
-    { atMs: 1000, remaining: 2, label: '2' },
-    { atMs: 2000, remaining: 1, label: '1' },
-    { atMs: 3000, remaining: 0, label: 'FIGHT' },
+    { atMs: 0,    remaining: 5, label: '5' },
+    { atMs: 1000, remaining: 4, label: '4' },
+    { atMs: 2000, remaining: 3, label: '3' },
+    { atMs: 3000, remaining: 2, label: '2' },
+    { atMs: 4000, remaining: 1, label: '1' },
   ];
 
   for (const tick of TICKS) {
@@ -79,7 +82,7 @@ function startCountdown(lobbyId: string, room: GameRoom): void {
     room.pushCountdownHandle(handle);
   }
 
-  // Final transition: COUNTDOWN → ACTIVE at t+3500 ms (3000 ms of ticks + 500 ms FIGHT hold).
+  // Final transition: COUNTDOWN → ACTIVE at t+5500 ms (5000 ms of ticks + 500 ms trailing hold).
   const transitionHandle = setTimeout(() => {
     if (gameRooms.get(lobbyId) !== room) return;
     if (room.state !== 'COUNTDOWN') return;
@@ -88,16 +91,22 @@ function startCountdown(lobbyId: string, room: GameRoom): void {
     } catch {
       return;
     }
-    // Phase 9.3: register every player with the damage pipeline at match start.
-    // Spawn allocation: deterministic per-index offset. TODO: align with client-side
-    // spawn allocation when lobby exposes per-slot spawn coordinates.
+    // Phase 14 (D-10): farthest-from-enemy spawn assignment at match start, replacing the naive
+    // per-index offset. Two passes: register everyone first so #playerInfo is fully populated (the
+    // living-enemy team lookups inside pickSpawn need all players present), then resolve each player's
+    // spawn via room.pickSpawn(id, mapId) and re-register at that position. Each player also gets an
+    // opening invuln window (D-12) so the first moments after the cinematic are protected.
     const lobby = lobbyManager.getLobbyById(lobbyId);
     if (lobby) {
       const maxHp = 100; // mirror CONFIG.PLAYER_START_MAX_HEALTH (server-authoritative copy)
-      lobby.players.forEach((info, idx) => {
-        const spawnX = 100 + idx * 64;
-        const spawnY = 100;
-        room.registerPlayer(info, spawnX, spawnY, maxHp);
+      const mapId = lobby.config.mapId ?? 'WORLD';
+      // Pass 1: register every player so pickSpawn can see all teams/HP/positions.
+      lobby.players.forEach((info) => room.registerPlayer(info, 0, 0, maxHp));
+      // Pass 2: resolve farthest-from-enemy spawn per player and re-register at that position.
+      lobby.players.forEach((info) => {
+        const s = room.pickSpawn(info.id, mapId);
+        room.registerPlayer(info, s.x, s.y, maxHp);
+        room.startInvuln(info.id);   // D-12: opening invuln, consistent with respawn invuln
       });
     }
     broadcastMatchState(lobbyId, room);
@@ -309,8 +318,11 @@ io.on('connection', (socket) => {
       io.to(`lobby:${lobbyId}`).emit('elimination', elim);
 
       room.scheduleRespawn(claim.targetId, () => {
-        const spawn = room.getSpawnPoint(claim.targetId);
-        if (!spawn) return;
+        // Phase 14 (D-10): pick a FRESH farthest-from-enemy spawn each respawn (not the original
+        // single spawn point) and start the respawn invuln window (D-12/D-14) before broadcasting.
+        const mapId = lobbyManager.getLobbyById(lobbyId)?.config.mapId ?? 'WORLD';
+        const spawn = room.pickSpawn(claim.targetId, mapId);
+        room.startInvuln(claim.targetId);
         const payload: RespawnPayload = { playerId: claim.targetId, x: spawn.x, y: spawn.y };
         io.to(`lobby:${lobbyId}`).emit('respawn', payload);
       });
