@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: milestone
 status: executing
-stopped_at: "Phase 14 plan 02 (server spawnpoints + respawn invuln + 5..1 countdown) COMPLETE — 3 tasks committed (1ef6d6e, 0f69244, 78e5505); server typecheck + 79 tests pass; project-source typecheck clean. Next: wave 2 client cinematic 14-03, then wave 3 client HUD/results 14-04. Phase 09.3 plan 03 still awaiting two-client playtest checkpoint."
-last_updated: "2026-05-29T17:51:50.000Z"
-last_activity: 2026-05-29 -- Phase 14 plan 02 executed: SPAWNPOINTS config (debug-tunable + COPY VALUES) + farthest-from-enemy pickSpawn on start/respawn + server-authoritative respawn invuln (validateHit reject) + 5..1 countdown (COUNTDOWN_DURATION_MS=5000)
+stopped_at: "Phase 14 plan 03 (client intro cinematic — game-scene.ts) COMPLETE — 2 tasks committed (40a1a6e banner, db92388 camera+HUD_REVEAL); project-source typecheck clean. Banner reveal now scales to name.length (D-19 fix); camera center→pan→zoom; HUD_REVEAL emitted after zoom-in; 5..1 ticks render via preserved pop tween. Next: wave 3 client HUD/results 14-04. Phase 09.3 plan 03 still awaiting two-client playtest checkpoint."
+last_updated: "2026-05-29T18:05:00.000Z"
+last_activity: 2026-05-29 -- Phase 14 plan 03 executed: TDM intro cinematic in GameScene — map-name banner (name-length-scaled typewriter reveal, D-19 timing fix) + camera center→hold→pan→zoom-in + HUD_REVEAL emit + server-driven 5..1 ticks via the existing pop tween
 progress:
   total_phases: 9
   completed_phases: 5
   total_plans: 25
-  completed_plans: 21
-  percent: 84
+  completed_plans: 22
+  percent: 88
 ---
 
 # Project State
@@ -85,6 +85,18 @@ None yet.
 - [Research]: Phaser rendering performance with 20 simultaneous player sprites untested
 
 ## Session Continuity
+
+### Phase 14 execution — plan 03 (2026-05-29)
+
+Phase 14 plan 03 (client TDM intro cinematic — `src/scenes/game-scene.ts` only) executed sequentially on main, both tasks committed:
+- **40a1a6e** (Task 1): map-name banner. New fields `#mapBanner`/`#mapBannerRevealTween`/`#mapBannerFadeTween`. `#showMapBanner()` creates a press_start_2p 32px gold banner at y≈90 (clears the centered countdown digit). **D-19 fix (TIMING, not width):** `revealMs = Clamp(BANNER_MS_PER_CHAR(70) * name.length, 600, 2000)`, typewriter via `tweens.addCounter`, fade-out (hold 500 + fade 300) triggered ONLY from the reveal `onComplete` so long names never get cut. `#destroyMapBanner()` idempotent teardown wired into `#enterCountdownMode` (stale cycle), `#exitCountdownMode` (early ACTIVE), and SHUTDOWN.
+- **db92388** (Task 2): `#playIntroCameraSequence()` replaces the old `setZoom(0.6)+zoomTo(1.0,3000)` pair — `stopFollow()` → `setZoom(0.6)` → `centerOn(map center from current room bounds)` → `delayedCall(400)` hold → `pan(player, 1100, Sine.easeInOut)` → (pan cb, progress===1) `zoomTo(1.0, 900, Cubic.easeOut)` → (zoom cb, progress===1) `startFollow(player)` + `EVENT_BUS.emit(CUSTOM_EVENTS.HUD_REVEAL)`. `#onCountdownTick` unchanged (server sends 5,4,3,2,1; pop tween `{from:1.3,to:1.0}/250/Back.easeOut` preserved); `#exitCountdownMode` unlock gate untouched.
+
+Rule 3 auto-fix: banner name derived from `#levelData.level` (WORLD/DUNGEON_1/STAGES, underscores→spaces, uppercased) instead of `MAP_POOL.displayName` — GameScene has no `mapId`, and MAP_POOL displayNames ('Open Field'/'Dungeon'/'Arena') contradict the UI-SPEC copy contract (WORLD / DUNGEON 1 / STAGES). The level enum is the scene's only map identity and matches the contract verbatim; nothing new imported.
+
+Verification: frontend project-source typecheck `npx tsc 2>&1 | grep -E "^(src/|game-server/)"` = 0 matches (clean) after both tasks. `pnpm build` half satisfied via the documented filter (env note — raw build exit is pre-existing node_modules noise). Grep-confirmed: HUD_REVEAL emit present; pan precedes zoomTo(1.0); #setupCamera has no 0.6 zoom (late-joiner safety); pop tween preserved; no setInterval; banner references name.length + BANNER_MS_PER_CHAR; no setMask/width change.
+
+Summary: .planning/phases/14-core-team-deathmatch-mode/14-03-SUMMARY.md. Resume: 14-04-PLAN.md (wave 3 client HUD/results). **Note for 04:** GameScene EMITS `CUSTOM_EVENTS.HUD_REVEAL` once after the cinematic zoom-in — UiScene must subscribe and fade `#hudContainer` in (alpha 0→1) and START with the HUD HIDDEN during the cinematic; pair on/off in UiScene SHUTDOWN. GameScene only emits (does not subscribe). New GameScene fields claimed (avoid collision): `#mapBanner`, `#mapBannerRevealTween`, `#mapBannerFadeTween`; methods `#playIntroCameraSequence`, `#showMapBanner`, `#destroyMapBanner`. (gsd-sdk unavailable — STATE/ROADMAP updated by hand, git used directly.)
 
 ### Phase 14 execution — plan 02 (2026-05-29)
 
