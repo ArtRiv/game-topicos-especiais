@@ -3,6 +3,11 @@ import { CUSTOM_EVENTS, EVENT_BUS } from '../common/event-bus';
 import { Puddle } from '../game-objects/spells/puddle';
 import { NetworkManager } from '../networking/network-manager';
 
+// RUNTIME_CONFIG values are mostly scalars, but Phase 14 added the nested SPAWNPOINTS object
+// (Record<string, MapSpawns>). This alias covers every value shape so the index-write casts below
+// stay sound without `unknown` laundering. Sliders still only ever write numbers.
+type RuntimeConfigValue = (typeof RUNTIME_CONFIG)[keyof typeof RUNTIME_CONFIG];
+
 interface ParamDef {
   key: keyof typeof RUNTIME_CONFIG;
   label: string;
@@ -25,6 +30,15 @@ const SECTIONS: { title: string; params: ParamDef[] }[] = [
     title: 'NETWORK',
     params: [
       { key: 'NETWORK_TICK_RATE_HZ', label: 'Tick rate (Hz)', min: 10, max: 120, step: 10, refreshNetwork: true },
+    ],
+  },
+  {
+    // Phase 14 — team-deathmatch scalars. SPAWNPOINTS is nested (not a slider) and is
+    // edited/copied via the COPY VALUES button below (emits a paste-ready SPAWNPOINTS literal).
+    title: 'TDM',
+    params: [
+      { key: 'TDM_WIN_TARGET', label: 'Win target', min: 1, max: 100, step: 1 },
+      { key: 'RESPAWN_INVULN_MAX_MS', label: 'Invuln ms', min: 0, max: 6000, step: 100 },
     ],
   },
   {
@@ -212,7 +226,7 @@ const PANEL_CSS = `
 
 export class DebugPanel {
   #panel: HTMLDivElement;
-  #defaultValues: Record<string, number | boolean | string>;
+  #defaultValues: Record<string, RuntimeConfigValue>;
 
   constructor() {
     this.#defaultValues = Object.fromEntries(
@@ -265,6 +279,41 @@ export class DebugPanel {
         panel.appendChild(this.#buildRow(param));
       }
     }
+
+    // Phase 14 (D-09) — COPY VALUES: serialize RUNTIME_CONFIG.SPAWNPOINTS into a paste-ready
+    // `SPAWNPOINTS` literal so positions dialed in live can be copied back into config/tdm.ts.
+    // The gameplay panel had no COPY button before; ported from lobby-debug-panel.ts.
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'action-btn';
+    copyBtn.textContent = 'COPY VALUES';
+    copyBtn.addEventListener('click', async () => {
+      const sp = RUNTIME_CONFIG.SPAWNPOINTS as Record<
+        string,
+        { teamA: { x: number; y: number }[]; teamB: { x: number; y: number }[] }
+      >;
+      const body = Object.entries(sp)
+        .map(
+          ([map, t]) =>
+            `  ${map}: { teamA: ${JSON.stringify(t.teamA)}, teamB: ${JSON.stringify(t.teamB)} },`,
+        )
+        .join('\n');
+      const snippet = `export const SPAWNPOINTS: Record<string, MapSpawns> = {\n${body}\n};`;
+      try {
+        await navigator.clipboard.writeText(snippet);
+        copyBtn.textContent = 'COPIED!';
+      } catch {
+        // Fallback: select+copy via a hidden textarea (clipboard API can be blocked off https).
+        const ta = document.createElement('textarea');
+        ta.value = snippet;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        copyBtn.textContent = 'COPIED (fallback)!';
+      }
+      setTimeout(() => (copyBtn.textContent = 'COPY VALUES'), 1600);
+    });
+    panel.appendChild(copyBtn);
 
     const resetBtn = document.createElement('button');
     resetBtn.className = 'reset-btn';
@@ -361,7 +410,7 @@ export class DebugPanel {
 
     slider.addEventListener('input', () => {
       const parsed = parseFloat(slider.value);
-      (RUNTIME_CONFIG as Record<string, number | boolean | string>)[param.key] = parsed;
+      (RUNTIME_CONFIG as Record<string, RuntimeConfigValue>)[param.key] = parsed;
       valueDisplay.textContent = String(parsed);
       // Lava-related changes: push them into every active lava puddle
       // immediately so you see the effect while dragging the slider, rather
@@ -386,7 +435,7 @@ export class DebugPanel {
 
   #resetAll(panel: HTMLDivElement): void {
     for (const [key, val] of Object.entries(this.#defaultValues)) {
-      (RUNTIME_CONFIG as Record<string, number | boolean | string>)[key] = val;
+      (RUNTIME_CONFIG as Record<string, RuntimeConfigValue>)[key] = val;
     }
 
     panel.querySelectorAll<HTMLInputElement>('input[type=range]').forEach((slider) => {

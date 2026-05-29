@@ -4,7 +4,20 @@ import {
   PLAUSIBILITY_STALE_MS,
   RESPAWN_DELAY_MS,
   MAX_SPELL_DAMAGE,
+  RESPAWN_INVULN_MAX_MS,
 } from './types.js';
+
+// Phase 14 (D-09): server-side copy of per-map team spawnpoints. The server has no access to the
+// client config barrel (src/common/config/tdm.ts), so this literal is duplicated here. KEEP IN SYNC
+// with src/common/config/tdm.ts — the debug-panel COPY VALUES path emits a literal you paste BOTH places.
+type SpawnPoint = { x: number; y: number };
+type MapSpawns = { teamA: SpawnPoint[]; teamB: SpawnPoint[] };
+
+const SPAWNPOINTS: Record<string, MapSpawns> = {
+  WORLD:     { teamA: [{ x: 96, y: 96 }, { x: 96, y: 224 }],  teamB: [{ x: 384, y: 96 }, { x: 384, y: 224 }] },
+  DUNGEON_1: { teamA: [{ x: 80, y: 120 }, { x: 80, y: 240 }], teamB: [{ x: 400, y: 120 }, { x: 400, y: 240 }] },
+  STAGES:    { teamA: [{ x: 96, y: 160 }, { x: 128, y: 96 }], teamB: [{ x: 384, y: 160 }, { x: 352, y: 224 }] },
+};
 
 const VALID_NEXT: Record<MatchState, MatchState[]> = {
   LOBBY: ['LOADING'],

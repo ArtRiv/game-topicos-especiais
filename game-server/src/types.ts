@@ -215,3 +215,8 @@ export const MAX_SPELL_DAMAGE = 50;            // RESEARCH.md §2 landmine: cap-
 
 /** Phase 14 tunable — server-side authority for the team-deathmatch win condition. */
 export const TDM_WIN_TARGET = 30;   // D-01: first team to 30 kills wins. TODO: tune from playtest.
+
+/** Phase 14 tunable — server-side authoritative respawn-invuln window cap (D-12/D-14).
+ *  validateHit rejects spell:hit claims against a target while now < #invulnUntil.
+ *  Client mirror lives in src/common/config/tdm.ts (sizes the blink only — server is authority). */
+export const RESPAWN_INVULN_MAX_MS = 2500;   // ~2.5s. TODO: tune from playtest.

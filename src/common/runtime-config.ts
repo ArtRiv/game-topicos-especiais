@@ -93,6 +93,9 @@ import {
   PLAUSIBILITY_RANGE_PX,
   PLAUSIBILITY_STALE_MS,
   MAX_SPELL_DAMAGE,
+  SPAWNPOINTS,
+  TDM_WIN_TARGET,
+  RESPAWN_INVULN_MAX_MS,
   DASH_COOLDOWN_MS,
   DASH_DISTANCE_TILES,
   DASH_DURATION_MS,
@@ -260,6 +263,11 @@ export const RUNTIME_CONFIG = {
   PLAUSIBILITY_RANGE_PX,
   PLAUSIBILITY_STALE_MS,
   MAX_SPELL_DAMAGE,
+  // Phase 14 — TDM tunables (client mirrors; server is authoritative for SPAWNPOINTS + invuln).
+  // SPAWNPOINTS is a nested object (debug panel edits it live + COPY VALUES emits a paste-ready literal).
+  SPAWNPOINTS,
+  TDM_WIN_TARGET,
+  RESPAWN_INVULN_MAX_MS,
   // Phase 9.3 — Dash tunables (D-13)
   DASH_COOLDOWN_MS,
   DASH_DISTANCE_TILES,
