@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: milestone
-status: executing
-stopped_at: "Phase 14 plan 04 (client HUD + respawn invuln cue + results scene) COMPLETE — 3 tasks committed (e97284b score plate + HUD_REVEAL fade-in + TEAM_COLORS, 89cd368 respawn invuln alpha-pulse + move/cast/timeout cancel, 8469103 TDM results scene + registration + launch); project-source typecheck clean. Phase 14 plans 01-04 all structurally COMPLETE (4/4). Remaining phase-14 close: two-client TDM playtest (score plate live, HUD reveal covers radial affordance, respawn blink cancels on action, results scene + RETURN TO LOBBY). Phase 09.3 plan 03 still awaiting two-client playtest checkpoint."
-last_updated: "2026-05-29T19:00:00.000Z"
-last_activity: 2026-05-29 -- Phase 14 plan 04 executed: client TDM HUD + respawn invuln cue + results scene — top-center [A] n - m [B] score plate (per-team tint, pop on change) in #hudContainer; element/radial affordance moved into #hudContainer so HUD_REVEAL covers it (D-18 step 5); respawn invuln alpha-pulse on local player cancelling on move/cast/timeout; new tdm-results-scene.ts (winner + K/D table + MVP + RETURN TO LOBBY) launched on NETWORK_MATCH_ENDED
+status: awaiting-human-verification
+stopped_at: "Phase 14 (Core Team Deathmatch Mode) FULLY EXECUTED — all 4 plans complete (4/4), code review done (0 critical / 4 warning / 6 info; server-authoritative security pipeline clean), verification PASSED at code level (5/5 must-have truths verified against actual source; game-server tsc clean + 79 tests pass; frontend project-source tsc clean). Verification status = human_needed: 4 live two-client playtest items persisted to 14-HUMAN-UAT.md (cross-client score sync to win target; intro cinematic feel + banner glyph completeness; respawn invuln pulse + cancel; spawn fairness across maps). Phase NOT marked fully complete in ROADMAP until playtest approved. Phase 09.3 plan 03 also still awaiting its two-client playtest checkpoint."
+last_updated: "2026-05-29T20:00:00.000Z"
+last_activity: 2026-05-29 -- Phase 14 (Core Team Deathmatch Mode) fully executed across 3 waves (4 plans), code-reviewed (0 critical), and verified at code level (5/5 truths). Verification = human_needed; 4 two-client playtest items in 14-HUMAN-UAT.md. Awaiting playtest approval before /gsd-execute-phase marks the phase complete and advances to Phase 15 (Special-Spell Pickups).
 progress:
   total_phases: 9
   completed_phases: 5
@@ -21,14 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-24)
 
 **Core value:** The "I outplayed everyone" moment -- landing a perfectly timed spell combo that eliminates an opponent in front of a crowd.
-**Current focus:** Phase 09.1 — lobby-format-map-config-fixes
+**Current focus:** Phase 14 — Core Team Deathmatch Mode (executed + code-reviewed + verified at code level; awaiting two-client playtest UAT before final completion)
 
 ## Current Position
 
-Phase: 09.3 (cross-player-combat-input-polish) — IN PROGRESS. Plan 03 structural work (Tasks 1-3 of 4) shipped 2026-05-21 — LifeComponent.heal/resetToFull; CharacterGameObject.lifeComponent getter; SpellCastPayload.spellType field on both client+server mirrors; per-cast UUID (spellInstanceId) tagging via setData('spellId'/'casterId'/'spellType'); GameScene #remotePlayerGroup; two new physics.add.overlap calls (local player × #remoteSpellGroup, local spellGroup × #remotePlayerGroup) with FF pre-check (#areSameTeam D-05); #onDamageConfirmed with #appliedDamageSpellIds dedupe + Plan 04 i-frame guard (this.time.now < #player.iFrameUntil); #onSpellDestroyed cross-group scanner (D-04 close); local FireBolt/EarthBolt × earth-wall now broadcasts sendSpellHitEnvironment; #onElimination → local death overlay (dark rect 0x222233@55% alpha depth 9999) + BitmapText 'RESPAWNING IN N...' countdown (press_start_2p atlas, 32px, depth 10000, 1000ms loop) + gray tint + input lock; remote → gray tint only; #onRespawn → setPosition + lifeComponent.resetToFull + clearTint + (local) overlay teardown; #deathLockActive guards added to #handleRadialMenuInput, #updateFireBreathChanneling, #updateEarthWallSpell; SHUTDOWN cleans up 4 new EVENT_BUS subscriptions + #appliedDamageSpellIds + calls #clearLocalDeath. Task 4 (two-client manual UAT) PENDING — checkpoint:human-verify per autonomous:false plan.
-Plan: 3/4 plans structurally complete; plan 03 at checkpoint:human-verify pending user playtest. After approval, phase 09.3 ships.
-Status: Phase 09.3 plan 03 checkpoint pending
-Last activity: 2026-05-21 -- Phase 09.3 plan 03 structural code complete; awaiting two-client UAT
+Phase: 14 (core-team-deathmatch-mode) — EXECUTED, awaiting two-client playtest UAT. All 4 plans complete across 3 waves (sequential executors on main, no worktrees — gsd-sdk unavailable in this env so commits used plain git + STATE/ROADMAP edited by hand). Wave 1: 14-01 server TDM foundation (team-deathmatch MatchMode mirrored server↔client, lobby:start setMatchMode making TDM branches live, host-authoritative per-team scoring w/ FF guard, win-target 30 → ENDED broadcast w/ K/D + MVP, EVENT_BUS registry NETWORK_TEAM_SCORE/NETWORK_MATCH_ENDED/HUD_REVEAL). Wave 2: 14-02 SPAWNPOINTS config + debug COPY VALUES + farthest-from-enemy pickSpawn + server respawn invuln (validateHit rejection) + COUNTDOWN_DURATION_MS=5000 5..1 ticks; 14-03 client intro cinematic (name-length-scaled banner reveal fixing D-19, camera center→pan→zoom → HUD_REVEAL emit, server-driven 5..1 render, simultaneous move+cast unlock gate). Wave 3: 14-04 top-center [A] n - m [B] score plate + score-pop + HUD_REVEAL fade-in (covers radial/element affordance, D-18) + respawn invuln alpha-pulse cancelling on move/cast/timeout + new tdm-results-scene.ts (winner + K/D table + MVP + RETURN TO LOBBY via window.location.reload). Code review: 0 critical / 4 warning / 6 info (14-REVIEW.md) — security pipeline clean. Verification: 5/5 truths verified at code level (14-VERIFICATION.md, status=human_needed); game-server tsc clean + 79 tests pass; frontend project-source tsc clean.
+Plan: 4/4 plans complete. Verification status human_needed — 4 live playtest items in 14-HUMAN-UAT.md. Phase advances to 15 (Special-Spell Pickups) only after the user approves the two-client playtest.
+Status: Phase 14 executed + verified at code level; awaiting two-client playtest UAT
+Last activity: 2026-05-29 -- Phase 14 executed, reviewed, and code-verified; awaiting two-client playtest
+
+NOTE: Phase 09.3 plan 03 ALSO still has an open two-client playtest checkpoint (Task 4, autonomous:false) from 2026-05-21 — independent of Phase 14, still pending user UAT.
 
 ## Performance Metrics
 
