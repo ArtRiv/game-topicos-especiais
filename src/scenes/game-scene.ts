@@ -226,6 +226,12 @@ export class GameScene extends Phaser.Scene {
   #darkBoltCasterGlowTween: Phaser.Tweens.Tween | undefined;
   #darkBoltCasterBurst: Phaser.GameObjects.Image | undefined;
   #countdownText: Phaser.GameObjects.BitmapText | null = null;
+  // Phase 14 (Plan 03) — TDM intro cinematic: map-name banner shown during the
+  // COUNTDOWN cinematic (D-18 step 1 / D-19 reveal-duration fix). Torn down when its
+  // own reveal tween completes, and force-killed on #exitCountdownMode / SHUTDOWN.
+  #mapBanner: Phaser.GameObjects.BitmapText | null = null;
+  #mapBannerRevealTween: Phaser.Tweens.Tween | null = null;
+  #mapBannerFadeTween: Phaser.Tweens.Tween | null = null;
   // Faded ring around the local player at PLAYER_ATTACK_RANGE_PX so the player can see their reach.
   #rangeRing: Phaser.GameObjects.Graphics | undefined;
   // EarthBump-vs-EarthWall combo overlap result: maps the bump → set of shattered pillar positions
@@ -3634,6 +3640,10 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.setZoom(0.6);
     this.cameras.main.zoomTo(1.0, 3000, 'Sine.easeOut');
 
+    // Phase 14 (D-18 step 1 / D-19): reveal the map-name banner. Its reveal duration
+    // scales to the name length so long names always finish before teardown.
+    this.#showMapBanner();
+
     // LFC-08: lazily create the overlay. Single Text with setScrollFactor(0)
     // anchors it to the viewport (immune to camera pan/zoom) and setDepth(1000)
     // keeps it above the world. Text starts empty — the first inbound tick fills it.
@@ -3661,6 +3671,9 @@ export class GameScene extends Phaser.Scene {
     this.#controls.isMovementLocked = false;
     this.#combatLocked = false;
     this.#countdownText?.setVisible(false);
+    // Phase 14: if the match transitions to ACTIVE before the cinematic finished,
+    // cancel any in-flight banner reveal/fade so it doesn't linger over gameplay.
+    this.#destroyMapBanner();
   }
 
   /**
@@ -3681,6 +3694,96 @@ export class GameScene extends Phaser.Scene {
       ease: 'Back.easeOut',
     });
   };
+
+  /**
+   * Phase 14 (D-18 step 1 / D-19): the TDM intro map-name banner.
+   *
+   * D-19 ROOT CAUSE: the banner historically "cut its last letters" because the
+   * typewriter reveal animation was too SHORT to finish before teardown — NOT a
+   * container-width / origin / mask clip. The fix is purely a TIMING one: the reveal
+   * DURATION is scaled to the name's character count (BANNER_MS_PER_CHAR * name.length,
+   * clamped) and the fade-out (teardown) only begins from the reveal tween's onComplete,
+   * so long names always render every glyph before disappearing.
+   *
+   * The display name is derived from #levelData.level (WORLD / DUNGEON_1 / STAGES) —
+   * the only map identity GameScene knows — uppercased with underscores → spaces, matching
+   * the UI-SPEC copy contract (WORLD / DUNGEON 1 / STAGES).
+   */
+  #showMapBanner(): void {
+    // Tunables (D-19) — per-char reveal pacing with a clamp so the reveal never runs
+    // too short (cuts letters) nor too long (overstays the cinematic window).
+    const BANNER_MS_PER_CHAR = 70;
+    const BANNER_MIN_MS = 600;
+    const BANNER_MAX_MS = 2000;
+    const BANNER_HOLD_MS = 500; // brief hold after the reveal before the fade-out
+    const BANNER_FADE_MS = 300;
+
+    const name = this.#levelData.level.replace(/_/g, ' ').toUpperCase();
+
+    // Tear down any stale banner from a previous COUNTDOWN cycle before re-creating.
+    this.#destroyMapBanner();
+
+    const cam = this.cameras.main;
+    const centerX = cam.width / 2;
+    // Upper third (y ≈ 90), must not overlap the centered countdown digit at y = height/2.
+    const bannerY = 90;
+
+    // 32px press_start_2p Display, gold to match the countdown digit. setScrollFactor(0)
+    // anchors it to the viewport (immune to the cinematic camera pan/zoom); depth 1000
+    // keeps it above the world. Start empty — the typewriter fills it.
+    this.#mapBanner = this.add
+      .bitmapText(centerX, bannerY, 'press_start_2p', '', 32)
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(1000)
+      .setTint(0xffdd55);
+
+    // D-19 FIX: reveal duration scales to name.length, clamped to [600, 2000] ms.
+    const revealMs = Phaser.Math.Clamp(BANNER_MS_PER_CHAR * name.length, BANNER_MIN_MS, BANNER_MAX_MS);
+
+    this.#mapBannerRevealTween = this.tweens.addCounter({
+      from: 0,
+      to: name.length,
+      duration: revealMs,
+      ease: 'Linear',
+      onUpdate: (tw) => {
+        if (this.#mapBanner === null) return;
+        this.#mapBanner.setText(name.slice(0, Math.round(tw.getValue())));
+      },
+      onComplete: () => {
+        this.#mapBannerRevealTween = null;
+        if (this.#mapBanner === null) return;
+        // Ensure the full name is shown before fading (guards against rounding).
+        this.#mapBanner.setText(name);
+        // Teardown begins ONLY now (after the reveal completes) so long names never
+        // get cut: hold briefly, then fade alpha 1 → 0 and destroy.
+        this.#mapBannerFadeTween = this.tweens.add({
+          targets: this.#mapBanner,
+          alpha: { from: 1, to: 0 },
+          duration: BANNER_FADE_MS,
+          delay: BANNER_HOLD_MS,
+          onComplete: () => {
+            this.#mapBannerFadeTween = null;
+            this.#destroyMapBanner();
+          },
+        });
+      },
+    });
+  }
+
+  /**
+   * Phase 14: force-teardown of the intro banner + its tweens. Idempotent — safe to call
+   * from the fade onComplete, from #exitCountdownMode (early ACTIVE transition), and from
+   * SHUTDOWN so a scene restart never leaks the banner or a live reveal/fade tween.
+   */
+  #destroyMapBanner(): void {
+    this.#mapBannerRevealTween?.stop();
+    this.#mapBannerRevealTween = null;
+    this.#mapBannerFadeTween?.stop();
+    this.#mapBannerFadeTween = null;
+    this.#mapBanner?.destroy();
+    this.#mapBanner = null;
+  }
 
   #registerCustomEvents(): void {
     EVENT_BUS.on(CUSTOM_EVENTS.OPENED_CHEST, this.#handleOpenChest, this);
@@ -3717,6 +3820,8 @@ export class GameScene extends Phaser.Scene {
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_RESPAWN, this.#onRespawn, this);
       this.#appliedDamageSpellIds.clear();
       this.#clearLocalDeath();
+      // Phase 14: tear down the intro banner + its reveal/fade tweens on scene restart.
+      this.#destroyMapBanner();
       this.#fireBreathDamageTimer?.destroy();
       this.#activeFireBreath?.destroy();
       // Cleanup network listeners and remote players
