@@ -3660,9 +3660,16 @@ export class GameScene extends Phaser.Scene {
    * LOCAL player. A sustained, slow, looping alpha pulse (1.0 ↔ 0.35, yoyo, repeat -1,
    * 150ms/half) — distinct from the brief one-shot hurt blink by its longer, steadier
    * rhythm, so it reads as "protected". Sized by RUNTIME_CONFIG.RESPAWN_INVULN_MAX_MS
-   * (~2500ms). Also mirrors the window onto Player.iFrameUntil so the existing local
-   * damage gate (#onDamageConfirmed i-frame check) respects it for immediate visual
-   * correctness — the SERVER stays the authority (D-14); we never report invuln upstream.
+   * (~2500ms).
+   *
+   * Phase 14 bugfix (TDM playtest #2): this pulse is COSMETIC ONLY. It used to also set
+   * Player.iFrameUntil, which made #onDamageConfirmed silently drop ALL confirmed damage to
+   * the local player for ~2.5s. Because the SERVER is the sole invuln authority (it rejects
+   * spell:hit during its own #invulnUntil window) and only emits damage:confirmed for hits it
+   * already accepted, mirroring the window onto the local gate caused a client/server window
+   * mismatch (the client starts its timer on the late-arriving `respawn` broadcast) — the
+   * respawned player appeared permanently unhittable from one side while still able to hit back.
+   * We no longer touch iFrameUntil here; confirmed damage from the server always applies.
    */
   #startInvulnBlink(): void {
     if (!this.#player?.active) return;
@@ -3670,7 +3677,6 @@ export class GameScene extends Phaser.Scene {
     this.#stopInvulnBlink();
 
     this.#invulnUntil = this.time.now + RUNTIME_CONFIG.RESPAWN_INVULN_MAX_MS;
-    this.#player.iFrameUntil = this.#invulnUntil;
     this.#player.setAlpha(1);
     this.#invulnPulseTween = this.tweens.add({
       targets: this.#player,
