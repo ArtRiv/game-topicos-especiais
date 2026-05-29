@@ -1,4 +1,4 @@
-import type { MatchState, MatchMode, PlayerInfo } from './types.js';
+import type { MatchState, MatchMode, PlayerInfo, TdmPlayerStat } from './types.js';
 import {
   PLAUSIBILITY_RANGE_PX,
   PLAUSIBILITY_STALE_MS,
@@ -32,6 +32,11 @@ export class GameRoom {
   #matchMode: MatchMode = 'respawn';                                        // D-12: structural support, no UI surface in 9.3
   #spawnPoints = new Map<string, { x: number; y: number }>();               // playerId → original spawn (D-10)
   #maxHp: number = 100;                                                     // mirror client CONFIG.PLAYER_START_MAX_HEALTH
+
+  // --- Phase 14: team-deathmatch scoring state (D-04, D-07) ---
+  #teamScores: [number, number] = [0, 0];                                   // shared per-team kill total
+  #kills = new Map<string, number>();                                       // playerId → kills (caster-attributed)
+  #deaths = new Map<string, number>();                                      // playerId → deaths (target-attributed)
 
   get state(): MatchState { return this.#state; }
 
@@ -148,6 +153,9 @@ export class GameRoom {
     this.#spawnPoints.set(info.id, { x: spawnX, y: spawnY });
     this.#hp.set(info.id, maxHp);
     this.#maxHp = maxHp;
+    // Phase 14: seed per-player kill/death tallies so getMatchStats always has a row (D-07).
+    this.#kills.set(info.id, 0);
+    this.#deaths.set(info.id, 0);
   }
 
   public getSpawnPoint(playerId: string): { x: number; y: number } | undefined {
@@ -223,6 +231,68 @@ export class GameRoom {
   public setMatchMode(mode: MatchMode): void { this.#matchMode = mode; }
   public get matchMode(): MatchMode { return this.#matchMode; }
 
+  // ──────────────────────────────────────────────────────────────────────────
+  // Phase 14: team-deathmatch scoring (D-04, D-05, D-07). Server-authoritative —
+  // attribution reads team ONLY from #playerInfo, never from the client.
+  // ──────────────────────────────────────────────────────────────────────────
+
+  /** Read a player's team (0 | 1) from server-side #playerInfo, or undefined if unassigned. */
+  public getTeam(playerId: string): number | undefined {
+    return this.#playerInfo.get(playerId)?.team;
+  }
+
+  /** Credit a confirmed enemy elimination to the caster's team + the caster's personal kill tally.
+   *  Defensive (D-05): if the caster has no team (undefined), nothing is scored. Friendly fire is
+   *  filtered by the caller via isSameTeam (and short-circuited earlier in validateHit). */
+  public addTeamKill(casterId: string): void {
+    const team = this.#playerInfo.get(casterId)?.team;
+    if (team !== 0 && team !== 1) return;   // no team → never score (D-05)
+    this.#teamScores[team]++;
+    this.#kills.set(casterId, (this.#kills.get(casterId) ?? 0) + 1);
+  }
+
+  /** Tally a death against the eliminated player (D-07). */
+  public recordDeath(targetId: string): void {
+    this.#deaths.set(targetId, (this.#deaths.get(targetId) ?? 0) + 1);
+  }
+
+  /** Current shared per-team scores as a defensive copy [teamA, teamB]. */
+  public getTeamScores(): [number, number] {
+    return [this.#teamScores[0], this.#teamScores[1]];
+  }
+
+  /** One stat row per registered player (D-07). Falls back to 0 for any missing tally. */
+  public getMatchStats(): TdmPlayerStat[] {
+    const rows: TdmPlayerStat[] = [];
+    for (const info of this.#playerInfo.values()) {
+      rows.push({
+        playerId: info.id,
+        name: info.name,
+        team: info.team ?? -1,
+        kills: this.#kills.get(info.id) ?? 0,
+        deaths: this.#deaths.get(info.id) ?? 0,
+      });
+    }
+    return rows;
+  }
+
+  /** MVP = highest kills; D-07 tie-break: fewest deaths, then earliest insertion order in #kills
+   *  (Map preserves insertion order). Returns null only when there are no players. */
+  public getMvpPlayerId(): string | null {
+    let mvp: string | null = null;
+    let bestKills = -1;
+    let bestDeaths = Number.POSITIVE_INFINITY;
+    for (const [id, kills] of this.#kills) {
+      const deaths = this.#deaths.get(id) ?? 0;
+      if (kills > bestKills || (kills === bestKills && deaths < bestDeaths)) {
+        mvp = id;
+        bestKills = kills;
+        bestDeaths = deaths;
+      }
+    }
+    return mvp;
+  }
+
   /** Wipe all combat state. Called on room emptied (removePlayer last) and on transition → ENDED. */
   public clearCombatState(): void {
     this.#lastPos.clear();
@@ -232,5 +302,9 @@ export class GameRoom {
     this.#respawnHandles.clear();
     this.#playerInfo.clear();
     this.#spawnPoints.clear();
+    // Phase 14: reset TDM scoring so a rematch in the same room starts at 0-0.
+    this.#teamScores = [0, 0];
+    this.#kills.clear();
+    this.#deaths.clear();
   }
 }

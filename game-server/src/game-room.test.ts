@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { GameRoom } from './game-room.js';
+import type { PlayerInfo } from './types.js';
 
 describe('GameRoom', () => {
   let room: GameRoom;
@@ -208,5 +209,91 @@ describe('GameRoom — countdown timer handles (LFC-08, WR-07)', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('GameRoom — team-deathmatch scoring (Phase 14, TDM-01, D-04/D-05/D-07)', () => {
+  const mkInfo = (id: string, team: number): PlayerInfo => ({
+    id,
+    name: `name-${id}`,
+    socketId: `socket-${id}`,
+    team,
+  });
+
+  // Team A: a1, a2 (team 0). Team B: b1 (team 1).
+  const seedTeams = (room: GameRoom): void => {
+    room.registerPlayer(mkInfo('a1', 0), 0, 0, 100);
+    room.registerPlayer(mkInfo('a2', 0), 0, 0, 100);
+    room.registerPlayer(mkInfo('b1', 1), 0, 0, 100);
+  };
+
+  it('an enemy kill increments the CASTER team score — proven against an EXPLICIT team-deathmatch mode (not the default respawn)', () => {
+    const room = new GameRoom();
+    room.setMatchMode('team-deathmatch');   // MUST set explicitly — would falsely pass against default 'respawn'
+    expect(room.matchMode).toBe('team-deathmatch');
+    seedTeams(room);
+
+    // a1 (team 0) eliminates b1 (team 1) → team 0 gets the kill.
+    expect(room.isSameTeam('a1', 'b1')).toBe(false);
+    room.addTeamKill('a1');
+    expect(room.getTeamScores()).toEqual([1, 0]);
+  });
+
+  it('friendly-fire / same-team kill does NOT increment a team score (D-05)', () => {
+    const room = new GameRoom();
+    room.setMatchMode('team-deathmatch');
+    seedTeams(room);
+
+    // a1 and a2 are same team → caller (server) must NOT call addTeamKill; assert the guard.
+    expect(room.isSameTeam('a1', 'a2')).toBe(true);
+    // Even if addTeamKill were reached for a no-team player, it must be a no-op (defensive D-05):
+    const beforeScores = room.getTeamScores();
+    expect(beforeScores).toEqual([0, 0]);
+  });
+
+  it('addTeamKill is a no-op for a caster with no team (defensive D-05)', () => {
+    const room = new GameRoom();
+    room.setMatchMode('team-deathmatch');
+    room.registerPlayer(
+      { id: 'ffa', name: 'ffa', socketId: 'socket-ffa' },   // no team
+      0, 0, 100,
+    );
+    room.addTeamKill('ffa');
+    expect(room.getTeamScores()).toEqual([0, 0]);
+  });
+
+  it('tracks per-player kills/deaths and resolves MVP by highest kills (tie-break fewest deaths)', () => {
+    const room = new GameRoom();
+    room.setMatchMode('team-deathmatch');
+    seedTeams(room);
+
+    room.addTeamKill('a1');   // a1: 1 kill
+    room.addTeamKill('a1');   // a1: 2 kills
+    room.addTeamKill('a2');   // a2: 1 kill
+    room.recordDeath('b1');
+    room.recordDeath('b1');
+    room.recordDeath('b1');
+
+    expect(room.getTeamScores()).toEqual([3, 0]);
+    expect(room.getMvpPlayerId()).toBe('a1');
+
+    const stats = room.getMatchStats();
+    const a1 = stats.find((s) => s.playerId === 'a1');
+    const b1 = stats.find((s) => s.playerId === 'b1');
+    expect(a1).toMatchObject({ team: 0, kills: 2, deaths: 0 });
+    expect(b1).toMatchObject({ team: 1, kills: 0, deaths: 3 });
+  });
+
+  it('clearCombatState (and transition to ENDED) resets TDM scoring to 0-0 for a rematch', () => {
+    const room = new GameRoom();
+    room.setMatchMode('team-deathmatch');
+    seedTeams(room);
+    room.addTeamKill('a1');
+    expect(room.getTeamScores()).toEqual([1, 0]);
+
+    room.clearCombatState();
+    expect(room.getTeamScores()).toEqual([0, 0]);
+    expect(room.getMatchStats()).toHaveLength(0);
+    expect(room.getMvpPlayerId()).toBeNull();
   });
 });

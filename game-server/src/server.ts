@@ -9,6 +9,7 @@ import type {
   MatchStateChangedPayload,
   MatchLoadedPayload,
   MatchCountdownTickPayload,
+  MatchMode,
   LobbyConfig,
   SpellHitPayload,
   DamageConfirmedPayload,
@@ -17,8 +18,10 @@ import type {
   SpellHitEnvironmentPayload,
   SpellDestroyedPayload,
   PosMirrorPayload,
+  TeamScorePayload,
+  MatchEndedPayload,
 } from './types.js';
-import { COUNTDOWN_DURATION_MS, FIGHT_HOLD_MS } from './types.js';
+import { COUNTDOWN_DURATION_MS, FIGHT_HOLD_MS, TDM_WIN_TARGET } from './types.js';
 import { decode as msgpackDecode } from '@msgpack/msgpack';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
@@ -179,6 +182,11 @@ io.on('connection', (socket) => {
     if (gameRooms.has(lobby.id)) return;
     const room = new GameRoom();
     lobby.players.forEach((p) => room.addPlayer(p.id, p.socketId));
+    // Phase 14 (D-03, runtime-critical): apply the lobby's mode to the room. GameRoom defaults
+    // to 'respawn'; without this every `matchMode === 'team-deathmatch'` branch is dead code.
+    // The mode is read ONLY from the server-side lobby record (host-gated by startLobby) — never
+    // from a client message (T-14-10).
+    room.setMatchMode((lobby.mode ?? 'team-deathmatch') as MatchMode);
     gameRooms.set(lobby.id, room);
 
     // Transition LOBBY → LOADING and broadcast (LFC-03). Order matters: state must change BEFORE
@@ -306,6 +314,38 @@ io.on('connection', (socket) => {
         const payload: RespawnPayload = { playerId: claim.targetId, x: spawn.x, y: spawn.y };
         io.to(`lobby:${lobbyId}`).emit('respawn', payload);
       });
+
+      // Phase 14 (D-04, D-05, D-07): team-deathmatch scoring + win-check. LIVE because the
+      // lobby:start handler set the room mode via setMatchMode. Server-authoritative:
+      // attribution reads the caster's team from #playerInfo, never from the client (T-14-01).
+      if (room.matchMode === 'team-deathmatch') {
+        room.recordDeath(claim.targetId);
+        if (!room.isSameTeam(claim.casterId, claim.targetId)) {
+          room.addTeamKill(claim.casterId);   // FF already short-circuited in validateHit; guard anyway (D-05)
+        }
+        const scores = room.getTeamScores();
+        const lastScoringTeam = room.getTeam(claim.casterId) ?? 0;
+        const scorePayload: TeamScorePayload = { teamScores: scores, lastScoringTeam };
+        io.to(`lobby:${lobbyId}`).emit('match:team-score', scorePayload);
+
+        if (scores[0] >= TDM_WIN_TARGET || scores[1] >= TDM_WIN_TARGET) {
+          // Snapshot stats/MVP BEFORE transitioning — transitionTo('ENDED') calls
+          // clearCombatState() which wipes #kills/#deaths/#playerInfo (D-07 data loss otherwise).
+          const winningTeam = scores[0] >= TDM_WIN_TARGET ? 0 : 1;
+          const endedPayload: MatchEndedPayload = {
+            winningTeam,
+            teamScores: scores,
+            mvpPlayerId: room.getMvpPlayerId(),
+            stats: room.getMatchStats(),
+          };
+          try {
+            room.transitionTo('ENDED');   // ACTIVE -> ENDED is a valid FSM transition
+          } catch {
+            return;
+          }
+          io.to(`lobby:${lobbyId}`).emit('match:ended', endedPayload);
+        }
+      }
     }
   });
 
