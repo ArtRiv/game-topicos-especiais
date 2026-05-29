@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: milestone
 status: executing
-stopped_at: "Phase 14 plan 01 (TDM server foundation + protocol mirror) COMPLETE — 3 tasks committed (4a7f26e, 9f7bccf, 7b8f21d); server typecheck + 79 tests pass; project-source typecheck clean. Next: 14-02 (server spawns/invuln/timing) then wave 2 cinematic 14-03. Phase 09.3 plan 03 still awaiting two-client playtest checkpoint."
-last_updated: "2026-05-29T00:00:00.000Z"
-last_activity: 2026-05-29 -- Phase 14 plan 01 executed: team-deathmatch MatchMode + per-team scoring + win-check + ENDED-with-stats broadcast + setMatchMode wiring + bus registry
+stopped_at: "Phase 14 plan 02 (server spawnpoints + respawn invuln + 5..1 countdown) COMPLETE — 3 tasks committed (1ef6d6e, 0f69244, 78e5505); server typecheck + 79 tests pass; project-source typecheck clean. Next: wave 2 client cinematic 14-03, then wave 3 client HUD/results 14-04. Phase 09.3 plan 03 still awaiting two-client playtest checkpoint."
+last_updated: "2026-05-29T17:51:50.000Z"
+last_activity: 2026-05-29 -- Phase 14 plan 02 executed: SPAWNPOINTS config (debug-tunable + COPY VALUES) + farthest-from-enemy pickSpawn on start/respawn + server-authoritative respawn invuln (validateHit reject) + 5..1 countdown (COUNTDOWN_DURATION_MS=5000)
 progress:
   total_phases: 9
   completed_phases: 5
   total_plans: 25
-  completed_plans: 20
-  percent: 80
+  completed_plans: 21
+  percent: 84
 ---
 
 # Project State
@@ -85,6 +85,21 @@ None yet.
 - [Research]: Phaser rendering performance with 20 simultaneous player sprites untested
 
 ## Session Continuity
+
+### Phase 14 execution — plan 02 (2026-05-29)
+
+Phase 14 plan 02 (server spawnpoints + respawn invuln + 5..1 countdown) executed sequentially on main, all 3 tasks committed:
+- **1ef6d6e** (Task 1): created src/common/config/tdm.ts with SPAWNPOINTS (WORLD/DUNGEON_1/STAGES, 2+ per team) + TDM_WIN_TARGET + RESPAWN_INVULN_MAX_MS; barrel re-export; RUNTIME_CONFIG mirror (SPAWNPOINTS stored as nested object); debug-panel TDM section (2 sliders) + the gameplay panel's FIRST COPY VALUES button (serializes RUNTIME_CONFIG.SPAWNPOINTS into a paste-ready literal); server RESPAWN_INVULN_MAX_MS in types.ts + SPAWNPOINTS copy in game-room.ts.
+- **0f69244** (Task 2): GameRoom #invulnUntil + pickSpawn(playerId, mapId) farthest-from-enemy (squared distance; WORLD fallback, teamA default, {100,100} empty guard — never throws, D-11) + startInvuln/clearInvuln + validateHit invuln rejection (D-14, after freshness/before range) + clearCombatState clears invuln.
+- **78e5505** (Task 3): server.ts TICKS 5,4,3,2,1 (no FIGHT); COUNTDOWN_DURATION_MS 3000→5000 in types.ts (5500ms span) + doc comments; match-start two-pass register-then-pickSpawn loop replacing 100+idx*64 with opening invuln per player; respawn callback uses fresh pickSpawn + startInvuln.
+
+Rule 3 auto-fix: adding the nested SPAWNPOINTS object to RUNTIME_CONFIG widened its value union and broke three pre-existing `as Record<string,number|boolean|string>` casts in debug-panel.ts (TS2322/TS2352) — added a RuntimeConfigValue alias and retargeted the casts. Rule 1: fixed a stale "t+3500ms / 3000ms of ticks" comment in server.ts.
+
+Verification: `cd game-server && npx tsc --noEmit` clean; `npm test` 79 pass; frontend project-source typecheck clean. `pnpm build` half of each verify satisfied via the documented `npx tsc | grep ^(src/|game-server/)` filter (env note — pnpm build's own exit is pre-existing node_modules noise).
+
+Requirements: TDM-03/04/05 are NOT present in .planning/REQUIREMENTS.md (the TDM-* set was drafted in discuss-phase but never added to the requirements doc; plan 14-01 likewise had no TDM rows to mark) — nothing to check off there. Marked in plan frontmatter only.
+
+Summary: .planning/phases/14-core-team-deathmatch-mode/14-02-SUMMARY.md. Resume: 14-03-PLAN.md (client cinematic — banner length-scaled reveal, camera center→pan→zoom, HUD_REVEAL emit, 5..1 render across the new 5500ms window; client zoom literal game-scene.ts:3635 is 3000 and is NOT the server constant — 03 re-paces it). Note for 03/04: server now ticks 5,4,3,2,1; RESPAWN_INVULN_MAX_MS=2500 is in RUNTIME_CONFIG for the client blink; respawn payload carries no invuln duration; server #invulnUntil is sole authority (client cancel is cosmetic). (gsd-sdk unavailable — STATE/ROADMAP updated by hand, git used directly.)
 
 ### Phase 14 execution — plan 01 (2026-05-29)
 
