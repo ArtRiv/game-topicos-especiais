@@ -232,6 +232,14 @@ export class GameScene extends Phaser.Scene {
   #mapBanner: Phaser.GameObjects.BitmapText | null = null;
   #mapBannerRevealTween: Phaser.Tweens.Tween | null = null;
   #mapBannerFadeTween: Phaser.Tweens.Tween | null = null;
+  // Phase 14 (Plan 04, D-12/D-13, UI-SPEC surface 3): respawn-invulnerability cue.
+  // A sustained looping alpha pulse on the LOCAL player while invuln is active, started
+  // in #onRespawn and stopped on the first of move / cast / the max-duration cap
+  // (RESPAWN_INVULN_MAX_MS). #invulnUntil is a CLIENT-SIDE mirror for the cancel logic
+  // only — the SERVER (#invulnUntil in game-room.ts) is the sole damage authority (D-14);
+  // this never reports invuln state back to the server.
+  #invulnPulseTween: Phaser.Tweens.Tween | null = null;
+  #invulnUntil: number = 0;
   // Faded ring around the local player at PLAYER_ATTACK_RANGE_PX so the player can see their reach.
   #rangeRing: Phaser.GameObjects.Graphics | undefined;
   // EarthBump-vs-EarthWall combo overlap result: maps the bump → set of shattered pillar positions
@@ -340,6 +348,32 @@ export class GameScene extends Phaser.Scene {
     this.#updateFireAreaPuddleEvaporateCombo(delta);
     this.#updateMudPuddleSlow();
     this.#updateRangeRing();
+    this.#updateInvulnBlinkCancel();
+  }
+
+  /**
+   * Phase 14 (D-12): per-frame cancel checks for the respawn-invuln pulse — the MOVE and
+   * TIMEOUT halves (the CAST half is hooked in #onLocalSpellCast). Guarded on
+   * #invulnUntil > 0 first so the common (not-invuln) case is a single comparison.
+   *   - Move: any non-zero WASD movement input from the local player cancels.
+   *   - Timeout: hitting the RESPAWN_INVULN_MAX_MS cap cancels.
+   */
+  #updateInvulnBlinkCancel(): void {
+    if (this.#invulnUntil <= 0) return;
+    // Timeout cap.
+    if (this.time.now >= this.#invulnUntil) {
+      this.#stopInvulnBlink();
+      return;
+    }
+    // Movement cancel — real directional input this frame.
+    if (
+      this.#controls?.isLeftDown ||
+      this.#controls?.isRightDown ||
+      this.#controls?.isUpDown ||
+      this.#controls?.isDownDown
+    ) {
+      this.#stopInvulnBlink();
+    }
   }
 
   /**
@@ -3553,6 +3587,10 @@ export class GameScene extends Phaser.Scene {
       this.#player.setPosition(payload.x, payload.y);
       this.#player.lifeComponent.resetToFull();
       this.#player.clearTint();
+      // Phase 14 (D-12/D-13): start the respawn-invuln alpha pulse AFTER #clearLocalDeath
+      // tears down the death overlay + position/HP/tint are restored (do not blink while
+      // the death overlay is up).
+      this.#startInvulnBlink();
       return;
     }
     const remote = this.#remotePlayers.get(payload.playerId);
@@ -3562,6 +3600,49 @@ export class GameScene extends Phaser.Scene {
       remote.clearTint();
     }
   };
+
+  /**
+   * Phase 14 (D-12/D-13, UI-SPEC surface 3): start the respawn-invulnerability cue on the
+   * LOCAL player. A sustained, slow, looping alpha pulse (1.0 ↔ 0.35, yoyo, repeat -1,
+   * 150ms/half) — distinct from the brief one-shot hurt blink by its longer, steadier
+   * rhythm, so it reads as "protected". Sized by RUNTIME_CONFIG.RESPAWN_INVULN_MAX_MS
+   * (~2500ms). Also mirrors the window onto Player.iFrameUntil so the existing local
+   * damage gate (#onDamageConfirmed i-frame check) respects it for immediate visual
+   * correctness — the SERVER stays the authority (D-14); we never report invuln upstream.
+   */
+  #startInvulnBlink(): void {
+    if (!this.#player?.active) return;
+    // Clear any prior pulse (defensive — back-to-back respawns).
+    this.#stopInvulnBlink();
+
+    this.#invulnUntil = this.time.now + RUNTIME_CONFIG.RESPAWN_INVULN_MAX_MS;
+    this.#player.iFrameUntil = this.#invulnUntil;
+    this.#player.setAlpha(1);
+    this.#invulnPulseTween = this.tweens.add({
+      targets: this.#player,
+      alpha: { from: 1.0, to: 0.35 },
+      duration: 150,
+      yoyo: true,
+      repeat: -1,
+    });
+  }
+
+  /**
+   * Phase 14 (D-12): stop the respawn-invuln pulse and hard-reset the sprite. Idempotent —
+   * safe to call from the move/cast/timeout cancel hooks and from SHUTDOWN. Zeroes
+   * #invulnUntil so the cheap `> 0` guards at the call sites skip the common (not-invuln)
+   * case after the first cancel.
+   */
+  #stopInvulnBlink(): void {
+    if (this.#invulnPulseTween !== null) {
+      this.#invulnPulseTween.stop();
+      this.#invulnPulseTween = null;
+    }
+    this.#invulnUntil = 0;
+    if (this.#player?.active) {
+      this.#player.setAlpha(1);
+    }
+  }
 
   #clearLocalDeath(): void {
     this.#deathLockActive = false;
@@ -3878,6 +3959,9 @@ export class GameScene extends Phaser.Scene {
       this.#clearLocalDeath();
       // Phase 14: tear down the intro banner + its reveal/fade tweens on scene restart.
       this.#destroyMapBanner();
+      // Phase 14: stop the respawn-invuln pulse so the looping tween never leaks across
+      // scene restarts (cross-level room transitions restart GameScene).
+      this.#stopInvulnBlink();
       this.#fireBreathDamageTimer?.destroy();
       this.#activeFireBreath?.destroy();
       // Cleanup network listeners and remote players
@@ -4912,6 +4996,12 @@ export class GameScene extends Phaser.Scene {
   // The legacy `element` field carries the active element; receivers re-derive the spell type
   // from element + slot (or from a future broadcasted SPELL_ID — out of scope for this plan).
   #onLocalSpellCast = (payload: { spellInstanceId?: string; spellId: string; slotIndex: number; casterX: number; casterY: number; targetX: number; targetY: number }): void => {
+    // Phase 14 (D-12): a local cast cancels respawn invuln immediately (also covers dash,
+    // which routes through SPELL_CAST). Guard on #invulnUntil > 0 so the common case is a
+    // single comparison. This runs before the connectivity early-return so an offline/solo
+    // cast still cancels the pulse.
+    if (this.#invulnUntil > 0) this.#stopInvulnBlink();
+
     let nm: NetworkManager | null = null;
     try { nm = NetworkManager.getInstance(); } catch { return; }
     if (!nm?.isConnected || !this.#player?.active) return;
