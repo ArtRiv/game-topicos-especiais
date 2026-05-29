@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: milestone
 status: checkpoint-pending
-stopped_at: "Phase 14 context gathered (discuss-phase complete) — ready to plan. Phase 09.3 plan 03 still awaiting two-client playtest checkpoint."
+stopped_at: "Phase 14 UI-SPEC approved (6/6 dimensions, no flags) — ready to plan. Phase 09.3 plan 03 still awaiting two-client playtest checkpoint."
 last_updated: "2026-05-29T00:00:00.000Z"
-last_activity: 2026-05-29 -- Phase 14 (Core Team Deathmatch) context gathered via discuss-phase; resume file 14-CONTEXT.md
+last_activity: 2026-05-29 -- Phase 14 (Core Team Deathmatch) UI design contract approved; resume file 14-UI-SPEC.md
 progress:
   total_phases: 9
   completed_phases: 5
