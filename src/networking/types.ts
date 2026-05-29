@@ -250,6 +250,21 @@ export type RespawnPayload = {
   y: number;
 };
 
+/** Phase 14 bugfix (TDM playtest #4): one server spawn assignment for a player. */
+export type SpawnAssignment = {
+  playerId: string;
+  x: number;
+  y: number;
+};
+
+/** Phase 14 bugfix (TDM playtest #4): outbound broadcast at COUNTDOWN→ACTIVE carrying every
+ *  player's match-start team spawnpoint. Mirrors game-server/src/types.ts. The client snaps its
+ *  local + remote players to the server-authoritative team spawn before gameplay unlocks
+ *  (replacing the tilemap-door "spawn in the middle" placement). */
+export type MatchSpawnsPayload = {
+  spawns: SpawnAssignment[];
+};
+
 /** Outbound from any client: my spell hit an environment object (D-04 wall desync fix). */
 export type SpellHitEnvironmentPayload = {
   spellId: string;

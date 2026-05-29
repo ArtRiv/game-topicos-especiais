@@ -99,7 +99,7 @@ import {
 import { NetworkManager } from '../networking/network-manager';
 import { RemoteInputComponent } from '../components/input/remote-input-component';
 import { MusicManager } from '../common/music-manager';
-import type { PlayerUpdateBroadcast, RoomTransitionPayload, PlayerDisconnectedPayload, PlayerUpdatePayload, SpellCastBroadcast, PlayerInfo, BreathStartBroadcast, BreathUpdateBroadcast, BreathEndBroadcast, EarthWallPillarBroadcast, EarthWallPillarDestroyBroadcast, MatchStateChangedPayload, MatchCountdownTickPayload, DamageConfirmedPayload, SpellDestroyedPayload, EliminationPayload, RespawnPayload, MatchConfig, MatchEndedPayload } from '../networking/types';
+import type { PlayerUpdateBroadcast, RoomTransitionPayload, PlayerDisconnectedPayload, PlayerUpdatePayload, SpellCastBroadcast, PlayerInfo, BreathStartBroadcast, BreathUpdateBroadcast, BreathEndBroadcast, EarthWallPillarBroadcast, EarthWallPillarDestroyBroadcast, MatchStateChangedPayload, MatchCountdownTickPayload, DamageConfirmedPayload, SpellDestroyedPayload, EliminationPayload, RespawnPayload, MatchConfig, MatchEndedPayload, MatchSpawnsPayload } from '../networking/types';
 import { RUNTIME_CONFIG } from '../common/runtime-config';
 import type { Direction } from '../common/types';
 
@@ -3626,6 +3626,36 @@ export class GameScene extends Phaser.Scene {
   };
 
   /**
+   * Phase 14 bugfix (TDM playtest #4): apply the server-authoritative match-start team spawns.
+   * Previously every player was placed at the tilemap door (#setupPlayer → "spawn in the middle");
+   * the authored team A/B spawnpoints only reached clients on respawn. The server now broadcasts
+   * match:spawns at COUNTDOWN→ACTIVE and we snap the LOCAL player + any already-spawned REMOTE
+   * players to their team spawn. Remote players not yet instantiated will be created at the right
+   * spot once their pos packet arrives (and #onRespawn handles subsequent deaths).
+   *
+   * The local snap also recenters the camera so the intro pan/follow targets the real spawn, not
+   * the stale door position.
+   */
+  #onMatchSpawns = (payload: MatchSpawnsPayload): void => {
+    const nm = this.#safeNetworkManager();
+    const localId = nm?.localPlayerId ?? null;
+    for (const a of payload.spawns) {
+      if (localId !== null && a.playerId === localId) {
+        this.#player.setPosition(a.x, a.y);
+        if (this.#player.body) {
+          (this.#player.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
+        }
+        // The camera may still be following from #setupCamera; re-center on the true spawn so the
+        // player isn't off-screen at match start (the intro sequence re-attaches follow on finish).
+        this.cameras.main.centerOn(a.x, a.y);
+        continue;
+      }
+      const remote = this.#remotePlayers.get(a.playerId);
+      if (remote) remote.setPosition(a.x, a.y);
+    }
+  };
+
+  /**
    * Phase 14 (D-12/D-13, UI-SPEC surface 3): start the respawn-invulnerability cue on the
    * LOCAL player. A sustained, slow, looping alpha pulse (1.0 ↔ 0.35, yoyo, repeat -1,
    * 150ms/half) — distinct from the brief one-shot hurt blink by its longer, steadier
@@ -3984,6 +4014,8 @@ export class GameScene extends Phaser.Scene {
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_SPELL_DESTROYED, this.#onSpellDestroyed, this);
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_ELIMINATION, this.#onElimination, this);
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_RESPAWN, this.#onRespawn, this);
+    // Phase 14 bugfix (TDM playtest #4): match-start team spawn assignments.
+    EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_MATCH_SPAWNS, this.#onMatchSpawns, this);
     // Phase 14 (Plan 04, D-06/D-08): launch the minimal results overlay on match ENDED.
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_MATCH_ENDED, this.#onMatchEnded, this);
 
@@ -4003,6 +4035,8 @@ export class GameScene extends Phaser.Scene {
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_SPELL_DESTROYED, this.#onSpellDestroyed, this);
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_ELIMINATION, this.#onElimination, this);
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_RESPAWN, this.#onRespawn, this);
+      // Phase 14 bugfix (TDM playtest #4): match-start spawn listener cleanup.
+      EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_MATCH_SPAWNS, this.#onMatchSpawns, this);
       // Phase 14 (Plan 04): results-overlay launcher cleanup.
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_MATCH_ENDED, this.#onMatchEnded, this);
       this.#appliedDamageSpellIds.clear();

@@ -20,6 +20,8 @@ import type {
   PosMirrorPayload,
   TeamScorePayload,
   MatchEndedPayload,
+  SpawnAssignment,
+  MatchSpawnsPayload,
 } from './types.js';
 import { COUNTDOWN_DURATION_MS, FIGHT_HOLD_MS, TDM_WIN_TARGET } from './types.js';
 import { decode as msgpackDecode } from '@msgpack/msgpack';
@@ -97,6 +99,7 @@ function startCountdown(lobbyId: string, room: GameRoom): void {
     // spawn via room.pickSpawn(id, mapId) and re-register at that position. Each player also gets an
     // opening invuln window (D-12) so the first moments after the cinematic are protected.
     const lobby = lobbyManager.getLobbyById(lobbyId);
+    const spawnAssignments: SpawnAssignment[] = [];
     if (lobby) {
       const maxHp = 100; // mirror CONFIG.PLAYER_START_MAX_HEALTH (server-authoritative copy)
       const mapId = lobby.config.mapId ?? 'WORLD';
@@ -107,9 +110,19 @@ function startCountdown(lobbyId: string, room: GameRoom): void {
         const s = room.pickSpawn(info.id, mapId);
         room.registerPlayer(info, s.x, s.y, maxHp);
         room.startInvuln(info.id);   // D-12: opening invuln, consistent with respawn invuln
+        spawnAssignments.push({ playerId: info.id, x: s.x, y: s.y });
       });
     }
     broadcastMatchState(lobbyId, room);
+    // Phase 14 bugfix (TDM playtest #4): broadcast the match-start spawn assignments so clients
+    // place every player at their team spawnpoint instead of the tilemap door ("spawn in the
+    // middle"). Emitted AFTER match:state-changed(ACTIVE) so the client's #exitCountdownMode
+    // (which unlocks movement) and the spawn snap are both in flight; the client applies the snap
+    // on receipt. Empty list (no lobby) is harmless.
+    if (spawnAssignments.length > 0) {
+      const spawnsPayload: MatchSpawnsPayload = { spawns: spawnAssignments };
+      io.to(`lobby:${lobbyId}`).emit('match:spawns', spawnsPayload);
+    }
   }, COUNTDOWN_DURATION_MS + FIGHT_HOLD_MS);
   room.pushCountdownHandle(transitionHandle);
 }

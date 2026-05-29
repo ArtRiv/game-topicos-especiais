@@ -54,6 +54,9 @@ export const CUSTOM_EVENTS = {
   // NETWORK_* keys are bridged from socket events in network-manager.ts.
   NETWORK_TEAM_SCORE: 'NETWORK_TEAM_SCORE',
   NETWORK_MATCH_ENDED: 'NETWORK_MATCH_ENDED',
+  // Phase 14 bugfix (TDM playtest #4): match-start team spawn assignments — clients snap
+  // local + remote players to their server-authoritative team spawn instead of the tilemap door.
+  NETWORK_MATCH_SPAWNS: 'NETWORK_MATCH_SPAWNS',
   // HUD_REVEAL is INTERNAL (no socket bridge): Phase 14 cinematic step 5, GameScene -> UiScene HUD fade-in.
   HUD_REVEAL: 'HUD_REVEAL',
 } as const;

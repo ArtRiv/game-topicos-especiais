@@ -46,6 +46,7 @@ import type {
   SpellDestroyedPayload,
   TeamScorePayload,
   MatchEndedPayload,
+  MatchSpawnsPayload,
 } from './types.js';
 
 // Messages exchanged over WebRTC data channels
@@ -571,6 +572,10 @@ export class NetworkManager {
     });
     this.#socket.on('match:ended', (payload: MatchEndedPayload) => {
       EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_MATCH_ENDED, payload);
+    });
+    // Phase 14 bugfix (TDM playtest #4): match-start team spawn assignments.
+    this.#socket.on('match:spawns', (payload: MatchSpawnsPayload) => {
+      EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_MATCH_SPAWNS, payload);
     });
   }
 
