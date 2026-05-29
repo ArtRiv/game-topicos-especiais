@@ -251,7 +251,7 @@ Plans:
   5. The match-intro cinematic (replacing the Phase 8 sequence) plays on every client: map-name banner whose reveal animation always completes (duration scaled to name length — fixes the "cut last letters" bug, which is an animation-timing issue not a width clip) → camera at map center zoomed out → smooth pan to the local player's character → zoom to normal play distance → UI (radial menu, mana, HP) reveals → `5 → 4 → 3 → 2 → 1` countdown → movement + spell casting unlock simultaneously on the host-authoritative COUNTDOWN → ACTIVE gate
 **Plans**: 4 plans
 Plans:
-- [ ] 14-01-PLAN.md — Server: team-deathmatch MatchMode + per-team scoring + win condition + ENDED-with-stats broadcast + bus event registry
+- [x] 14-01-PLAN.md — Server: team-deathmatch MatchMode + per-team scoring + win condition + ENDED-with-stats broadcast + bus event registry (completed 2026-05-29)
 - [ ] 14-02-PLAN.md — Server: per-map SPAWNPOINTS (debug-tunable, COPY VALUES) + farthest-from-enemy assignment + respawn invuln rejection + 5..1 countdown
 - [ ] 14-03-PLAN.md — Client: intro cinematic (banner length-scaled reveal fix, camera center->pan->zoom, HUD_REVEAL, 5..1 render)
 - [ ] 14-04-PLAN.md — Client: team-score HUD plate + respawn invuln blink/cancel + minimal results scene (winner, K/D, MVP, return to lobby)
@@ -290,7 +290,7 @@ Plans:
 | 11. Reconnect Grace Window | 0/? | Not started | — |
 | 12. In-Match Feedback HUD | 0/? | Not started | — |
 | 13. Spectator Mode | 0/? | Not started | — |
-| 14. Core Team Deathmatch Mode | 0/? | Not started | — |
+| 14. Core Team Deathmatch Mode | 1/4 | In progress | — |
 | 15. Special-Spell Pickups | 0/? | Not started | — |
 
 ---

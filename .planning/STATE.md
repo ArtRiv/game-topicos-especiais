@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: milestone
-status: ready-to-execute
-stopped_at: "Phase 14 (Core Team Deathmatch) planned — 4 plans in 3 waves, verification PASSED on revision iteration 1. Ready to execute. Phase 09.3 plan 03 still awaiting two-client playtest checkpoint."
+status: executing
+stopped_at: "Phase 14 plan 01 (TDM server foundation + protocol mirror) COMPLETE — 3 tasks committed (4a7f26e, 9f7bccf, 7b8f21d); server typecheck + 79 tests pass; project-source typecheck clean. Next: 14-02 (server spawns/invuln/timing) then wave 2 cinematic 14-03. Phase 09.3 plan 03 still awaiting two-client playtest checkpoint."
 last_updated: "2026-05-29T00:00:00.000Z"
-last_activity: 2026-05-29 -- Phase 14 (Core Team Deathmatch) plans created + verified (4 plans, 3 waves); ready for /gsd-execute-phase 14
+last_activity: 2026-05-29 -- Phase 14 plan 01 executed: team-deathmatch MatchMode + per-team scoring + win-check + ENDED-with-stats broadcast + setMatchMode wiring + bus registry
 progress:
   total_phases: 9
   completed_phases: 5
   total_plans: 25
-  completed_plans: 19
-  percent: 76
+  completed_plans: 20
+  percent: 80
 ---
 
 # Project State
@@ -85,6 +85,19 @@ None yet.
 - [Research]: Phaser rendering performance with 20 simultaneous player sprites untested
 
 ## Session Continuity
+
+### Phase 14 execution — plan 01 (2026-05-29)
+
+Phase 14 plan 01 (TDM server foundation + protocol mirror) executed sequentially on main, all 3 tasks committed:
+- **4a7f26e** (Task 1): `'team-deathmatch'` added to MatchMode union in BOTH game-server/src/types.ts + src/networking/types.ts; new payloads TdmPlayerStat / TeamScorePayload / MatchEndedPayload (identical shapes); TDM_WIN_TARGET = 30 server-only.
+- **9f7bccf** (Task 2): lobby:start now calls room.setMatchMode(lobby.mode) (runtime-critical — room defaulted to 'respawn'); GameRoom got #teamScores/#kills/#deaths + addTeamKill/recordDeath/getTeam/getTeamScores/getMatchStats/getMvpPlayerId, tallies seeded in registerPlayer, reset in clearCombatState; server.ts result.eliminated branch (gated on matchMode==='team-deathmatch') does kill/death attribution (caster team only, never FF), live match:team-score broadcast, win-check at 30 -> ACTIVE→ENDED + single match:ended. game-room.test.ts scoring test explicitly sets team-deathmatch before asserting (can't pass against default 'respawn').
+- **7b8f21d** (Task 3): event-bus.ts owns NETWORK_TEAM_SCORE / NETWORK_MATCH_ENDED (socket-bridged) + internal HUD_REVEAL (no bridge); network-manager.ts bridges socket match:team-score / match:ended onto the bus.
+
+Rule 1 auto-fix: built the MatchEndedPayload (MVP + stats) BEFORE transitionTo('ENDED') because the transition calls clearCombatState() and would have wiped the stats — plan template had the order reversed.
+
+Verification: `cd game-server && npx tsc --noEmit` clean; `npm test` 79 pass; frontend project-source typecheck clean (`npx tsc | grep ^(src/|game-server/)` = 0 matches). pnpm build itself fails only on pre-existing environmental node_modules type noise (per executor typecheck note). Pre-existing unrelated frontend spell test failures logged to deferred-items.md.
+
+Summary: .planning/phases/14-core-team-deathmatch-mode/14-01-SUMMARY.md. Resume: 14-02-PLAN.md (server spawns/invuln/timing — its matchMode-gated branches are now live) + 14-03 (client cinematic). Note for 03/04: NETWORK_TEAM_SCORE / NETWORK_MATCH_ENDED / HUD_REVEAL already registered — do NOT re-add to event-bus.ts. (gsd-sdk unavailable in this env — STATE/ROADMAP updated by hand, git used directly for commits.)
 
 ### Phase 14 planning (2026-05-29)
 
