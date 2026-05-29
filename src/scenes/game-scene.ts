@@ -3330,6 +3330,13 @@ export class GameScene extends Phaser.Scene {
     try { return NetworkManager.getInstance(); } catch { return null; }
   }
 
+  /** Phase 14 bugfix: true when the active match is team-deathmatch. In TDM, death + respawn
+   *  are server-authoritative (#onElimination / #onRespawn) and the legacy single-player
+   *  DEATH_STATE → PLAYER_DEFEATED → GAME_OVER path must be suppressed. */
+  #isTeamDeathmatchMatch(): boolean {
+    return this.#safeNetworkManager()?.isTeamDeathmatch ?? false;
+  }
+
   /**
    * Star Shield impact dispatcher. Called for every remote spell that overlaps a
    * shielded local player. For reflectable PROJECTILES (FireBolt/EarthBolt/
@@ -3486,11 +3493,28 @@ export class GameScene extends Phaser.Scene {
       if (this.time.now < this.#player.iFrameUntil) {
         return;
       }
-      // Route through hit() instead of lifeComponent.takeDamage() directly — hit() ALSO
-      // calls DataManager.updatePlayerCurrentHealth (→ emits PLAYER_HEALTH_UPDATED → HUD
-      // refresh), plays the hurt animation, and runs the post-hit invulnerability gate.
-      // Without this, PvP damage silently mutated HP but the HUD never changed and the
-      // hurt animation never played, making it look like nothing happened.
+      // Phase 14 bugfix (TDM playtest #1/#3): in a team-deathmatch match, death + respawn are
+      // SERVER-AUTHORITATIVE (NETWORK_ELIMINATION → #applyLocalDeath, NETWORK_RESPAWN → reposition).
+      // The local HP-zero must NOT drive DEATH_STATE → PLAYER_DEFEATED → GAME_OVER_SCENE (that
+      // legacy single-player path raced the TDM flow and yanked the dying client to game-over,
+      // which also broke the server scoring round). So in TDM we apply the HUD/hurt feedback but
+      // FLOOR local HP at 1 — the authoritative elimination comes from the server.
+      if (this.#isTeamDeathmatchMatch()) {
+        const life = this.#player.lifeComponent;
+        const next = Math.max(1, life.life - payload.amount);
+        const applied = life.life - next;
+        if (applied > 0) {
+          // hit() with the clamped amount: keeps HUD refresh + hurt anim + post-hit i-frames,
+          // but can never cross 0 → never enters DEATH_STATE → never emits PLAYER_DEFEATED.
+          this.#player.hit(DIRECTION.DOWN, applied);
+        }
+        return;
+      }
+      // Non-TDM (PvE / single-player): route through hit() instead of lifeComponent.takeDamage()
+      // directly — hit() ALSO calls DataManager.updatePlayerCurrentHealth (→ emits
+      // PLAYER_HEALTH_UPDATED → HUD refresh), plays the hurt animation, and runs the post-hit
+      // invulnerability gate. Without this, PvP damage silently mutated HP but the HUD never
+      // changed and the hurt animation never played, making it look like nothing happened.
       this.#player.hit(DIRECTION.DOWN, payload.amount);
       return;
     }
@@ -4798,6 +4822,14 @@ export class GameScene extends Phaser.Scene {
   }
 
   #handlePlayerDefeatedEvent(): void {
+    // Phase 14 bugfix (TDM playtest #1): never fall through to the single-player GAME_OVER
+    // screen during a team-deathmatch. Death + respawn are server-authoritative there; the
+    // server's `elimination` → `respawn` broadcasts drive #applyLocalDeath / #onRespawn. This
+    // guard is defence-in-depth — #onDamageConfirmed already floors local HP at 1 in TDM so
+    // DEATH_STATE shouldn't be reached, but any other 0-HP source (hazard, desync) is caught here.
+    if (this.#isTeamDeathmatchMatch()) {
+      return;
+    }
     this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
       this.scene.start(SCENE_KEYS.GAME_OVER_SCENE);
     });

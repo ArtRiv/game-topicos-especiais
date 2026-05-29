@@ -100,6 +100,7 @@ export class NetworkManager {
   #unreliableChannels = new Map<string, RTCDataChannel>(); // pos: ordered=false, maxRetransmits=0 (UDP-like)
   #reliableChannels = new Map<string, RTCDataChannel>();   // events: ordered=true (TCP-like)
   #matchPlayers: PlayerInfo[] = [];
+  #matchMode: string | null = null;   // Phase 14: mode from the active MatchConfig (e.g. 'team-deathmatch')
   #socketToPlayerId = new Map<string, string>();
 
   // Buffer for ICE candidates that arrive before their PC is created (3p race fix).
@@ -181,6 +182,18 @@ export class NetworkManager {
     return this.#matchPlayers;
   }
 
+  /** Phase 14: the active match mode from MatchConfig (null until lobby:started).
+   *  Server defaults an unset lobby mode to 'team-deathmatch' (server.ts:198/209). */
+  get matchMode(): string | null {
+    return this.#matchMode;
+  }
+
+  /** Phase 14: true when the current match is team-deathmatch — gates the server-authoritative
+   *  death/respawn flow so the local HP-zero does NOT route to the legacy single-player GAME_OVER. */
+  get isTeamDeathmatch(): boolean {
+    return this.#matchMode === 'team-deathmatch';
+  }
+
   get socketId(): string {
     return this.#socket.id ?? '';
   }
@@ -208,6 +221,7 @@ export class NetworkManager {
     this.#closeAllPeerConnections();
     this.#lastSentSnapshot = null;
     this.#matchPlayers = [];
+    this.#matchMode = null;
     this.#snapshotGetter = null;
     this.#droppedDueToBuffer = 0;
     if (this.#meshHealthTimer) {
@@ -470,6 +484,7 @@ export class NetworkManager {
       const me = matchConfig.players.find((p) => p.socketId === this.#socket.id);
       if (me) this.#localPlayerId = me.id;
       this.#matchPlayers = matchConfig.players;
+      this.#matchMode = matchConfig.mode ?? null;   // Phase 14: remember the mode for TDM gating
       this.#socketToPlayerId.clear();
       for (const p of matchConfig.players) {
         this.#socketToPlayerId.set(p.socketId, p.id);
