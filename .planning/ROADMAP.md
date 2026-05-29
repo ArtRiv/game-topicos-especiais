@@ -23,6 +23,8 @@ Turn the working PvP foundation into a tournament-grade experience for the colle
 - [ ] **Phase 11: Reconnect Grace Window** — 15-second slot hold on disconnect; reconnects within window restore active play
 - [ ] **Phase 12: In-Match Feedback HUD** — Kill feed, floating damage numbers, name tags + HP bars overhead, match timer, ping indicator
 - [ ] **Phase 13: Spectator Mode** — Eliminated players watch the remainder of the match (free cam or follow surviving player)
+- [ ] **Phase 14: Core Team Deathmatch Mode** *(ADDED)* — Team kill-score win condition (first team to N), per-map multi-spawnpoints in config.ts, respawn invulnerability, and the upgraded match-intro cinematic (center→player pan, UI reveal, 5→1, banner-timing fix)
+- [ ] **Phase 15: Special-Spell Pickups** *(ADDED)* — Void Orb / Dark Bolt / Shield spawn at map spots; server-authoritative single-use claim grants into the special-spell inventory
 
 ## Overview
 
@@ -235,6 +237,40 @@ Plans:
 
 ---
 
+### Phase 14: Core Team Deathmatch Mode
+
+**Goal**: A playable team-vs-team deathmatch. Two teams (assignment already shipped — lobby Team A/B toggles + `setPlayerTeam`) fight to a shared team kill total; the first team to N eliminations wins. Players spawn at per-map spawnpoints, respawn protected by brief invulnerability, and the match opens with a polished intro cinematic.
+**Depends on**: Phase 9.3 (host-authoritative cross-player damage must work end-to-end before team scoring can be tracked or verified). Phase 8 (COUNTDOWN cinematic is the base the intro upgrades).
+**Requirements**: TDM-01, TDM-02, TDM-03, TDM-04, TDM-05, TDM-06 (drafted during discuss-phase)
+**Type**: added (post-v1.2-playtest direction — first real game mode)
+**Success Criteria** (what must be TRUE):
+  1. The server tracks a shared per-team kill score; every enemy elimination by any teammate increments that team's score, and reaching the configured target N transitions the match to ENDED with a single win broadcast every client receives simultaneously
+  2. A new `'team-deathmatch'` `MatchMode` variant drives scoring and respawn behavior without breaking the existing `'respawn'` / `'last-standing'` paths
+  3. Each map defines MULTIPLE spawnpoints per team in `config.ts` (live-tunable via the debug panel with a COPY VALUES path); the server assigns each player a team spawnpoint on match start and on each respawn (round-robin or farthest-from-enemy)
+  4. On respawn, the player is invulnerable (reusing `Player.iFrameUntil`) and the invuln cancels the instant the player moves or casts — enemy spells deal no damage during invuln, and the invuln cannot be carried into an offensive engagement
+  5. The match-intro cinematic (replacing the Phase 8 sequence) plays on every client: map-name banner whose reveal animation always completes (duration scaled to name length — fixes the "cut last letters" bug, which is an animation-timing issue not a width clip) → camera at map center zoomed out → smooth pan to the local player's character → zoom to normal play distance → UI (radial menu, mana, HP) reveals → `5 → 4 → 3 → 2 → 1` countdown → movement + spell casting unlock simultaneously on the host-authoritative COUNTDOWN → ACTIVE gate
+**Plans**: TBD (planning will likely split: server scoring + win condition + MatchMode; per-map spawnpoint config + assignment + respawn invuln; intro cinematic upgrade + banner fix + UI reveal)
+**UI hint**: yes (intro cinematic, UI reveal, team-score display TBD)
+**Source**: 2026-05-29 exploration after school playtest — see `.planning/notes/tdm-intro-cinematic-and-banner-bug.md`
+
+---
+
+### Phase 15: Special-Spell Pickups
+
+**Goal**: Single-use special spells (Void Orb, Dark Bolt, Shield) spawn at random spots on the map during a match; the first player to walk over a pickup claims it (server-authoritative), gaining one charge of that spell that they can cast once, after which it's consumed.
+**Depends on**: Phase 14 (pickups are a TDM-match feature — they spawn during ACTIVE and need the mode's match loop). Builds on the existing `special-spell-inventory.ts` + `void-orb` / `dark-bolt` configs.
+**Requirements**: PCK-01, PCK-02, PCK-03 (drafted during discuss-phase)
+**Type**: added (post-v1.2-playtest direction — combat depth / map control)
+**Success Criteria** (what must be TRUE):
+  1. During ACTIVE, pickups spawn at map spots (per-map spawn list); each pickup is one of Void Orb / Dark Bolt / Shield and is visible to every client at the same location
+  2. When a player overlaps a pickup, the server authoritatively decides who claimed it (no double-claim across clients) and the pickup disappears for everyone
+  3. The claimant gains a single-use charge in `special-spell-inventory.ts`; casting it consumes the charge, and it cannot be cast again until another pickup is claimed
+**Plans**: TBD (planning will likely split: server pickup spawn/claim authority + sync; client pickup sprites + overlap; single-use grant into inventory + cast/consume)
+**UI hint**: minor (pickup sprites on map; possible inventory indicator)
+**Source**: 2026-05-29 exploration after school playtest
+
+---
+
 ## Progress Table
 
 | Phase | Plans Complete | Status | Completed |
@@ -249,6 +285,8 @@ Plans:
 | 11. Reconnect Grace Window | 0/? | Not started | — |
 | 12. In-Match Feedback HUD | 0/? | Not started | — |
 | 13. Spectator Mode | 0/? | Not started | — |
+| 14. Core Team Deathmatch Mode | 0/? | Not started | — |
+| 15. Special-Spell Pickups | 0/? | Not started | — |
 
 ---
 
