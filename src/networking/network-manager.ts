@@ -44,6 +44,8 @@ import type {
   EliminationPayload,
   RespawnPayload,
   SpellDestroyedPayload,
+  TeamScorePayload,
+  MatchEndedPayload,
 } from './types.js';
 
 // Messages exchanged over WebRTC data channels
@@ -546,6 +548,14 @@ export class NetworkManager {
     });
     this.#socket.on('spell:destroyed', (payload: SpellDestroyedPayload) => {
       EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_SPELL_DESTROYED, payload);
+    });
+    // Phase 14 — team-deathmatch broadcasts. HUD_REVEAL is intentionally NOT bridged here
+    // (it is an in-process GameScene -> UiScene event, not a socket event).
+    this.#socket.on('match:team-score', (payload: TeamScorePayload) => {
+      EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_TEAM_SCORE, payload);
+    });
+    this.#socket.on('match:ended', (payload: MatchEndedPayload) => {
+      EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_MATCH_ENDED, payload);
     });
   }
 
