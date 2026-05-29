@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: milestone
 status: executing
-stopped_at: "Phase 14 plan 03 (client intro cinematic — game-scene.ts) COMPLETE — 2 tasks committed (40a1a6e banner, db92388 camera+HUD_REVEAL); project-source typecheck clean. Banner reveal now scales to name.length (D-19 fix); camera center→pan→zoom; HUD_REVEAL emitted after zoom-in; 5..1 ticks render via preserved pop tween. Next: wave 3 client HUD/results 14-04. Phase 09.3 plan 03 still awaiting two-client playtest checkpoint."
-last_updated: "2026-05-29T18:05:00.000Z"
-last_activity: 2026-05-29 -- Phase 14 plan 03 executed: TDM intro cinematic in GameScene — map-name banner (name-length-scaled typewriter reveal, D-19 timing fix) + camera center→hold→pan→zoom-in + HUD_REVEAL emit + server-driven 5..1 ticks via the existing pop tween
+stopped_at: "Phase 14 plan 04 (client HUD + respawn invuln cue + results scene) COMPLETE — 3 tasks committed (e97284b score plate + HUD_REVEAL fade-in + TEAM_COLORS, 89cd368 respawn invuln alpha-pulse + move/cast/timeout cancel, 8469103 TDM results scene + registration + launch); project-source typecheck clean. Phase 14 plans 01-04 all structurally COMPLETE (4/4). Remaining phase-14 close: two-client TDM playtest (score plate live, HUD reveal covers radial affordance, respawn blink cancels on action, results scene + RETURN TO LOBBY). Phase 09.3 plan 03 still awaiting two-client playtest checkpoint."
+last_updated: "2026-05-29T19:00:00.000Z"
+last_activity: 2026-05-29 -- Phase 14 plan 04 executed: client TDM HUD + respawn invuln cue + results scene — top-center [A] n - m [B] score plate (per-team tint, pop on change) in #hudContainer; element/radial affordance moved into #hudContainer so HUD_REVEAL covers it (D-18 step 5); respawn invuln alpha-pulse on local player cancelling on move/cast/timeout; new tdm-results-scene.ts (winner + K/D table + MVP + RETURN TO LOBBY) launched on NETWORK_MATCH_ENDED
 progress:
   total_phases: 9
   completed_phases: 5
   total_plans: 25
-  completed_plans: 22
-  percent: 88
+  completed_plans: 23
+  percent: 92
 ---
 
 # Project State
@@ -85,6 +85,21 @@ None yet.
 - [Research]: Phaser rendering performance with 20 simultaneous player sprites untested
 
 ## Session Continuity
+
+### Phase 14 execution — plan 04 (2026-05-29)
+
+Phase 14 plan 04 (client TDM HUD + respawn invuln cue + results scene) executed sequentially on main, all 3 tasks committed:
+- **e97284b** (Task 1, ui-scene.ts): hoisted + EXPORTED `TEAM_COLORS = [0x44aaff, 0xff5533]` (lobby badge tints; lobby keeps its own literal — out of scope). Top-center `[A] n - m [B]` plate from 3 per-tinted BitmapText pieces (`#scoreTextA`/`#scoreDash`/`#scoreTextB`) in `#hudContainer`, centered via `#layoutScorePlate()` (re-centers on digit growth). `#onTeamScore` (NETWORK_TEAM_SCORE) setText + pop ONLY `lastScoringTeam` (`scale {1.3→1.0}/250/Back.easeOut`). **D-18 step 5:** moved `#elementGem`/`#elementLabel`/`#elementHintText` + carousel panel/icons into `#hudContainer` so one alpha reveals the whole HUD. `#hudContainer` starts alpha 0; `#onHudReveal` (HUD_REVEAL) fades to 1 (280ms Quad.easeOut), guarded; 6s late-joiner fallback in update(). New on/off paired in SHUTDOWN.
+- **89cd368** (Task 2, game-scene.ts): `#invulnPulseTween`/`#invulnUntil` fields. `#startInvulnBlink()` in `#onRespawn` local branch (after `#clearLocalDeath`): `#invulnUntil = now + RUNTIME_CONFIG.RESPAWN_INVULN_MAX_MS`, mirror onto `Player.iFrameUntil`, pulse `alpha {1.0→0.35}/150/yoyo/repeat -1`. `#stopInvulnBlink()` stops tween + hard alpha=1 + zeroes `#invulnUntil` (idempotent). Cancels: cast in `#onLocalSpellCast` (covers dash), move+timeout in `#updateInvulnBlinkCancel()` (update()). SHUTDOWN calls stop. Server stays sole damage authority (D-14); client mirror never reports upstream.
+- **8469103** (Task 3): `TDM_RESULTS_SCENE` in scene-keys.ts; `TdmResultsScene` imported+registered in main.ts. New `tdm-results-scene.ts`: scrim fade-in, 32px winner line tinted `TEAM_COLORS[winningTeam]` (gold DRAW), 8px K/D table sorted team-then-kills-desc team-tinted, MVP highlight (gold `* MVP` + underline rect), RETURN TO LOBBY button (main-menu hover verbatim). Reads MatchEndedPayload via SCENE DATA; `#normalizePayload` defensive fallback. GameScene `#onMatchEnded` (NETWORK_MATCH_ENDED) → launch overlay + bringToTop + pause GameScene+UiScene (dup-guarded); paired SHUTDOWN off.
+
+Rule 2 auto-fix: 6s late-joiner HUD-reveal fallback in UiScene.update() (HUD would stay alpha 0 forever if a client misses the cinematic; plan step 5 called for a defensive reveal). Rule 1 auto-fix: MVP tag rendered as ASCII `* MVP` (press_start_2p atlas is ASCII; a Unicode star would render blank).
+
+Decisions: TEAM_COLORS exported from ui-scene.ts (results scene imports it; lobby literal untouched). Cast cancel hooked into the single `#onLocalSpellCast` funnel (auto-covers dash). Results payload via scene data (GameScene owns the one NETWORK_MATCH_ENDED subscription). RETURN TO LOBBY = `window.location.reload()` (established full-reset nav; only safe way to start a fresh lobby/rematch since LobbyScene.create restarts from #showConnectView).
+
+Verification: frontend project-source typecheck `npx tsc 2>&1 | grep -E "^(src/|game-server/)"` = 0 matches (clean) after each task. Contains-markers confirmed: NETWORK_TEAM_SCORE ×2 (ui-scene.ts), RESPAWN_INVULN_MAX_MS (game-scene.ts), RETURN TO LOBBY ×3 (tdm-results-scene.ts), TDM_RESULTS_SCENE (scene-keys.ts), TdmResultsScene ×2 (main.ts). #stopInvulnBlink ≥3 cancel sites + SHUTDOWN.
+
+Summary: .planning/phases/14-core-team-deathmatch-mode/14-04-SUMMARY.md. **Phase 14 all 4 plans structurally complete.** Note for Phase 15 (pickups): TEAM_COLORS exported from ui-scene.ts (don't re-hoist); any new HUD element should be added to `#hudContainer` so it reveals with the HUD; results scene reads its payload via scene data and GameScene owns the NETWORK_MATCH_ENDED subscription. (gsd-sdk unavailable — STATE/ROADMAP updated by hand, git used directly.)
 
 ### Phase 14 execution — plan 03 (2026-05-29)
 

@@ -23,7 +23,7 @@ Turn the working PvP foundation into a tournament-grade experience for the colle
 - [ ] **Phase 11: Reconnect Grace Window** — 15-second slot hold on disconnect; reconnects within window restore active play
 - [ ] **Phase 12: In-Match Feedback HUD** — Kill feed, floating damage numbers, name tags + HP bars overhead, match timer, ping indicator
 - [ ] **Phase 13: Spectator Mode** — Eliminated players watch the remainder of the match (free cam or follow surviving player)
-- [ ] **Phase 14: Core Team Deathmatch Mode** *(ADDED)* — Team kill-score win condition (first team to N), per-map multi-spawnpoints in config.ts, respawn invulnerability, and the upgraded match-intro cinematic (center→player pan, UI reveal, 5→1, banner-timing fix)
+- [x] **Phase 14: Core Team Deathmatch Mode** *(ADDED)* — Team kill-score win condition (first team to N), per-map multi-spawnpoints in config.ts, respawn invulnerability, and the upgraded match-intro cinematic (center→player pan, UI reveal, 5→1, banner-timing fix) (plans complete 2026-05-29)
 - [ ] **Phase 15: Special-Spell Pickups** *(ADDED)* — Void Orb / Dark Bolt / Shield spawn at map spots; server-authoritative single-use claim grants into the special-spell inventory
 
 ## Overview
@@ -254,7 +254,7 @@ Plans:
 - [x] 14-01-PLAN.md — Server: team-deathmatch MatchMode + per-team scoring + win condition + ENDED-with-stats broadcast + bus event registry (completed 2026-05-29)
 - [x] 14-02-PLAN.md — Server: per-map SPAWNPOINTS (debug-tunable, COPY VALUES) + farthest-from-enemy assignment + respawn invuln rejection + 5..1 countdown (completed 2026-05-29)
 - [x] 14-03-PLAN.md — Client: intro cinematic (banner length-scaled reveal fix, camera center->pan->zoom, HUD_REVEAL, 5..1 render) (completed 2026-05-29)
-- [ ] 14-04-PLAN.md — Client: team-score HUD plate + respawn invuln blink/cancel + minimal results scene (winner, K/D, MVP, return to lobby)
+- [x] 14-04-PLAN.md — Client: team-score HUD plate + respawn invuln blink/cancel + minimal results scene (winner, K/D, MVP, return to lobby) (completed 2026-05-29)
 **UI hint**: yes (intro cinematic, UI reveal, team-score display TBD)
 **Source**: 2026-05-29 exploration after school playtest — see `.planning/notes/tdm-intro-cinematic-and-banner-bug.md`
 
@@ -290,7 +290,7 @@ Plans:
 | 11. Reconnect Grace Window | 0/? | Not started | — |
 | 12. In-Match Feedback HUD | 0/? | Not started | — |
 | 13. Spectator Mode | 0/? | Not started | — |
-| 14. Core Team Deathmatch Mode | 3/4 | In progress | — |
+| 14. Core Team Deathmatch Mode | 4/4 | Plans complete | 2026-05-29 |
 | 15. Special-Spell Pickups | 0/? | Not started | — |
 
 ---
