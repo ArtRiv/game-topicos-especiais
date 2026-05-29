@@ -99,7 +99,7 @@ import {
 import { NetworkManager } from '../networking/network-manager';
 import { RemoteInputComponent } from '../components/input/remote-input-component';
 import { MusicManager } from '../common/music-manager';
-import type { PlayerUpdateBroadcast, RoomTransitionPayload, PlayerDisconnectedPayload, PlayerUpdatePayload, SpellCastBroadcast, PlayerInfo, BreathStartBroadcast, BreathUpdateBroadcast, BreathEndBroadcast, EarthWallPillarBroadcast, EarthWallPillarDestroyBroadcast, MatchStateChangedPayload, MatchCountdownTickPayload, DamageConfirmedPayload, SpellDestroyedPayload, EliminationPayload, RespawnPayload, MatchConfig } from '../networking/types';
+import type { PlayerUpdateBroadcast, RoomTransitionPayload, PlayerDisconnectedPayload, PlayerUpdatePayload, SpellCastBroadcast, PlayerInfo, BreathStartBroadcast, BreathUpdateBroadcast, BreathEndBroadcast, EarthWallPillarBroadcast, EarthWallPillarDestroyBroadcast, MatchStateChangedPayload, MatchCountdownTickPayload, DamageConfirmedPayload, SpellDestroyedPayload, EliminationPayload, RespawnPayload, MatchConfig, MatchEndedPayload } from '../networking/types';
 import { RUNTIME_CONFIG } from '../common/runtime-config';
 import type { Direction } from '../common/types';
 
@@ -3644,6 +3644,28 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * Phase 14 (Plan 04, D-06/D-08): on the single match:ended broadcast, launch the minimal
+   * TDM results overlay with the per-player stats payload and FREEZE the world. We launch
+   * (not start) the results scene so it renders ON TOP of the frozen GameScene + UiScene,
+   * then pause both so gameplay halts under the results scrim. The payload is passed via
+   * scene data (no event subscription needed in the results scene). RETURN TO LOBBY in the
+   * results scene does the full network/mesh reset (hard reload).
+   *
+   * Guarded against a duplicate match:ended (the server emits exactly one, but a coalesced
+   * re-delivery must not stack a second overlay).
+   */
+  #onMatchEnded = (payload: MatchEndedPayload): void => {
+    if (this.scene.isActive(SCENE_KEYS.TDM_RESULTS_SCENE)) return;
+    // Stop the respawn-invuln pulse if it was mid-loop when the match ended.
+    this.#stopInvulnBlink();
+    this.scene.launch(SCENE_KEYS.TDM_RESULTS_SCENE, payload);
+    this.scene.bringToTop(SCENE_KEYS.TDM_RESULTS_SCENE);
+    // Freeze gameplay + HUD under the results overlay.
+    this.scene.pause();
+    this.scene.pause(SCENE_KEYS.UI_SCENE);
+  };
+
   #clearLocalDeath(): void {
     this.#deathLockActive = false;
     if (this.#player?.controls) {
@@ -3938,6 +3960,8 @@ export class GameScene extends Phaser.Scene {
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_SPELL_DESTROYED, this.#onSpellDestroyed, this);
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_ELIMINATION, this.#onElimination, this);
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_RESPAWN, this.#onRespawn, this);
+    // Phase 14 (Plan 04, D-06/D-08): launch the minimal results overlay on match ENDED.
+    EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_MATCH_ENDED, this.#onMatchEnded, this);
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       EVENT_BUS.off(CUSTOM_EVENTS.OPENED_CHEST, this.#handleOpenChest, this);
@@ -3955,6 +3979,8 @@ export class GameScene extends Phaser.Scene {
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_SPELL_DESTROYED, this.#onSpellDestroyed, this);
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_ELIMINATION, this.#onElimination, this);
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_RESPAWN, this.#onRespawn, this);
+      // Phase 14 (Plan 04): results-overlay launcher cleanup.
+      EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_MATCH_ENDED, this.#onMatchEnded, this);
       this.#appliedDamageSpellIds.clear();
       this.#clearLocalDeath();
       // Phase 14: tear down the intro banner + its reveal/fade tweens on scene restart.

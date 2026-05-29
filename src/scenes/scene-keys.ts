@@ -6,6 +6,8 @@ export const SCENE_KEYS = {
   GAME_SCENE: 'GAME_SCENE',
   UI_SCENE: 'UI_SCENE',
   GAME_OVER_SCENE: 'GAME_OVER_SCENE',
+  // Phase 14 (D-06/D-08): minimal Team Deathmatch results overlay, launched on match ENDED.
+  TDM_RESULTS_SCENE: 'TDM_RESULTS_SCENE',
   RADIAL_MENU_SCENE: 'RADIAL_MENU_SCENE',
   LOBBY_SCENE: 'LOBBY_SCENE',
   LOADING_SCENE: 'LOADING_SCENE',
