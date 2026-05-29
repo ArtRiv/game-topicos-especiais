@@ -126,8 +126,32 @@ export const FIGHT_HOLD_MS = 500;
 // Mirrored in src/networking/types.ts — keep field shapes identical.
 // ────────────────────────────────────────────────────────────────
 
-/** Match mode: 'respawn' broadcasts a RespawnPayload after RESPAWN_DELAY_MS; 'last-standing' does not (D-12). */
-export type MatchMode = 'respawn' | 'last-standing';
+/** Match mode: 'respawn' broadcasts a RespawnPayload after RESPAWN_DELAY_MS; 'last-standing' does not (D-12).
+ *  'team-deathmatch' (Phase 14, D-03) adds shared per-team kill scoring + a win condition on top of 'respawn' semantics. */
+export type MatchMode = 'respawn' | 'last-standing' | 'team-deathmatch';
+
+/** Phase 14 (D-07): per-player match stats carried in the ENDED broadcast. */
+export type TdmPlayerStat = {
+  playerId: string;
+  name: string;
+  team: number;   // 0 | 1
+  kills: number;
+  deaths: number;
+};
+
+/** Phase 14 (D-04, D-17): live team-score broadcast, emitted on every confirmed kill. */
+export type TeamScorePayload = {
+  teamScores: [number, number];   // [teamA, teamB]
+  lastScoringTeam: number;        // 0 | 1 — which number just changed (drives the pop tween)
+};
+
+/** Phase 14 (D-04, D-06): single win broadcast on ACTIVE -> ENDED. */
+export type MatchEndedPayload = {
+  winningTeam: number | null;     // null = draw (not expected this phase, but supported)
+  teamScores: [number, number];
+  mvpPlayerId: string | null;     // highest kills (D-07 tie-break resolved server-side)
+  stats: TdmPlayerStat[];
+};
 
 /** Outbound from caster: a local-overlap claim that my spell hit a remote player (D-01). */
 export type SpellHitPayload = {
@@ -188,3 +212,6 @@ export const PLAUSIBILITY_RANGE_PX = 96;       // ~2 tiles at 32 px tilesize. TO
 export const PLAUSIBILITY_STALE_MS = 200;      // last position update must be within this window. TODO: tune from playtest
 export const RESPAWN_DELAY_MS = 5000;          // D-09 default. TODO: tune from playtest
 export const MAX_SPELL_DAMAGE = 50;            // RESEARCH.md §2 landmine: cap-check claimed damage. TODO: tune from playtest
+
+/** Phase 14 tunable — server-side authority for the team-deathmatch win condition. */
+export const TDM_WIN_TARGET = 30;   // D-01: first team to 30 kills wins. TODO: tune from playtest.
