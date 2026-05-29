@@ -175,6 +175,8 @@ export type DamageConfirmedPayload = {
   spellType: string;
   hitX: number;
   hitY: number;
+  targetHp: number;   // Phase 14 bugfix: server-authoritative HP AFTER this hit (clients set, never subtract)
+  maxHp: number;      // so clients can render the bar without guessing the max
 };
 
 /** Outbound broadcast from server: target hit 0 HP (D-08). */

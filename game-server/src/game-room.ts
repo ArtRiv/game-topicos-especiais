@@ -177,6 +177,18 @@ export class GameRoom {
     return this.#spawnPoints.get(playerId);
   }
 
+  /** Server-authoritative max HP (mirror of client CONFIG.PLAYER_START_MAX_HEALTH), set by
+   *  registerPlayer. Lets damage:confirmed carry both current + max so clients render the bar
+   *  from server truth instead of subtracting locally (Phase 14 bugfix: HP-drift / stuck-at-1). */
+  public getMaxHp(): number {
+    return this.#maxHp;
+  }
+
+  /** Current server-authoritative HP for a player (or 0 if unknown). */
+  public getHp(playerId: string): number {
+    return this.#hp.get(playerId) ?? 0;
+  }
+
   /** D-10/D-11: pick the player's team spawnpoint that is FARTHEST from any living enemy.
    *  Server-authoritative — reads team from #playerInfo and living-enemy positions from
    *  #lastPos/#hp; the client never asserts a spawn (T-14-06). Never throws (T-14-08):

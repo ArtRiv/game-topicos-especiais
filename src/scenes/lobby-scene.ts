@@ -101,9 +101,9 @@ type NickEasterEgg = {
 
 const NICKNAME_EASTER_EGGS: NickEasterEgg[] = [
   {
-    match: ['gustavo', 'guga'],
+    match: ['gustavo', 'guga', 'gugs', 'gugames', 'games'],
     lines: [
-      { face: MageFace.THINKING, text: 'Gustavo... tive um aluno com esse nome.' },
+      { face: MageFace.THINKING, text: 'Ha... tive um aluno que se chamava assim...' },
       { face: MageFace.SMILE, text: 'Aprovava os rituais dos colegas com entusiasmo genuino.' },
       {
         face: MageFace.LAUGH,
@@ -179,7 +179,7 @@ const NICKNAME_EASTER_EGGS: NickEasterEgg[] = [
     match: ['ederson'],
     lines: [
       { face: MageFace.SURPRISED, text: 'Ederson...' },
-      { face: MageFace.LAUGH, text: 'Esse nome tem uma energia muito especifica. Cara de Boi, por acaso?' },
+      { face: MageFace.LAUGH, text: 'Também me chamo assim! Só não vem me dizer que teu apelido também é Boi...' },
     ],
   },
   {
@@ -630,6 +630,18 @@ export class LobbyScene extends Phaser.Scene {
   // #runDialogueBeat drains from here first; once empty, the scripted beat
   // at #dialogueBeatIndex plays as usual.
   #easterEggQueue: { face: MageFace; text: string }[] = [];
+  // The beat currently displayed on screen — either the scripted beat at
+  // #dialogueBeatIndex OR an override line drained from the easter-egg queue.
+  // #advanceDialogue must read FROM HERE, not from DIALOGUE_BEATS[index],
+  // otherwise fast-complete on an egg line wipes the visible text with the
+  // wrong beat's text. null between beats.
+  #currentBeat: DialogueBeat | null = null;
+  // Set to true on the advance that drained the LAST easter-egg line. The
+  // next advance plays the scripted beat at #dialogueBeatIndex WITHOUT
+  // incrementing (since the egg replaced the "Otimo..." beat at index 4
+  // and #confirmInputBeat already set the index to point at the next
+  // scripted beat after that). Cleared after the first such advance.
+  #easterEggJustEnded = false;
 
   // Boxes/labels created by #showConnectView that we want to live-resize from
   // the debug panel without a full view-rebuild. Held as named refs so the
@@ -764,12 +776,22 @@ export class LobbyScene extends Phaser.Scene {
     // has already been advanced past the default reaction beat at that point.
     if (this.#easterEggQueue.length > 0) {
       const line = this.#easterEggQueue.shift()!;
+      // After this shift, queue may be empty — that means the LINE WE'RE
+      // ABOUT TO PLAY is the final egg line. Flag it so #advanceDialogue
+      // knows to resume the scripted beat at the current (already-correct)
+      // index without incrementing.
+      if (this.#easterEggQueue.length === 0) this.#easterEggJustEnded = true;
       this.#playOverrideSayLine(line);
       return;
     }
 
     const beat = DIALOGUE_BEATS[this.#dialogueBeatIndex];
-    if (!beat) return;
+    if (!beat) {
+      this.#currentBeat = null;
+      return;
+    }
+
+    this.#currentBeat = beat;
 
     if (this.#dialoguePrompt) this.#dialoguePrompt.setAlpha(0);
     if (this.#dialogueTypeTimer) {
@@ -808,6 +830,13 @@ export class LobbyScene extends Phaser.Scene {
   // advance path (#advanceDialogue), which falls through to the next queue
   // entry on the next call to #runDialogueBeat.
   #playOverrideSayLine(line: { face: MageFace; text: string }): void {
+    // Treat the override as a synthetic `say` beat for the duration of its
+    // display so #advanceDialogue (which reads from #currentBeat) sees the
+    // right kind/text. Without this, fast-completing the egg with a click
+    // mid-typewriter would dump the scripted beat's text on screen instead
+    // of the egg line's text, AND the advance logic would get out of sync.
+    this.#currentBeat = { kind: 'say', face: line.face, text: line.text };
+
     if (this.#dialoguePrompt) this.#dialoguePrompt.setAlpha(0);
     if (this.#dialogueTypeTimer) {
       this.#dialogueTypeTimer.remove();
@@ -1012,7 +1041,10 @@ export class LobbyScene extends Phaser.Scene {
   }
 
   #advanceDialogue(): void {
-    const beat = DIALOGUE_BEATS[this.#dialogueBeatIndex];
+    // Read from #currentBeat (which may be a scripted beat OR a synthetic
+    // beat representing an active easter-egg line). Reading from
+    // DIALOGUE_BEATS[#dialogueBeatIndex] here would race the queue logic.
+    const beat = this.#currentBeat;
     if (!beat) return;
     if (beat.kind !== 'say') return;
 
@@ -1030,6 +1062,22 @@ export class LobbyScene extends Phaser.Scene {
 
     if (!this.#dialogueAcceptingAdvance) return;
     this.#dialogueAcceptingAdvance = false;
+
+    // Three transitions out of a say-beat:
+    //   1. More egg lines queued → run the next one. Don't touch index.
+    //   2. Egg JUST ended (this was the last egg line) → run the scripted
+    //      beat at the CURRENT index without incrementing (the index was
+    //      pre-pointed at the first post-egg scripted beat by #confirmInputBeat).
+    //   3. Normal scripted advance → bump index, run next scripted beat.
+    if (this.#easterEggQueue.length > 0) {
+      this.#runDialogueBeat();
+      return;
+    }
+    if (this.#easterEggJustEnded) {
+      this.#easterEggJustEnded = false;
+      this.#runDialogueBeat();
+      return;
+    }
     this.#dialogueBeatIndex++;
     this.#runDialogueBeat();
   }
@@ -1569,6 +1617,9 @@ export class LobbyScene extends Phaser.Scene {
     this.#dialogueAwaitingInput = false;
     this.#dialogueAcceptingAdvance = false;
     this.#dialogueTypeComplete = false;
+    this.#currentBeat = null;
+    this.#easterEggQueue = [];
+    this.#easterEggJustEnded = false;
 
     this.#viewObjects.forEach((o) => o.destroy());
     this.#lobbyListContainer.forEach((o) => o.destroy());

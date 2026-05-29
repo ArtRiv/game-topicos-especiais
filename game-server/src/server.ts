@@ -323,6 +323,8 @@ io.on('connection', (socket) => {
       spellType: claim.spellType,
       hitX: claim.hitX,
       hitY: claim.hitY,
+      targetHp: result.newHp,        // Phase 14 bugfix: authoritative HP after the hit
+      maxHp: room.getMaxHp(),
     };
     io.to(`lobby:${lobbyId}`).emit('damage:confirmed', confirmed);
 
