@@ -3636,9 +3636,12 @@ export class GameScene extends Phaser.Scene {
       (this.#player.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
     }
 
-    // LFC-07: snap-out → animate-in. Duration matches COUNTDOWN_DURATION_MS = 3000.
-    this.cameras.main.setZoom(0.6);
-    this.cameras.main.zoomTo(1.0, 3000, 'Sine.easeOut');
+    // Phase 14 (D-18 steps 2-5 / D-20): EXTEND the old snap-out→zoom-in into the full
+    // intro cinematic — wide establishing shot at map center → hold → pan to the local
+    // player → zoom in to play distance → emit HUD_REVEAL. The zoomed-OUT value lives
+    // ONLY here (never in #setupCamera) so a late-joiner that misses COUNTDOWN defaults
+    // to play zoom (existing late-joiner safety rule).
+    this.#playIntroCameraSequence();
 
     // Phase 14 (D-18 step 1 / D-19): reveal the map-name banner. Its reveal duration
     // scales to the name length so long names always finish before teardown.
@@ -3694,6 +3697,59 @@ export class GameScene extends Phaser.Scene {
       ease: 'Back.easeOut',
     });
   };
+
+  /**
+   * Phase 14 (D-18 steps 2-5 / D-20): the TDM intro camera cinematic.
+   *
+   * Sequence (exact values are discretion within the UI-SPEC ranges):
+   *   1. Wide establishing: setZoom(outZoom) + centerOn(map center). The map/room
+   *      center is derived from the current room bounds (mirrors #setupCamera).
+   *   2. Hold ~400ms, then pan map-center → local player (Sine.easeInOut).
+   *   3. On pan completion, zoom in to play zoom (Cubic.easeOut).
+   *   4. On zoom completion, re-attach startFollow(player) and emit HUD_REVEAL so the
+   *      UiScene fades its HUD in (UiScene side wired in Plan 04).
+   *
+   * The camera is following the player from #setupCamera, so stopFollow() first —
+   * pan() cannot scroll while a follow target is active.
+   */
+  #playIntroCameraSequence(): void {
+    const OUT_ZOOM = 0.6; // wide establishing (reuse the existing snap-out value)
+    const PLAY_ZOOM = 1.0;
+    const CENTER_HOLD_MS = 400;
+    const PAN_MS = 1100;
+    const ZOOM_IN_MS = 900;
+
+    const cam = this.cameras.main;
+    cam.stopFollow();
+    cam.setZoom(OUT_ZOOM);
+
+    // Map/room center: #setupCamera sets bounds to
+    // (roomSize.x, roomSize.y - roomSize.height, roomSize.width, roomSize.height),
+    // so the center of those bounds is the wide establishing target.
+    const roomSize = this.#objectsByRoomId[this.#levelData.roomId].room;
+    const mapCenterX = roomSize.x + roomSize.width / 2;
+    const mapCenterY = roomSize.y - roomSize.height / 2;
+    cam.centerOn(mapCenterX, mapCenterY);
+
+    const targetX = this.#player?.x ?? mapCenterX;
+    const targetY = this.#player?.y ?? mapCenterY;
+
+    // Hold on the wide shot, then pan → player. delayedCall is a one-shot scene timer
+    // (not a countdown driver — the countdown labels stay 100% server-driven).
+    this.time.delayedCall(CENTER_HOLD_MS, () => {
+      this.cameras.main.pan(targetX, targetY, PAN_MS, 'Sine.easeInOut', false, (_cam, progress) => {
+        if (progress < 1) return; // pan callback fires every frame; act only on completion
+        // Step 4: zoom in to play distance once the pan finishes.
+        this.cameras.main.zoomTo(PLAY_ZOOM, ZOOM_IN_MS, 'Cubic.easeOut', false, (_zc, zp) => {
+          if (zp < 1) return;
+          // Re-attach follow so the camera tracks the player once gameplay resumes.
+          this.cameras.main.startFollow(this.#player);
+          // Step 5: reveal the HUD (UiScene fades #hudContainer in — Plan 04).
+          EVENT_BUS.emit(CUSTOM_EVENTS.HUD_REVEAL);
+        });
+      });
+    });
+  }
 
   /**
    * Phase 14 (D-18 step 1 / D-19): the TDM intro map-name banner.
