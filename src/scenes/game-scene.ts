@@ -3648,12 +3648,47 @@ export class GameScene extends Phaser.Scene {
         // The camera may still be following from #setupCamera; re-center on the true spawn so the
         // player isn't off-screen at match start (the intro sequence re-attaches follow on finish).
         this.cameras.main.centerOn(a.x, a.y);
+        // Phase 14 bugfix (TDM playtest #5): a brief spawn-in cue so the placement reads as a
+        // deliberate "you spawned here" beat rather than a silent teleport.
+        this.#playSpawnInCue(this.#player, a.x, a.y);
         continue;
       }
       const remote = this.#remotePlayers.get(a.playerId);
-      if (remote) remote.setPosition(a.x, a.y);
+      if (remote) {
+        remote.setPosition(a.x, a.y);
+        this.#playSpawnInCue(remote, a.x, a.y);
+      }
     }
   };
+
+  /**
+   * Phase 14 bugfix (TDM playtest #5): a short, self-cleaning spawn-in cue at a player's match-start
+   * spawn — a scale pop on the sprite plus an expanding fading ring at the spawn point. World-space
+   * (scrolls with the camera). Purely cosmetic; safe to call for local and remote players.
+   */
+  #playSpawnInCue(target: Player, x: number, y: number): void {
+    if (!target?.active) return;
+    // Sprite pop-in: from slightly enlarged back to normal.
+    target.setScale(1.6);
+    this.tweens.add({
+      targets: target,
+      scale: { from: 1.6, to: 1.0 },
+      duration: 320,
+      ease: 'Back.easeOut',
+    });
+    // Expanding ring at the spawn point (world space, beneath the HUD/cinematic overlays).
+    // Grow via SCALE (not the Arc radius setter, which doesn't reliably re-render on tween) so the
+    // ring visibly expands; fade alpha to 0 and self-destroy.
+    const ring = this.add.circle(x, y, 10, 0xffffff, 0).setStrokeStyle(2, 0xffdd55, 0.9).setDepth(50).setScale(0.6);
+    this.tweens.add({
+      targets: ring,
+      scale: { from: 0.6, to: 2.8 },
+      alpha: { from: 0.9, to: 0 },
+      duration: 420,
+      ease: 'Cubic.easeOut',
+      onComplete: () => ring.destroy(),
+    });
+  }
 
   /**
    * Phase 14 (D-12/D-13, UI-SPEC surface 3): start the respawn-invulnerability cue on the
@@ -3931,11 +3966,16 @@ export class GameScene extends Phaser.Scene {
   #showMapBanner(): void {
     // Tunables (D-19) — per-char reveal pacing with a clamp so the reveal never runs
     // too short (cuts letters) nor too long (overstays the cinematic window).
-    const BANNER_MS_PER_CHAR = 70;
-    const BANNER_MIN_MS = 600;
-    const BANNER_MAX_MS = 2000;
-    const BANNER_HOLD_MS = 500; // brief hold after the reveal before the fade-out
-    const BANNER_FADE_MS = 300;
+    // Phase 14 bugfix (TDM playtest #5): the reveal read as "too short". Slowed the typewriter
+    // (120 ms/char vs 70), raised the floor (1100 ms vs 600), and lengthened the hold (900 ms vs
+    // 500) so the map name lands as a deliberate match-start beat. Still well within the server's
+    // 5500 ms COUNTDOWN window (worst case "DUNGEON 1" = 9 chars → 1100 ms reveal + 900 hold +
+    // 350 fade ≈ 2.35 s, leaving the 5..1 digits room to play under it).
+    const BANNER_MS_PER_CHAR = 120;
+    const BANNER_MIN_MS = 1100;
+    const BANNER_MAX_MS = 2600;
+    const BANNER_HOLD_MS = 900; // hold after the reveal before the fade-out
+    const BANNER_FADE_MS = 350;
 
     const name = this.#levelData.level.replace(/_/g, ' ').toUpperCase();
 
