@@ -1,10 +1,11 @@
 ---
 phase: 14
 slug: core-team-deathmatch-mode
-status: draft
+status: approved
 shadcn_initialized: false
 preset: none
 created: 2026-05-29
+reviewed_at: 2026-05-29
 ---
 
 # Phase 14 — UI Design Contract
