@@ -50,6 +50,8 @@ export class GameRoom {
   #teamScores: [number, number] = [0, 0];                                   // shared per-team kill total
   #kills = new Map<string, number>();                                       // playerId → kills (caster-attributed)
   #deaths = new Map<string, number>();                                      // playerId → deaths (target-attributed)
+  // --- Phase 14: server-authoritative respawn invuln (D-12, D-14) ---
+  #invulnUntil = new Map<string, number>();                                 // playerId → epoch ms until which hits are rejected
 
   get state(): MatchState { return this.#state; }
 
@@ -175,6 +177,50 @@ export class GameRoom {
     return this.#spawnPoints.get(playerId);
   }
 
+  /** D-10/D-11: pick the player's team spawnpoint that is FARTHEST from any living enemy.
+   *  Server-authoritative — reads team from #playerInfo and living-enemy positions from
+   *  #lastPos/#hp; the client never asserts a spawn (T-14-06). Never throws (T-14-08):
+   *  unknown mapId falls back to WORLD, undefined team defaults to teamA, empty list returns {100,100}.
+   *  Overflow (more players than spawns) is implicitly safe — players may legitimately share the
+   *  farthest spawn (D-11 "reuse/cycle"). Distances are compared squared (no sqrt needed). */
+  public pickSpawn(playerId: string, mapId: string): { x: number; y: number } {
+    const team = this.#playerInfo.get(playerId)?.team;
+    const map = SPAWNPOINTS[mapId] ?? SPAWNPOINTS['WORLD'];
+    const list = team === 1 ? map.teamB : map.teamA;   // undefined/0 -> teamA (D-11)
+    if (list.length === 0) return { x: 100, y: 100 };
+
+    // Gather LIVING ENEMY positions (different team than this player, HP > 0, known position).
+    const enemies: { x: number; y: number }[] = [];
+    for (const info of this.#playerInfo.values()) {
+      if (info.id === playerId) continue;
+      if (info.team === team) continue;                // same team is not an enemy
+      if ((this.#hp.get(info.id) ?? 0) <= 0) continue; // dead -> not "living"
+      const pos = this.#lastPos.get(info.id);
+      if (pos) enemies.push({ x: pos.x, y: pos.y });
+    }
+
+    // No living enemies → deterministic first spawn.
+    if (enemies.length === 0) return list[0];
+
+    // Score each candidate by its distance to its NEAREST living enemy; pick the largest such distance.
+    let best = list[0];
+    let bestNearestSq = -1;
+    for (const cand of list) {
+      let nearestSq = Number.POSITIVE_INFINITY;
+      for (const e of enemies) {
+        const dx = cand.x - e.x;
+        const dy = cand.y - e.y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 < nearestSq) nearestSq = d2;
+      }
+      if (nearestSq > bestNearestSq) {
+        bestNearestSq = nearestSq;
+        best = cand;
+      }
+    }
+    return best;
+  }
+
   /** D-05 friendly-fire check. Returns true only when BOTH players have a defined team that matches.
    *  When either side is undefined (e.g., free-for-all 1v1), returns false — FF is effectively disabled. */
   public isSameTeam(casterId: string, targetId: string): boolean {
@@ -199,6 +245,9 @@ export class GameRoom {
     const known = this.#lastPos.get(claim.targetId);
     if (!known) return false;
     if (now - known.ts > PLAUSIBILITY_STALE_MS) return false;
+    // D-14: reject hits on a server-tracked invulnerable target (respawn protection). The server's
+    // #invulnUntil map is the sole authority — the client blink/cancel (Plan 04) is cosmetic only.
+    if (now < (this.#invulnUntil.get(claim.targetId) ?? 0)) return false;
     const dx = known.x - claim.hitX;
     const dy = known.y - claim.hitY;
     return dx * dx + dy * dy <= PLAUSIBILITY_RANGE_PX * PLAUSIBILITY_RANGE_PX;
@@ -243,6 +292,19 @@ export class GameRoom {
    *  (T-09.3.02-07 mitigation). Lobby UI selector deferred to Phase 9.4 / 10. */
   public setMatchMode(mode: MatchMode): void { this.#matchMode = mode; }
   public get matchMode(): MatchMode { return this.#matchMode; }
+
+  /** D-12/D-14: start the server-authoritative respawn-invuln window for a player. validateHit
+   *  rejects any spell:hit on this player until RESPAWN_INVULN_MAX_MS from now. Called by server.ts
+   *  on match start and on each respawn callback — never from a client message. */
+  public startInvuln(playerId: string): void {
+    this.#invulnUntil.set(playerId, Date.now() + RESPAWN_INVULN_MAX_MS);
+  }
+
+  /** Clear a player's invuln window early (e.g. server-side hook; the client move/cast cancel in
+   *  Plan 04 is cosmetic-only and does NOT call this — the server cap is the authority). */
+  public clearInvuln(playerId: string): void {
+    this.#invulnUntil.delete(playerId);
+  }
 
   // ──────────────────────────────────────────────────────────────────────────
   // Phase 14: team-deathmatch scoring (D-04, D-05, D-07). Server-authoritative —
@@ -319,5 +381,7 @@ export class GameRoom {
     this.#teamScores = [0, 0];
     this.#kills.clear();
     this.#deaths.clear();
+    // Phase 14 (D-14): drop any lingering invuln windows so a rematch starts unprotected.
+    this.#invulnUntil.clear();
   }
 }
