@@ -19,6 +19,18 @@ import { ManaUpdatedData } from '../components/game-object/mana-component';
 import { ElementManager } from '../common/element-manager';
 import { Element, SpellId } from '../common/types';
 import { SPELL_CONFIG } from '../game-objects/spells/spell-registry';
+import { TeamScorePayload } from '../networking/types';
+
+// ───────────────────────────────────────────────────────────────────────────────
+// Phase 14 (D-16, UI-SPEC §Color): the canonical team-color palette, indexable by
+// PlayerInfo.team (0 = Team A, 1 = Team B). These are the lobby player-row BADGE
+// tints (lobby-scene.ts ~L1447: team 0 → 0x44aaff, team 1 → 0xff5533) — NOT the
+// lobby toggle-button fills (0x0066dd / 0xcc2200). Hoisted here as the single source
+// of truth so the score plate (surface 2) and the results scene (surface 4) tint
+// teams identically to the badge the player saw in the lobby. The lobby keeps its
+// own literal for now (a comment there points at this constant) to avoid risking the
+// lobby in this plan.
+export const TEAM_COLORS = [0x44aaff, 0xff5533] as const;
 
 type CooldownEntry = {
   spellId: string;
@@ -64,6 +76,19 @@ const CAROUSEL_ALPHA_TOP = 1.0;
 const CAROUSEL_ALPHA_BOTTOM = 0.25;
 const CAROUSEL_ANIM_DURATION_MS = 220;        // tween duration when rotating
 
+// ───────────────────────────────────────────────────────────────────────────────
+// Phase 14 (D-15/D-16, UI-SPEC surface 2): team-score plate layout. Top-center band
+// (canvas center-X 240, y ≈ 10) — clear of the mana bar (x=8,y=14) and hearts (x 157+).
+// ───────────────────────────────────────────────────────────────────────────────
+const SCORE_PLATE_CENTER_X = 240;
+const SCORE_PLATE_Y = 10;
+const SCORE_PLATE_SIZE = 16;   // press_start_2p Heading size (matches countdown/menu hierarchy)
+const SCORE_PLATE_GAP = 6;     // px between the [A]n piece, the dash, and the m[B] piece
+// Late-joiner fallback: reveal the HUD after this much scene time even if HUD_REVEAL never
+// fires (no cinematic). Must exceed the server COUNTDOWN span (5500ms) so a normal client
+// always reveals via the cinematic emit first.
+const HUD_REVEAL_FALLBACK_MS = 6000;
+
 // Elements shown in the carousel, in display order. The list is treated as circular.
 const CAROUSEL_ELEMENTS = [
   ELEMENT.FIRE,
@@ -105,6 +130,24 @@ export class UiScene extends Phaser.Scene {
   // Special-spell charges HUD (e.g. VoidOrb). Icon + count, bottom-right corner.
   #specialIcon!: Phaser.GameObjects.Image;
   #specialChargesText!: Phaser.GameObjects.Text;
+
+  // Phase 14 (D-15/D-16/D-17, UI-SPEC surface 2): top-center team-score plate.
+  // Built from SEPARATE BitmapText pieces so each carries its own per-team tint:
+  //   #scoreTextA = "[A] n"  (tint TEAM_COLORS[0]) | #scoreDash = "–" (white)
+  //   #scoreTextB = "m [B]"  (tint TEAM_COLORS[1])
+  // All live inside #hudContainer so they reveal/hide with the rest of the HUD
+  // during the cinematic. Live score state is mirrored so we only re-center on
+  // digit-count growth and only pop the number that actually changed.
+  #scoreTextA!: Phaser.GameObjects.BitmapText;
+  #scoreDash!: Phaser.GameObjects.BitmapText;
+  #scoreTextB!: Phaser.GameObjects.BitmapText;
+  #teamScores: [number, number] = [0, 0];
+
+  // Phase 14 (D-18 step 5): the HUD starts hidden and the cinematic owns its reveal.
+  // GameScene emits CUSTOM_EVENTS.HUD_REVEAL once after the intro zoom-in; we fade
+  // #hudContainer in then. #hudRevealed guards against a double-fade and lets a
+  // late-joiner (no cinematic) reveal defensively from update().
+  #hudRevealed: boolean = false;
 
   constructor() {
     super({
@@ -185,8 +228,23 @@ export class UiScene extends Phaser.Scene {
       })
       .setOrigin(0);
 
+    // Phase 14 (D-18 step 5 / UI-SPEC surface 1): the element / radial-menu affordance
+    // must reveal WITH the rest of the HUD on HUD_REVEAL. Historically these were added
+    // straight to the scene (NOT to #hudContainer), so they would have stayed visible
+    // during the cinematic. Parent them into #hudContainer now — only the parent changes;
+    // the refs still point at the same objects, so #updateElementIndicator still works.
+    this.#hudContainer.add([this.#elementGem, this.#elementLabel, this.#elementHintText]);
+
     this.#createElementCarousel();
+    // Parent the carousel pieces into #hudContainer too so the radial-menu affordance
+    // reveals with the HUD (the gem panel + the per-element icons).
+    this.#hudContainer.add(this.#carouselPanel);
+    this.#hudContainer.add(this.#carouselIcons);
+
     this.#createSpecialChargesHud();
+
+    // Phase 14 (D-15/D-16, UI-SPEC surface 2): build the top-center team-score plate.
+    this.#createScorePlate();
 
     // Wind-dash hint — centred along the bottom of the canvas (480 wide,
     // 320 tall). Shown only when the active element is WIND. Tinted with
@@ -202,6 +260,13 @@ export class UiScene extends Phaser.Scene {
     );
     this.#hudContainer.add(this.#windDashHint);
 
+    // Phase 14 (D-18 step 5): the cinematic owns HUD visibility. Start the WHOLE HUD
+    // hidden (one alpha controls the bars, the score plate, AND the element/radial
+    // affordance — all now inside #hudContainer) and fade it in on HUD_REVEAL. The
+    // GameScene emits HUD_REVEAL once after the intro zoom-in (Plan 03).
+    this.#hudContainer.setAlpha(0);
+    this.#hudRevealed = false;
+
     // register event listeners
     EVENT_BUS.on(CUSTOM_EVENTS.PLAYER_HEALTH_UPDATED, this.updateHealthInHud, this);
     EVENT_BUS.on(CUSTOM_EVENTS.SHOW_DIALOG, this.showDialog, this);
@@ -211,6 +276,9 @@ export class UiScene extends Phaser.Scene {
     EVENT_BUS.on(CUSTOM_EVENTS.ELEMENT_CAROUSEL_STEP, this.#onCarouselStep, this);
     EVENT_BUS.on(CUSTOM_EVENTS.SPELL_CAST, this.#onSpellCast, this);
     EVENT_BUS.on(CUSTOM_EVENTS.SPECIAL_SPELL_CHARGES_CHANGED, this.#onSpecialChargesChanged, this);
+    // Phase 14: live team-score plate + cinematic HUD reveal.
+    EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_TEAM_SCORE, this.#onTeamScore, this);
+    EVENT_BUS.on(CUSTOM_EVENTS.HUD_REVEAL, this.#onHudReveal, this);
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       EVENT_BUS.off(CUSTOM_EVENTS.PLAYER_HEALTH_UPDATED, this.updateHealthInHud, this);
@@ -221,11 +289,23 @@ export class UiScene extends Phaser.Scene {
       EVENT_BUS.off(CUSTOM_EVENTS.ELEMENT_CAROUSEL_STEP, this.#onCarouselStep, this);
       EVENT_BUS.off(CUSTOM_EVENTS.SPELL_CAST, this.#onSpellCast, this);
       EVENT_BUS.off(CUSTOM_EVENTS.SPECIAL_SPELL_CHARGES_CHANGED, this.#onSpecialChargesChanged, this);
+      // Phase 14 cleanup — mirror every new on() with an off().
+      EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_TEAM_SCORE, this.#onTeamScore, this);
+      EVENT_BUS.off(CUSTOM_EVENTS.HUD_REVEAL, this.#onHudReveal, this);
     });
   }
 
   public update(): void {
     const now = this.time.now;
+
+    // Phase 14 late-joiner safety: if no cinematic ran (so HUD_REVEAL never arrived)
+    // the HUD would stay invisible forever. After ~6s of scene life with the HUD still
+    // hidden, defensively reveal it. The 6s window comfortably exceeds the server's
+    // 5500ms COUNTDOWN span, so a normal client always reveals via the cinematic first.
+    if (!this.#hudRevealed && now > HUD_REVEAL_FALLBACK_MS) {
+      this.#onHudReveal();
+    }
+
     for (const entry of this.#cooldownEntries) {
       if (entry.fading) continue;
       const progress = Math.min((now - entry.startTime) / entry.cooldownMs, 1);
@@ -288,6 +368,100 @@ export class UiScene extends Phaser.Scene {
     const percent = data.currentMana / data.maxMana;
     this.#manaBarFill.setScale(percent, 1);
   }
+
+  // ─── Team-score plate (Phase 14, surface 2 — D-15/D-16/D-17) ──────────────────
+
+  /**
+   * Build the top-center `[A] n – m [B]` plate from three separate BitmapText pieces
+   * (per-piece tint, D-16), all press_start_2p 16px, added to #hudContainer so they
+   * reveal/hide with the rest of the HUD during the cinematic. The plate is anchored
+   * to canvas center-X = 240, y ≈ 10 — the top-center band (x 100–380, y 4–20) is free
+   * of the left-anchored mana bar (x=8,y=14) and the hearts block (x 157–237, y 25/33).
+   */
+  #createScorePlate(): void {
+    this.#teamScores = [0, 0];
+
+    // press_start_2p 16px (Heading). Center the whole group as one unit via #layoutScorePlate.
+    this.#scoreTextA = this.add
+      .bitmapText(0, SCORE_PLATE_Y, 'press_start_2p', `[A] ${this.#teamScores[0]}`, SCORE_PLATE_SIZE)
+      .setOrigin(0, 0.5)
+      .setTint(TEAM_COLORS[0]);
+    this.#scoreDash = this.add
+      .bitmapText(0, SCORE_PLATE_Y, 'press_start_2p', '-', SCORE_PLATE_SIZE)
+      .setOrigin(0, 0.5)
+      .setTint(0xffffff);
+    this.#scoreTextB = this.add
+      .bitmapText(0, SCORE_PLATE_Y, 'press_start_2p', `${this.#teamScores[1]} [B]`, SCORE_PLATE_SIZE)
+      .setOrigin(0, 0.5)
+      .setTint(TEAM_COLORS[1]);
+
+    this.#hudContainer.add([this.#scoreTextA, this.#scoreDash, this.#scoreTextB]);
+    this.#layoutScorePlate();
+  }
+
+  /**
+   * Re-center the three score pieces around center-X = 240, laid out left→right with a
+   * small gap. Called on create and whenever a digit count grows (e.g. 9→10) so the
+   * group stays centered as one unit. setOrigin(0, 0.5) means each piece's x is its left
+   * edge; we sum their widths + gaps and shift the group so it is horizontally centered.
+   */
+  #layoutScorePlate(): void {
+    const a = this.#scoreTextA;
+    const dash = this.#scoreDash;
+    const b = this.#scoreTextB;
+    const totalW = a.width + SCORE_PLATE_GAP + dash.width + SCORE_PLATE_GAP + b.width;
+    let x = SCORE_PLATE_CENTER_X - totalW / 2;
+    a.x = x;
+    x += a.width + SCORE_PLATE_GAP;
+    dash.x = x;
+    x += dash.width + SCORE_PLATE_GAP;
+    b.x = x;
+  }
+
+  /**
+   * Live score update (D-17). setText the changed number(s), re-center if any digit count
+   * grew, and pop ONLY the number for payload.lastScoringTeam using the SAME tween shape
+   * as the countdown tick (scale 1.3 → 1.0, 250ms, Back.easeOut). The other team's number
+   * stays still.
+   */
+  #onTeamScore = (payload: TeamScorePayload): void => {
+    this.#teamScores = [payload.teamScores[0], payload.teamScores[1]];
+    this.#scoreTextA.setText(`[A] ${this.#teamScores[0]}`);
+    this.#scoreTextB.setText(`${this.#teamScores[1]} [B]`);
+    // Re-center (cheap; only the layout math, no allocation). Handles digit growth.
+    this.#layoutScorePlate();
+
+    const popTarget = payload.lastScoringTeam === 1 ? this.#scoreTextB : this.#scoreTextA;
+    this.tweens.add({
+      targets: popTarget,
+      scale: { from: 1.3, to: 1.0 },
+      duration: 250,
+      ease: 'Back.easeOut',
+    });
+  };
+
+  // ─── Cinematic HUD reveal (Phase 14, surface 1 step 5 — D-18) ─────────────────
+
+  /**
+   * Fade the whole HUD in once the intro cinematic's zoom-in completes. Because the
+   * bars, the score plate, AND the element/radial affordance all live inside
+   * #hudContainer, one alpha tween reveals the entire HUD together (D-18 step 5).
+   * Guarded so a duplicate HUD_REVEAL (or a late-joiner defensive reveal from update())
+   * just snaps to alpha 1 instead of re-running the fade.
+   */
+  #onHudReveal = (): void => {
+    if (this.#hudRevealed) {
+      this.#hudContainer.setAlpha(1);
+      return;
+    }
+    this.#hudRevealed = true;
+    this.tweens.add({
+      targets: this.#hudContainer,
+      alpha: { from: 0, to: 1 },
+      duration: 280,
+      ease: 'Quad.easeOut',
+    });
+  };
 
   #updateElementIndicator(data: ElementChangedData): void {
     const colorMap: Record<Element, number> = {
