@@ -39,4 +39,13 @@ export class LifeComponent extends BaseGameObjectComponent {
   public resetToFull(): void {
     this.#currentLife = this.#maxLife;
   }
+
+  // Phase 14 bugfix (TDM server-authoritative HP): hard-set current life to an absolute value,
+  // clamped to [0, maxLife]. Unlike takeDamage()/heal() this neither subtracts nor respects the
+  // "already dead" guard — it mirrors the server's authoritative post-hit HP onto the client so
+  // the two never drift (the cause of the "stuck at half a heart" desync). Reviving from 0 is
+  // allowed; the respawn flow still uses resetToFull().
+  public setLife(value: number): void {
+    this.#currentLife = Math.max(0, Math.min(this.#maxLife, value));
+  }
 }

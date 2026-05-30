@@ -3493,20 +3493,19 @@ export class GameScene extends Phaser.Scene {
       if (this.time.now < this.#player.iFrameUntil) {
         return;
       }
-      // Phase 14 bugfix (TDM playtest #1/#3): in a team-deathmatch match, death + respawn are
-      // SERVER-AUTHORITATIVE (NETWORK_ELIMINATION → #applyLocalDeath, NETWORK_RESPAWN → reposition).
-      // The local HP-zero must NOT drive DEATH_STATE → PLAYER_DEFEATED → GAME_OVER_SCENE (that
-      // legacy single-player path raced the TDM flow and yanked the dying client to game-over,
-      // which also broke the server scoring round). So in TDM we apply the HUD/hurt feedback but
-      // FLOOR local HP at 1 — the authoritative elimination comes from the server.
+      // Phase 14 bugfix (TDM playtest #1/#3, server-authoritative HP): in a team-deathmatch the
+      // SERVER is the sole HP authority. SET local HP to the authoritative post-hit value
+      // (payload.targetHp) — never subtract locally. Independent client/server subtraction is what
+      // caused the "stuck at half a heart" desync; the old workaround floored local HP at 1, which
+      // only hid the drift. We refresh the HUD from targetHp, play the hurt flash while still
+      // alive, and NEVER drive DEATH_STATE here: death + respawn are server-authoritative
+      // (NETWORK_ELIMINATION → #applyLocalDeath, NETWORK_RESPAWN → reposition+refill).
       if (this.#isTeamDeathmatchMatch()) {
-        const life = this.#player.lifeComponent;
-        const next = Math.max(1, life.life - payload.amount);
-        const applied = life.life - next;
-        if (applied > 0) {
-          // hit() with the clamped amount: keeps HUD refresh + hurt anim + post-hit i-frames,
-          // but can never cross 0 → never enters DEATH_STATE → never emits PLAYER_DEFEATED.
-          this.#player.hit(DIRECTION.DOWN, applied);
+        this.#player.lifeComponent.setLife(payload.targetHp);
+        DataManager.instance.updatePlayerCurrentHealth(payload.targetHp);
+        if (payload.targetHp > 0) {
+          // Hurt feedback (flash + brief knockback) WITHOUT hit()'s HP-zero → DEATH_STATE path.
+          this.#player.stateMachine.setState(CHARACTER_STATES.HURT_STATE, DIRECTION.DOWN);
         }
         return;
       }
@@ -3610,6 +3609,10 @@ export class GameScene extends Phaser.Scene {
       this.#clearLocalDeath();
       this.#player.setPosition(payload.x, payload.y);
       this.#player.lifeComponent.resetToFull();
+      // Phase 14 bugfix (server-authoritative HP): resetToFull only mutates the LifeComponent —
+      // the HUD reads DataManager. Refresh it so the heart bar refills on respawn (without this,
+      // after the death/respawn cycle the HUD stayed at the last damaged value → "half a heart").
+      DataManager.instance.updatePlayerCurrentHealth(this.#player.lifeComponent.life);
       this.#player.clearTint();
       // Phase 14 (D-12/D-13): start the respawn-invuln alpha pulse AFTER #clearLocalDeath
       // tears down the death overlay + position/HP/tint are restored (do not blink while
@@ -4905,8 +4908,9 @@ export class GameScene extends Phaser.Scene {
     // Phase 14 bugfix (TDM playtest #1): never fall through to the single-player GAME_OVER
     // screen during a team-deathmatch. Death + respawn are server-authoritative there; the
     // server's `elimination` → `respawn` broadcasts drive #applyLocalDeath / #onRespawn. This
-    // guard is defence-in-depth — #onDamageConfirmed already floors local HP at 1 in TDM so
-    // DEATH_STATE shouldn't be reached, but any other 0-HP source (hazard, desync) is caught here.
+    // guard is defence-in-depth — #onDamageConfirmed no longer drives DEATH_STATE in TDM (it SETs
+    // HP from the server and never calls hit()), but any other 0-HP source (hazard, legacy state
+    // transition, desync) is caught here so it can never reach the single-player GAME_OVER screen.
     if (this.#isTeamDeathmatchMatch()) {
       return;
     }
