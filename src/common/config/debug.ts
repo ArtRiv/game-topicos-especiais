@@ -25,3 +25,12 @@ export const SPELL_GHOST_ALPHA = 0.4;
 // IMPORTANT: leave this false when committing/shipping — multiplayer / match
 // setup is bypassed entirely, so this is single-player only.
 export const DEV_SKIP_TO_GAMEPLAY = false;
+
+// DEV shortcut: skip splash → main-menu → connect dialogue (name entry + "localhost"
+// rune) and boot straight into LobbyScene's lobby browse/create screen. UNLIKE
+// DEV_SKIP_TO_GAMEPLAY this still needs a live server connection — LobbyScene auto-
+// connects with a default nickname ('Player') to the default IP ('localhost':3000),
+// then lands on the lobby list. If that connect fails it falls back to the normal
+// connect dialogue so the IP can be corrected. Useful for fast lobby/match iteration.
+// IMPORTANT: leave this false when committing/shipping.
+export const SKIP_TO_LOBBY = false;

@@ -22,7 +22,7 @@ import { RadialMenuScene } from './scenes/radial-menu-scene';
 import { DebugPanel } from './debug/debug-panel';
 import { LobbyDebugPanel } from './debug/lobby-debug-panel';
 import { installCustomCursor } from './common/cursor';
-import { DEV_SKIP_TO_GAMEPLAY } from './common/config';
+import { DEV_SKIP_TO_GAMEPLAY, SKIP_TO_LOBBY } from './common/config';
 import { startMenuVideoPrefetch } from './common/menu-video-prefetch';
 
 // Fire-and-forget HTTP prefetch of the 12 MB landscape.mp4 the moment this
@@ -124,6 +124,11 @@ void (async () => {
   if (DEV_SKIP_TO_GAMEPLAY) {
     console.warn('[DEV_SKIP_TO_GAMEPLAY] Skipping splash/menu/lobby — booting straight into gameplay.');
     game.scene.start(SCENE_KEYS.PRELOAD_SCENE);
+  } else if (SKIP_TO_LOBBY) {
+    // Boot straight into LobbyScene; it auto-connects with defaults and shows the lobby list
+    // (still needs the server, unlike DEV_SKIP_TO_GAMEPLAY which is fully offline).
+    console.warn('[SKIP_TO_LOBBY] Skipping splash/menu/connect dialogue — booting into the lobby.');
+    game.scene.start(SCENE_KEYS.LOBBY_SCENE);
   } else {
     game.scene.start(SCENE_KEYS.SPLASH_SCENE);
   }

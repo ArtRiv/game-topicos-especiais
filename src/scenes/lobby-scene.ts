@@ -6,6 +6,7 @@ import type { Lobby, LobbyConfig, LobbyFormat, MatchConfig, PlayerInfo } from '.
 import { MAP_POOL } from '../networking/types.js';
 import { ASSET_KEYS } from '../common/assets.js';
 import { LOBBY_VOLUME, MusicManager } from '../common/music-manager';
+import { SKIP_TO_LOBBY } from '../common/config';
 
 // BitmapText replaces Phaser.GameObjects.Text. Press_Start_2P TTF was
 // pre-rasterized via Snowb into Press_Start-2.png + Press_Start-2.fnt
@@ -565,7 +566,13 @@ export class LobbyScene extends Phaser.Scene {
   }
 
   public create(): void {
-    this.#showConnectView();
+    // Dev flag SKIP_TO_LOBBY: bypass the connect dialogue (name + "localhost" rune) and
+    // auto-connect with defaults straight to the lobby list. Otherwise show the dialogue.
+    if (SKIP_TO_LOBBY) {
+      this.#skipToLobbyConnect();
+    } else {
+      this.#showConnectView();
+    }
 
     // Switch from intro music (teste.mp3) to the standard menu loop, faded
     // directly to the ducked LOBBY_VOLUME (0.03) so we don't have a tween →
@@ -584,6 +591,7 @@ export class LobbyScene extends Phaser.Scene {
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_LOBBY_STARTED, this.#onLobbyStarted, this);
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_DISCONNECTED, this.#onDisconnected, this);
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_DISCONNECTED, this.#onDialogueConnectFail, this);
+      EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_DISCONNECTED, this.#onSkipConnectFail, this);
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_LOBBY_UPDATED, this.#onWaitingRoomUpdate, this);
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_HOST_CHANGED, this.#onHostChanged, this);
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_LOBBY_ERROR, this.#onLobbyError, this);
@@ -979,6 +987,34 @@ export class LobbyScene extends Phaser.Scene {
       this.#dialogueInputHint = null;
     }
   }
+
+  /**
+   * Dev flag SKIP_TO_LOBBY: connect to the server with defaults (nick 'Player', ip 'localhost')
+   * WITHOUT the connect dialogue, landing on the lobby list via #onConnected. On connect failure
+   * (server down / wrong host) fall back to the normal connect dialogue so the rune (IP) can be
+   * corrected — keeping the dev flag usable even when localhost isn't the host.
+   */
+  #skipToLobbyConnect(): void {
+    this.#playerName = this.#dialogueInputValue.nick || 'Player';
+    const ip = this.#dialogueInputValue.ip || 'localhost';
+    const port = 3000;
+    const url = ip.includes(':') ? `http://${ip}` : `http://${ip}:${port}`;
+
+    EVENT_BUS.once(CUSTOM_EVENTS.NETWORK_CONNECTED, this.#onConnected, this);
+    EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_DISCONNECTED, this.#onSkipConnectFail, this);
+    EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_DISCONNECTED, this.#onSkipConnectFail, this);
+
+    const nm = NetworkManager.init(url);
+    nm.connect();
+  }
+
+  #onSkipConnectFail = (): void => {
+    EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_CONNECTED, this.#onConnected, this);
+    EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_DISCONNECTED, this.#onSkipConnectFail, this);
+    // localhost didn't answer (e.g. server not up, or not the host) — drop into the normal
+    // connect dialogue so the player can enter the correct rune.
+    this.#showConnectView();
+  };
 
   #beginConnect(): void {
     if (this.#portrait) this.#portrait.setFrame(MageFace.MYSTICAL);

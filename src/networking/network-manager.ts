@@ -469,6 +469,19 @@ export class NetworkManager {
       EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_DISCONNECTED, {});
     });
 
+    // socket.io fires `connect_error` (NOT `disconnect`) when the INITIAL handshake fails — e.g. the
+    // game-server isn't up yet, or (when the page is served over `vite --host` on the LAN) the player
+    // typed "localhost", which resolves to THEIR machine instead of the host's. Without bridging it,
+    // neither NETWORK_CONNECTED nor NETWORK_DISCONNECTED ever fires, so the LobbyScene connect dialogue
+    // hangs forever on "Abrindo o portal...". Surface it as a disconnect so callers can fail/retry.
+    // Scoped to the not-yet-connected case so an established session's transient reconnection blips
+    // don't trip lobby-teardown logic.
+    this.#socket.on('connect_error', (err: Error) => {
+      if (this.#isConnected) return;
+      this.#log('connect_error', err?.message ?? String(err));
+      EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_DISCONNECTED, {});
+    });
+
     this.#socket.on('lobby:created', ({ lobby }: { lobby: Lobby }) => {
       EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_LOBBY_UPDATED, { lobby });
     });
