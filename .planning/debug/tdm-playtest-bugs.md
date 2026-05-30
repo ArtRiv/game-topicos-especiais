@@ -3,10 +3,68 @@ status: fixed-pending-replaytest
 phase: 14-core-team-deathmatch-mode
 created: 2026-05-29
 updated: 2026-05-29
-source: two-client live playtest (14-HUMAN-UAT.md)
+source: two-client + six-client (school LAN) live playtests (14-HUMAN-UAT.md)
 ---
 
-## Resolution (2026-05-29)
+## Round 2 resolution (2026-05-29) — 2-client + 6-client LAN playtest
+
+Second playtest (2 clients local + 6 PCs on the school LAN) surfaced six more issues. All fixed;
+commits below. Re-run a 2-client AND a 6-client playtest to confirm on-screen.
+
+- **03aa5c1** — #3 (HP stuck at "half a heart"): HP is now SERVER-AUTHORITATIVE in TDM. The client
+  SETs local HP from `DamageConfirmedPayload.targetHp` (added server-side last round) instead of
+  subtracting locally; the old "floor local HP at 1" hack is gone. `LifeComponent.setLife(value)`
+  added. `#onDamageConfirmed` (local TDM target): setLife + HUD refresh + hurt flash while alive,
+  and NEVER drives DEATH_STATE (death/respawn stay server-authoritative). `#onRespawn` now refreshes
+  the HUD after `resetToFull` so the heart bar actually refills on respawn (the real cause of the
+  "stuck" bar: resetToFull mutated only the LifeComponent, never the DataManager-backed HUD).
+
+- **6eaab44** — #1 + #2 (no match-start cinematic / spawned in the middle): ROOT CAUSE — LoadingScene's
+  ~8s cinematic outlasts the server's 5.5s countdown (`COUNTDOWN_DURATION_MS + FIGHT_HOLD_MS`), so the
+  server fires COUNTDOWN → 5 ticks → ACTIVE → `match:spawns` while LoadingScene is still up; GameScene
+  is born only afterwards and never receives any of them. FIX: GameScene runs its OWN intro on boot
+  (`#maybeStartLocalIntro`) — reuses `#enterCountdownMode` (lock + camera pan + banner) but drives the
+  digits from a LOCAL 5→1 timer (`#runLocalCountdown`), independent of the already-passed server
+  COUNTDOWN. `#localIntroRan` makes the server-driven `#onMatchStateChanged`/`#onCountdownTick` no-ops
+  so a stray transition can't fight it. Spawns: GameScene calls `NetworkManager.sendSceneReady()` →
+  server `match:scene-ready`; the server now PERSISTS the match-start spawns on the GameRoom
+  (`setMatchSpawns` at COUNTDOWN→ACTIVE) and replays them to the requesting socket → `#onMatchSpawns`
+  snaps players to their team spawnpoints. Server keeps its own timing for damage gating.
+
+- **9e40604** — #4 (team tint lost on hit / respawn): `juice-utils.flash()` captured the prior tint
+  up front and restores it after each white flash instead of hard `setTint(0xffffff)` (which wiped the
+  team color). `#onRespawn` re-applies the team tint via a new `#applyTeamTint` helper (was a bare
+  `clearTint()`). The LOCAL player is now team-tinted too (`#setupPlayer`, TDM-only) — previously only
+  remotes were tinted. `#resolveRemotePlayerTint` → `#resolvePlayerTint` (serves local + remote).
+
+- **cf9a3b6** — #6 (SKIP_TO_LOBBY dev flag) + the "hitting enter after localhost gets stuck" hang.
+  HANG ROOT CAUSE: NetworkManager bound only `connect`/`disconnect`, never socket.io's `connect_error`
+  — which is what fires when the INITIAL handshake fails (server not up, or "localhost" resolving to
+  the student's own machine when the page is served over `vite --host`). With neither NETWORK_CONNECTED
+  nor NETWORK_DISCONNECTED firing, the connect dialogue hung forever on "Abrindo o portal...". Bridged
+  `connect_error` → NETWORK_DISCONNECTED (scoped to not-yet-connected) so the dialogue rewinds + retries.
+  SKIP_TO_LOBBY (`src/common/config/debug.ts`, wired in `main.ts` + `lobby-scene.ts`): boot straight to
+  the lobby list, auto-connecting with default nick 'Player' to localhost:3000; falls back to the normal
+  dialogue on connect failure.
+
+- **a0634b5** — #5 (host freeze at 6-machine match start): the host (players[0]) is the offerer for ALL
+  peers, so `#initWebRTCMesh` fired all 5 createOffer synchronously in one forEach — a PC+channels+ICE
+  storm that stalled the host's main thread (never reproduced in CI / 2-client: fake RTC has no ICE
+  cost). FIX: stagger the host's offers across separate macrotasks (`offerSlot * 30ms`); roles stay
+  deterministic so only timing changes (~150ms total spread for 6 players). Pending stagger timers are
+  cleared in `teardownMesh`.
+
+Gates (each commit): frontend project-source tsc clean; game-server tsc clean + 42 tests pass. The
+networking throughput/mesh-formation tests are pre-existing FLAKY timing tests (failure count varied
+15→13→0 across runs, independent of these changes — see deferred-items.md); the stable baseline is the
+thunder-strike/spell-registry config failures + stale `dist/**` copies.
+
+NEXT: re-run a 2-client AND a 6-client playtest to confirm all six behaviors on-screen, then update
+14-HUMAN-UAT.md results.
+
+---
+
+## Round 1 resolution (2026-05-29)
 
 All five fixed. Commits:
 - f224748 — #1 + #3: TDM death is server-authoritative; local HP-zero no longer routes to
