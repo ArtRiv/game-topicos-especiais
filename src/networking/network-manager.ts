@@ -243,6 +243,15 @@ export class NetworkManager {
   sendLobbyAssignTeam(targetPlayerId: string, team: number): void { this.#socket.emit('lobby:assign-team', { targetPlayerId, team }); }
   sendLobbySetConfig(partial: Partial<LobbyConfig>): void { this.#socket.emit('lobby:set-config', { config: partial }); }
 
+  /** Phase 14 bugfix (#1/#2): GameScene reports it has booted and is now listening for match
+   *  broadcasts. The server replays the match-start `match:spawns` to this socket if available —
+   *  needed because the LoadingScene cinematic outlasts the server countdown, so GameScene is
+   *  typically born after the COUNTDOWN→ACTIVE spawn broadcast and missed it. Server derives the
+   *  lobby from the socket, so no payload is needed. */
+  sendSceneReady(): void {
+    this.#socket.emit('match:scene-ready');
+  }
+
   /** Client ack for the LOADING sync barrier (LFC-05). Sent exactly once when the local LoadingScene finishes preparation. */
   sendMatchLoaded(lobbyId: string): void {
     this.#socket.emit('match:loaded', { lobbyId } satisfies MatchLoadedPayload);

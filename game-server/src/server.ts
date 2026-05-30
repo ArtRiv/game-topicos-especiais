@@ -120,6 +120,10 @@ function startCountdown(lobbyId: string, room: GameRoom): void {
     // (which unlocks movement) and the spawn snap are both in flight; the client applies the snap
     // on receipt. Empty list (no lobby) is harmless.
     if (spawnAssignments.length > 0) {
+      // Phase 14 bugfix (#1/#2): persist the spawns on the room so a client whose GameScene boots
+      // AFTER this broadcast (its ~8s LoadingScene cinematic outlasts the 5.5s server countdown,
+      // so it never sees this emit) can request a replay via `match:scene-ready`.
+      room.setMatchSpawns(spawnAssignments);
       const spawnsPayload: MatchSpawnsPayload = { spawns: spawnAssignments };
       io.to(`lobby:${lobbyId}`).emit('match:spawns', spawnsPayload);
     }
@@ -240,6 +244,22 @@ io.on('connection', (socket) => {
     broadcastMatchState(lobbyId, room);
 
     startCountdown(lobbyId, room);
+  });
+
+  // Phase 14 bugfix (#1/#2): a client's GameScene reports it has booted and is listening. Because
+  // the LoadingScene cinematic (~8s) outlasts the server countdown (5.5s), the client is typically
+  // born AFTER the COUNTDOWN→ACTIVE `match:spawns` broadcast and never saw it. Replay the stored
+  // match-start spawns to JUST this socket so it can snap players to their team spawnpoints. If the
+  // spawns aren't computed yet (a rare fast-loader that booted before ACTIVE), do nothing — the
+  // ACTIVE broadcast will reach this now-listening client normally.
+  socket.on('match:scene-ready', () => {
+    const lobbyId = findLobbyIdBySocket(socket.id);
+    if (!lobbyId) return;
+    const room = gameRooms.get(lobbyId);
+    if (!room) return;
+    const spawns = room.getMatchSpawns();
+    if (spawns.length === 0) return;
+    socket.emit('match:spawns', { spawns } satisfies MatchSpawnsPayload);
   });
 
   // --- Game phase (WebRTC handles player-update and spell-cast P2P; only room transitions use server) ---

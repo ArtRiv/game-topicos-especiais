@@ -226,6 +226,14 @@ export class GameScene extends Phaser.Scene {
   #darkBoltCasterGlowTween: Phaser.Tweens.Tween | undefined;
   #darkBoltCasterBurst: Phaser.GameObjects.Image | undefined;
   #countdownText: Phaser.GameObjects.BitmapText | null = null;
+  // Phase 14 bugfix (#1/#2): GameScene-local match-start intro. The LoadingScene cinematic (~8s)
+  // outlasts the server countdown (5.5s), so GameScene is born AFTER the server's
+  // COUNTDOWN→ACTIVE broadcasts and the server-driven #onMatchStateChanged intro never fires.
+  // Instead GameScene runs its OWN intro on boot (banner + camera + a LOCAL 5→1 countdown) and
+  // owns the movement/combat lock lifecycle. #localIntroRan makes #onMatchStateChanged a no-op so
+  // a late/stray server transition can't fight the local intro.
+  #localIntroRan: boolean = false;
+  #localCountdownTimer: Phaser.Time.TimerEvent | null = null;
   // Phase 14 (Plan 03) — TDM intro cinematic: map-name banner shown during the
   // COUNTDOWN cinematic (D-18 step 1 / D-19 reveal-duration fix). Torn down when its
   // own reveal tween completes, and force-killed on #exitCountdownMode / SHUTDOWN.
@@ -309,6 +317,11 @@ export class GameScene extends Phaser.Scene {
     this.#setupNetworking();
 
     this.scene.launch(SCENE_KEYS.UI_SCENE);
+
+    // Phase 14 bugfix (#1/#2): run the match-start intro locally on boot (the server's
+    // COUNTDOWN→ACTIVE window already elapsed during the LoadingScene cinematic, so the
+    // server-driven intro never reaches us) and ask the server to replay our team spawn.
+    this.#maybeStartLocalIntro();
 
     // Switch to gameplay music. MusicManager handles the cross-fade and is a
     // no-op if gameplay music is already playing (e.g. room restarts).
@@ -3809,12 +3822,89 @@ export class GameScene extends Phaser.Scene {
    * would only be a Phase 12 reconnect scenario, explicitly out of scope.
    */
   #onMatchStateChanged = (payload: MatchStateChangedPayload): void => {
+    // Phase 14 bugfix (#1/#2): when the GameScene-local intro is in charge it owns the entire
+    // lock/unlock lifecycle. Ignore server COUNTDOWN/ACTIVE here so a late or duplicate transition
+    // can't re-enter the cinematic or release the lock before the local 5→1 finishes. (In normal
+    // TDM flow these transitions already fired before GameScene subscribed, so this rarely matters.)
+    if (this.#localIntroRan) return;
     if (payload.state === 'COUNTDOWN') {
       this.#enterCountdownMode();
     } else if (payload.state === 'ACTIVE') {
       this.#exitCountdownMode();
     }
   };
+
+  /**
+   * Phase 14 bugfix (#1/#2): start the GameScene-local match-start intro on boot.
+   *
+   * ROOT CAUSE: LoadingScene's ~8s cinematic outlasts the server's 5.5s countdown
+   * (COUNTDOWN_DURATION_MS + FIGHT_HOLD_MS). The server fires COUNTDOWN → 5 ticks → ACTIVE →
+   * match:spawns all WHILE the LoadingScene is still up, so GameScene — born only after that
+   * cinematic — never receives any of them. The old server-driven intro (#onMatchStateChanged →
+   * #enterCountdownMode) therefore never ran, leaving no banner / no countdown / no spawn snap.
+   *
+   * FIX: in a connected team-deathmatch, GameScene plays its OWN intro independent of the
+   * already-passed server COUNTDOWN — reusing #enterCountdownMode (locks + camera pan + banner +
+   * the countdown text object) but driving the digits from a LOCAL 5→1 timer (#runLocalCountdown).
+   * It also asks the server to replay the match-start spawns we missed (NetworkManager.sendSceneReady
+   * → server `match:scene-ready` → `match:spawns` → #onMatchSpawns snaps us to our team spawnpoint).
+   *
+   * Scoped to TDM (Arena) per the locked decision; non-TDM online co-op keeps the server-driven path.
+   * In TDM there are no in-match room transitions, so create() runs exactly once per match — but
+   * #localIntroRan still guards against a re-entrant call.
+   */
+  #maybeStartLocalIntro(): void {
+    if (this.#localIntroRan) return;
+    const nm = this.#safeNetworkManager();
+    if (!nm || !nm.isConnected || !nm.isTeamDeathmatch) return;
+    this.#localIntroRan = true;
+
+    // Lock movement + combat and build the camera pan + map-name banner + countdown text object.
+    this.#enterCountdownMode();
+    // Drive the 5→1 digits locally, then release the locks + hide the overlay.
+    this.#runLocalCountdown();
+    // Request a replay of the match-start spawns (the COUNTDOWN→ACTIVE broadcast already elapsed).
+    nm.sendSceneReady();
+  }
+
+  /**
+   * Phase 14 bugfix (#1/#2): the LOCAL countdown driver — a self-contained 5 → 4 → 3 → 2 → 1
+   * digit sequence (1s per digit) that replaces the server's countdown-tick broadcasts for the
+   * GameScene-local intro. Reuses the same pop-in tween shape as #onCountdownTick. On reaching 0 it
+   * calls #exitCountdownMode (release locks + hide overlay + tear down the banner). The timer is
+   * stored so SHUTDOWN can cancel an in-flight countdown (rematch / early scene stop).
+   */
+  #runLocalCountdown(): void {
+    let remaining = 5;
+    const showDigit = (label: string): void => {
+      if (this.#countdownText === null) return;
+      this.#countdownText.setText(label);
+      this.tweens.add({
+        targets: this.#countdownText,
+        scale: { from: 1.3, to: 1.0 },
+        duration: 250,
+        ease: 'Back.easeOut',
+      });
+    };
+
+    showDigit(String(remaining)); // "5" immediately
+    this.#localCountdownTimer?.remove(false);
+    this.#localCountdownTimer = this.time.addEvent({
+      delay: 1000,
+      // Fires 5×: at +1s..+4s shows 4,3,2,1; at +5s (remaining hits 0) ends the intro.
+      repeat: 5,
+      callback: () => {
+        remaining -= 1;
+        if (remaining >= 1) {
+          showDigit(String(remaining));
+        } else {
+          this.#localCountdownTimer?.remove(false);
+          this.#localCountdownTimer = null;
+          this.#exitCountdownMode();
+        }
+      },
+    });
+  }
 
   /**
    * LFC-06 + LFC-07 + LFC-08: lock movement + combat (combat lock gates the two
@@ -3888,6 +3978,9 @@ export class GameScene extends Phaser.Scene {
    * frame could theoretically deliver the tick before our handler runs).
    */
   #onCountdownTick = (payload: MatchCountdownTickPayload): void => {
+    // Phase 14 bugfix (#1/#2): the GameScene-local countdown owns the digits when the local intro
+    // is running; ignore any (stray/late) server tick so it can't fight the local 5→1.
+    if (this.#localIntroRan) return;
     if (this.#countdownText === null) return;
     this.#countdownText.setText(payload.label);
     // Juice: one-shot pop-in scale tween — mirrors the room-transition tween shape.
@@ -4090,6 +4183,10 @@ export class GameScene extends Phaser.Scene {
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_MATCH_ENDED, this.#onMatchEnded, this);
       this.#appliedDamageSpellIds.clear();
       this.#clearLocalDeath();
+      // Phase 14 bugfix (#1/#2): cancel an in-flight local countdown so its timer never fires
+      // against a torn-down scene (rematch / early stop).
+      this.#localCountdownTimer?.remove(false);
+      this.#localCountdownTimer = null;
       // Phase 14: tear down the intro banner + its reveal/fade tweens on scene restart.
       this.#destroyMapBanner();
       // Phase 14: stop the respawn-invuln pulse so the looping tween never leaks across

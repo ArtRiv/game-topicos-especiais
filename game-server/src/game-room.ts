@@ -1,4 +1,4 @@
-import type { MatchState, MatchMode, PlayerInfo, TdmPlayerStat } from './types.js';
+import type { MatchState, MatchMode, PlayerInfo, TdmPlayerStat, SpawnAssignment } from './types.js';
 import {
   PLAUSIBILITY_RANGE_PX,
   PLAUSIBILITY_STALE_MS,
@@ -44,6 +44,7 @@ export class GameRoom {
   #playerInfo = new Map<string, PlayerInfo>();                              // playerId → info (for team lookups)
   #matchMode: MatchMode = 'respawn';                                        // D-12: structural support, no UI surface in 9.3
   #spawnPoints = new Map<string, { x: number; y: number }>();               // playerId → original spawn (D-10)
+  #matchSpawns: SpawnAssignment[] = [];                                      // match-start spawns, replayable on scene-ready
   #maxHp: number = 100;                                                     // mirror client CONFIG.PLAYER_START_MAX_HEALTH
 
   // --- Phase 14: team-deathmatch scoring state (D-04, D-07) ---
@@ -187,6 +188,18 @@ export class GameRoom {
   /** Current server-authoritative HP for a player (or 0 if unknown). */
   public getHp(playerId: string): number {
     return this.#hp.get(playerId) ?? 0;
+  }
+
+  /** Phase 14 bugfix (#1/#2): remember the match-start spawn assignments so a client whose
+   *  GameScene boots AFTER the COUNTDOWN→ACTIVE `match:spawns` broadcast (the LoadingScene
+   *  cinematic outlasts the server countdown) can request a replay via `match:scene-ready`. */
+  public setMatchSpawns(spawns: SpawnAssignment[]): void {
+    this.#matchSpawns = spawns;
+  }
+
+  /** The stored match-start spawn assignments (empty until COUNTDOWN→ACTIVE computes them). */
+  public getMatchSpawns(): SpawnAssignment[] {
+    return this.#matchSpawns;
   }
 
   /** D-10/D-11: pick the player's team spawnpoint that is FARTHEST from any living enemy.
@@ -389,6 +402,7 @@ export class GameRoom {
     this.#respawnHandles.clear();
     this.#playerInfo.clear();
     this.#spawnPoints.clear();
+    this.#matchSpawns = [];
     // Phase 14: reset TDM scoring so a rematch in the same room starts at 0-0.
     this.#teamScores = [0, 0];
     this.#kills.clear();
