@@ -124,6 +124,15 @@ export class NetworkManager {
   #meshHealthTimer: ReturnType<typeof setTimeout> | null = null;
   static #MESH_HEALTH_CHECK_DELAY_MS = 8000;
 
+  // Phase 14 bugfix (#5 host freeze): the host is players[0] and therefore the OFFERER for every
+  // peer, so it would otherwise create all N-1 RTCPeerConnections (+ 2 data channels + ICE
+  // gathering each) synchronously in one tick — a burst that stalls the host's main thread on a
+  // real LAN (6 machines). We stagger the offers across separate macrotasks so each PC creation
+  // gets its own tick and the main thread can breathe between them. Handles are tracked so a
+  // teardown before they fire can cancel them.
+  #offerStaggerHandles: ReturnType<typeof setTimeout>[] = [];
+  static #OFFER_STAGGER_MS = 30;
+
   // Network performance metrics
   #msgSentCount = 0;
   #msgRecvCount = 0;
@@ -229,6 +238,10 @@ export class NetworkManager {
       clearTimeout(this.#meshHealthTimer);
       this.#meshHealthTimer = null;
     }
+    // Phase 14 bugfix (#5): cancel any pending staggered offers so they don't fire against a
+    // torn-down mesh (e.g. a quick return-to-lobby before the host finished offering).
+    for (const h of this.#offerStaggerHandles) clearTimeout(h);
+    this.#offerStaggerHandles = [];
     this.#pendingIceCandidates.clear();
     // DO NOT call this.#socket.disconnect() -- keep signaling alive for lobby
   }
@@ -614,6 +627,11 @@ export class NetworkManager {
     }
     const myIndex = players.findIndex((p) => p.socketId === mySocketId);
 
+    // Phase 14 bugfix (#5): stagger our offers instead of firing them all in one synchronous
+    // forEach. `offerSlot` counts only the peers WE offer to (so the delays are 0, 30, 60, …
+    // regardless of where the answerers fall in the roster). The host (index 0) offers to
+    // everyone, so this is the node that benefits most.
+    let offerSlot = 0;
     players.forEach((peer, peerIndex) => {
       if (peer.socketId === mySocketId) return;
       const role = myIndex < peerIndex ? 'offerer' : 'answerer';
@@ -621,7 +639,17 @@ export class NetworkManager {
       // Lower-index player creates the offer — prevents simultaneous double-offers.
       // The other side just waits for the offer to arrive on `webrtc:offer`.
       if (role === 'offerer') {
-        void this.#createOffer(peer.socketId);
+        const peerSocketId = peer.socketId;
+        const delay = offerSlot * NetworkManager.#OFFER_STAGGER_MS;
+        offerSlot++;
+        const handle = setTimeout(() => {
+          // Defensive: skip if a PC for this peer somehow already exists (roles are deterministic
+          // so this shouldn't happen, but never double-create). Teardown is handled separately by
+          // clearing #offerStaggerHandles, so a torn-down mesh never reaches this callback.
+          if (this.#peerConnections.has(peerSocketId)) return;
+          void this.#createOffer(peerSocketId);
+        }, delay);
+        this.#offerStaggerHandles.push(handle);
       }
     });
 
