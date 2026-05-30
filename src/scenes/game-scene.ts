@@ -3626,7 +3626,10 @@ export class GameScene extends Phaser.Scene {
       // the HUD reads DataManager. Refresh it so the heart bar refills on respawn (without this,
       // after the death/respawn cycle the HUD stayed at the last damaged value → "half a heart").
       DataManager.instance.updatePlayerCurrentHealth(this.#player.lifeComponent.life);
-      this.#player.clearTint();
+      // Phase 14 bugfix (#4): re-apply the team tint (the elimination overlay set it gray); a plain
+      // clearTint() here dropped the team color until the next time it was set.
+      if (nm?.localPlayerId) this.#applyTeamTint(this.#player, nm.localPlayerId);
+      else this.#player.clearTint();
       // Phase 14 (D-12/D-13): start the respawn-invuln alpha pulse AFTER #clearLocalDeath
       // tears down the death overlay + position/HP/tint are restored (do not blink while
       // the death overlay is up).
@@ -3637,7 +3640,8 @@ export class GameScene extends Phaser.Scene {
     if (remote) {
       remote.setPosition(payload.x, payload.y);
       remote.lifeComponent.resetToFull();
-      remote.clearTint();
+      // Phase 14 bugfix (#4): restore the remote's team tint (was set gray by #onElimination).
+      this.#applyTeamTint(remote, payload.playerId);
     }
   };
 
@@ -4477,8 +4481,15 @@ export class GameScene extends Phaser.Scene {
     // Phase 9.3 (Plan 03): tag the local player with its network playerId so cross-player
     // overlap callbacks can reverse-lookup. Defensive try/catch — offline play has no NM.
     try {
-      const localId = NetworkManager.getInstance().localPlayerId;
-      if (localId) this.#player.setData('playerId', localId);
+      const nm = NetworkManager.getInstance();
+      const localId = nm.localPlayerId;
+      if (localId) {
+        this.#player.setData('playerId', localId);
+        // Phase 14 bugfix (#4): tint the LOCAL player with its team color too (previously only
+        // remotes were tinted, so you could never see your own team color in the world). TDM-only
+        // so offline/PvE play keeps the default sprite.
+        if (nm.isTeamDeathmatch) this.#applyTeamTint(this.#player, localId);
+      }
     } catch {
       /* offline */
     }
@@ -5078,7 +5089,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   #spawnRemotePlayer(playerId: string, x: number, y: number): Player {
-    const tint = this.#resolveRemotePlayerTint(playerId);
+    const tint = this.#resolvePlayerTint(playerId);
     const ric = new RemoteInputComponent();
     const remote = new Player({
       scene: this,
@@ -5209,7 +5220,23 @@ export class GameScene extends Phaser.Scene {
    * Uses team-based colors when team data is available from matchConfig.
    * Falls back to stable-index palette when team is unassigned or matchConfig is unavailable.
    */
-  #resolveRemotePlayerTint(playerId: string): number {
+  /** Phase 14 bugfix (#4): (re)apply a player's team-color tint. Team 0 = blue, team 1 = red
+   *  (resolved by #resolvePlayerTint). Used for the LOCAL player at spawn and for ANY player after
+   *  a respawn — the old #onRespawn clearTint() dropped the team color. Clears the tint when the
+   *  resolved color is white (no team / offline) so we never leave a stale tint behind. */
+  #applyTeamTint(player: Player, playerId: string): void {
+    if (!player?.active) return;
+    const tint = this.#resolvePlayerTint(playerId);
+    if (tint === 0xffffff) {
+      player.clearTint();
+    } else {
+      player.setTint(tint);
+    }
+  }
+
+  // Resolves a player's world tint by team (blue/red) with a stable palette fallback for
+  // unassigned/offline players. Serves both the LOCAL player (#4) and remotes.
+  #resolvePlayerTint(playerId: string): number {
     const len = GameScene.#PLAYER_TINT_PALETTE.length;
     let nm: NetworkManager | null = null;
     try { nm = NetworkManager.getInstance(); } catch { /* offline */ }
