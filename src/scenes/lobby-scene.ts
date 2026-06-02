@@ -310,7 +310,6 @@ export class LobbyScene extends Phaser.Scene {
   #viewObjects: ViewObjects = [];
   #statusText!: Phaser.GameObjects.BitmapText;
   #configBlockObjects: Phaser.GameObjects.GameObject[] = [];
-  #formatSelectDom: Phaser.GameObjects.DOMElement | null = null;
   #capacityHeader: Phaser.GameObjects.BitmapText | null = null;
 
   constructor() {
@@ -930,7 +929,7 @@ export class LobbyScene extends Phaser.Scene {
     this.#dialogueInput = this.add
       .dom(inputX, inputY)
       .createFromHTML(
-        `<input type="text" value="${current}" maxlength="${maxlen}" style="width:${widthPx}px;background:#111;color:#fff;border:1px solid #555;padding:4px;font-size:10px;font-family:monospace;text-align:center;outline:none">`,
+        `<input type="text" value="${current}" maxlength="${maxlen}" autocomplete="off" style="width:${widthPx}px;background:#111;color:#fff;border:1px solid #555;padding:4px;font-size:10px;font-family:monospace;text-align:center;outline:none;-webkit-appearance:none;appearance:none">`,
       );
     this.#viewObjects.push(this.#dialogueInput);
 
@@ -1263,7 +1262,6 @@ export class LobbyScene extends Phaser.Scene {
     // Tear down any prior config-block objects (used on lobby:updated re-render).
     this.#configBlockObjects.forEach((o) => o.destroy());
     this.#configBlockObjects = [];
-    this.#formatSelectDom = null;
     this.#capacityHeader = null;
 
     const cx = this.cameras.main.centerX;
@@ -1289,24 +1287,35 @@ export class LobbyScene extends Phaser.Scene {
     this.#configBlockObjects.push(this.#capacityHeader);
 
     if (this.#isHost) {
-      // Format row — centered horizontal pair: "Format:" label + <select>.
-      // Anchored so the pair reads as one unit above the map cards.
-      const formatLabel = this.#crispText(cx - 8, 104, 'Format:', FONT_SMALL_WHITE).setOrigin(1, 0.5);
+      // Format row — native cycle control: < value > arrows replace the former
+      // DOM <select> which rendered above the canvas and overlapped map cards.
       const formats: LobbyFormat[] = ['1v1', '2v2', '3v3', '4v4', '5v5', '6v6', '7v7', '8v8', '9v9', '10v10'];
-      const optionsHtml = formats.map((f) => `<option value="${f}">${f}</option>`).join('');
-      const formatDom = this.add
-        .dom(cx + 4, 104)
-        .createFromHTML(
-          `<select style="background:#111;color:#fff;border:1px solid #555;padding:2px 4px;font-size:10px;font-family:monospace">${optionsHtml}</select>`,
-        )
-        .setOrigin(0, 0.5);
-      const selectEl = (formatDom.node as HTMLElement).querySelector('select') as HTMLSelectElement;
-      selectEl.value = cfg.format;
-      selectEl.addEventListener('change', () => {
-        NetworkManager.getInstance().sendLobbySetConfig({ format: selectEl.value as LobbyFormat });
+      let fmtIdx = Math.max(0, formats.indexOf(cfg.format));
+
+      const formatLabel = this.#crispText(cx - 8, 104, 'Format:', FONT_SMALL_WHITE).setOrigin(1, 0.5);
+      const fmtValueText = this.#crispText(cx + 40, 104, formats[fmtIdx], FONT_SMALL_WHITE).setOrigin(0.5, 0.5);
+
+      const fmtBgPrev = this.add.rectangle(cx + 12, 104, 20, 14, BTN_COLOR).setInteractive();
+      const fmtLabelPrev = this.#crispText(cx + 12, 104, '<', FONT_SMALL_WHITE).setOrigin(0.5);
+      fmtBgPrev.on('pointerover', () => fmtBgPrev.setFillStyle(BTN_HOVER));
+      fmtBgPrev.on('pointerout', () => fmtBgPrev.setFillStyle(BTN_COLOR));
+      fmtBgPrev.on('pointerdown', () => {
+        fmtIdx = (fmtIdx - 1 + formats.length) % formats.length;
+        fmtValueText.setText(formats[fmtIdx]);
+        NetworkManager.getInstance().sendLobbySetConfig({ format: formats[fmtIdx] });
       });
-      this.#formatSelectDom = formatDom;
-      this.#configBlockObjects.push(formatLabel, formatDom);
+
+      const fmtBgNext = this.add.rectangle(cx + 68, 104, 20, 14, BTN_COLOR).setInteractive();
+      const fmtLabelNext = this.#crispText(cx + 68, 104, '>', FONT_SMALL_WHITE).setOrigin(0.5);
+      fmtBgNext.on('pointerover', () => fmtBgNext.setFillStyle(BTN_HOVER));
+      fmtBgNext.on('pointerout', () => fmtBgNext.setFillStyle(BTN_COLOR));
+      fmtBgNext.on('pointerdown', () => {
+        fmtIdx = (fmtIdx + 1) % formats.length;
+        fmtValueText.setText(formats[fmtIdx]);
+        NetworkManager.getInstance().sendLobbySetConfig({ format: formats[fmtIdx] });
+      });
+
+      this.#configBlockObjects.push(formatLabel, fmtBgPrev, fmtLabelPrev, fmtValueText, fmtBgNext, fmtLabelNext);
 
       // Map label — centered above the cards row.
       const mapLabel = this.#crispText(cx, 124, 'Map:', FONT_SMALL_WHITE).setOrigin(0.5, 0);
@@ -1399,24 +1408,15 @@ export class LobbyScene extends Phaser.Scene {
     EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_LOBBY_ERROR, this.#onLobbyError, this);
     this.#currentLobby = null;
 
-    // 2. EAGER teardown of host-only DOM <select> and configBlock Phaser
-    //    objects BEFORE scene.start. Without this, Phaser's DOMElement
-    //    (#formatSelectDom) sits in the browser's DOM tree across the
-    //    LobbyScene->LoadingScene transition and forces a layout reflow
-    //    that the host (only — non-host never created the DOM) experiences
-    //    as a ~1s black-screen stall. SHUTDOWN cleanup runs ~1 frame too
-    //    late for the host. The SHUTDOWN handler at lines 36-46 still
-    //    invokes #clearView() but is now idempotent against this eager
-    //    call (Phaser GameObject.destroy is a no-op on already-destroyed
-    //    objects; the array assignments to [] make a second pass cheap).
+    // 2. Eager teardown of configBlock objects before scene.start so the
+    //    SHUTDOWN handler is idempotent (destroy is a no-op on already-destroyed
+    //    objects; array assignments to [] make a second pass cheap).
     this.#clearView();
 
     // 3. Phase 9.2: 400ms fade-to-black + parallel menu-music duck to 0,
     //    then hard-stop the track and start LoadingScene. Per-client (D-08) —
     //    no server protocol event; LoadingScene's MIN_DISPLAY_MS floor
-    //    absorbs cross-client jitter. The eager #clearView() above runs
-    //    synchronously FIRST so the host's DOM-detach unsticks the
-    //    black-screen stall before this overlay polish begins.
+    //    absorbs cross-client jitter.
     // 400ms — chosen so the menu duck fits inside one perceived UI beat;
     // both calls use the literal so the value is greppable from a single spot.
     this.cameras.main.fadeOut(400, 0, 0, 0);
@@ -1667,7 +1667,6 @@ export class LobbyScene extends Phaser.Scene {
     this.#waitingRoomObjects = [];
     this.#playerListObjects = [];
     this.#configBlockObjects = [];
-    this.#formatSelectDom = null;
     this.#capacityHeader = null;
   }
 }

@@ -91,6 +91,17 @@
         width: 100% !important;
         height: 100% !important;
       }
+
+      /* Phaser positions its DOM overlay div based on the game's logical size,
+         but our CSS forces the canvas to fill the container. Pin the overlay to
+         (0,0) so DOM elements (lobby inputs) align with canvas-drawn elements.
+         will-change: transform forces GPU compositing so native form-control
+         chrome renders inside the scaled layer instead of at raw CSS coordinates. */
+      #game-container > div {
+        left: 0 !important;
+        top: 0 !important;
+        will-change: transform;
+      }
     </style>
   </head>
   <body>
