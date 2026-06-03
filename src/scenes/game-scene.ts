@@ -78,6 +78,7 @@ import { maybeSpawnGhost } from '../game-objects/spells/spell-ghost';
 import { ElementManager } from '../common/element-manager';
 import {
   EARTH_WALL_MANA_COST,
+  EARTH_WALL_COOLDOWN,
   EARTH_WALL_PILLAR_COUNT,
   EARTH_WALL_PILLAR_SPACING,
   EARTH_WALL_FIREBOLT_SPLASH_RADIUS,
@@ -191,6 +192,8 @@ export class GameScene extends Phaser.Scene {
   #earthWallLastPlacedY: number = -Infinity;
   // Tracks previous-frame left-mouse state so we can detect a fresh click
   #earthWallMouseWasDown: boolean = false;
+  // Timestamp (ms) of the last completed EarthWall activation — used to enforce the cooldown.
+  #earthWallLastCastTime: number = -Infinity;
   // Multiplayer crumble dedupe: pillars currently being destroyed by an
   // inbound NETWORK_EARTH_WALL_PILLAR_DESTROY. The DESTROY broadcast hook
   // skips these so we don't echo a destroy event back to the network when we
@@ -2715,8 +2718,11 @@ export class GameScene extends Phaser.Scene {
         this.#earthWallDrawingMode = false;
         return;
       }
+      if (this.time.now - this.#earthWallLastCastTime < EARTH_WALL_COOLDOWN) return;
       if (this.#player.manaComponent.mana < EARTH_WALL_MANA_COST) return;
       if (EARTH_WALL_MANA_COST > 0) this.#player.manaComponent.consume(EARTH_WALL_MANA_COST);
+      this.#earthWallLastCastTime = this.time.now;
+      EVENT_BUS.emit(CUSTOM_EVENTS.SPELL_CAST, { spellId: SPELL_ID.EARTH_WALL });
       this.#earthWallDrawingMode = true;
       this.#earthWallDrawingPillarCount = 0;
       this.#earthWallLastPlacedX = -Infinity;
