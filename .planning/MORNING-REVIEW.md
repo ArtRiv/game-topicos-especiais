@@ -54,6 +54,10 @@ Start: `cd game-server && npm run dev` + `pnpm start`, two browser tabs at local
 
 ---
 
+## 🔧 Git state + build note
+- All overnight work is committed on branch **`event-prep-overnight`** (you were on `main`). To get back to the pre-overnight state: `git checkout main`. To keep the work: stay on the branch or merge it.
+- **`pnpm build` FAILS — but only on pre-existing library type-noise** (vitest/vite/rollup/DOM TextDecoder `moduleResolution` errors in `node_modules`, documented in STATE.md as a known issue, NOT my code). **`npx vite build --config config/vite.config.js` succeeds (exit 0) and produces `dist/`** — that's your real deploy artifact. The font path fix verified working in the build output. For deployment, use `vite build` directly (or fix the `tsc` moduleResolution to `bundler` in tsconfig — a post-event cleanup).
+
 ## ❓ NEEDS YOUR ACTION (I can't do these)
 1. **Send the PT-BR questions** to your friend (Expelled) + professor — in `.planning/FRIDAY-SHIP-PLAN.md`. The friend ones are the fastest unblock for deployment.
 2. **Fill `GAME_SLUG`** in `src/common/config/network.ts` once the prof gives you the slug (currently `''` = LAN mode).
