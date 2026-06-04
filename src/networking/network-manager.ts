@@ -3,6 +3,7 @@ import { EVENT_BUS, CUSTOM_EVENTS } from '../common/event-bus.js';
 import {
   NETWORK_SERVER_URL,
   NETWORK_SERVER_PORT,
+  NETWORK_TRANSPORT,
   NETWORK_TICK_RATE_HZ,
   NETWORK_DEBUG,
   MAX_UNRELIABLE_BUFFERED_BYTES,
@@ -567,7 +568,13 @@ export class NetworkManager {
         `peers=${matchConfig.players.map((p) => `${p.name}(${p.socketId.slice(0, 4)})`).join(',')}`,
       );
       EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_LOBBY_STARTED, { matchConfig });
-      this.#initWebRTCMesh(matchConfig.players);
+      // Transport fork (arch-webrtc-star): 'star' opens ONE connection to the server relay;
+      // 'mesh' keeps the original N-to-N peer mesh. Default 'mesh' until the star is validated.
+      if (NETWORK_TRANSPORT === 'star') {
+        void this.#initStarConnection();
+      } else {
+        this.#initWebRTCMesh(matchConfig.players);
+      }
       this.#scheduleMeshHealthCheck();
     });
 
@@ -696,6 +703,25 @@ export class NetworkManager {
       }
     });
 
+    this.#startMetricsLog();
+  }
+
+  /** Reserved signaling target id for the server-relay peer (star topology). The server routes
+   *  offer/answer/ice with this targetSocketId into its own node-datachannel PeerConnection. */
+  static readonly STAR_SERVER_ID = '__server__';
+
+  /**
+   * Star topology (arch-webrtc-star): open a SINGLE RTCPeerConnection to the server relay, with the
+   * same two channels the mesh uses per-peer (unreliable 'pos' + reliable 'events'). The client is
+   * always the offerer; the server answers. Reuses #createOffer / #setupDataChannel / the ICE-race
+   * buffering verbatim — the only difference from a mesh peer is the connection's identity is the
+   * reserved STAR_SERVER_ID instead of a peer's socketId.
+   */
+  async #initStarConnection(): Promise<void> {
+    if (typeof RTCPeerConnection === 'undefined') return; // Node/test guard
+    if (this.#peerConnections.has(NetworkManager.STAR_SERVER_ID)) return; // already connected
+    this.#log('star-init', 'opening single connection to server relay');
+    await this.#createOffer(NetworkManager.STAR_SERVER_ID);
     this.#startMetricsLog();
   }
 

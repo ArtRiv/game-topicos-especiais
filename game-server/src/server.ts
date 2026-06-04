@@ -3,6 +3,7 @@ import express from 'express';
 import { Server } from 'socket.io';
 import { LobbyManager } from './lobby-manager.js';
 import { GameRoom } from './game-room.js';
+import { StarRelay, STAR_SERVER_ID } from './star-relay.js';
 import type {
   RoomTransitionPayload,
   MatchState,
@@ -51,6 +52,7 @@ const io = new Server(httpServer, {
 
 const lobbyManager = new LobbyManager();
 const gameRooms = new Map<string, GameRoom>(); // lobbyId → GameRoom
+const starRelay = new StarRelay(io); // arch-webrtc-star: server-side WebRTC peer for the star topology
 
 function broadcastMatchState(lobbyId: string, room: GameRoom): void {
   const payload: MatchStateChangedPayload = {
@@ -322,15 +324,27 @@ io.on('connection', (socket) => {
   });
 
   // WebRTC signaling relay — server just forwards these between peers
-  socket.on('webrtc:offer', ({ targetSocketId, offer }: { targetSocketId: string; offer: object }) => {
+  socket.on('webrtc:offer', ({ targetSocketId, offer }: { targetSocketId: string; offer: { sdp: string; type: string } }) => {
+    // Star topology: an offer addressed to the reserved server id is consumed by the StarRelay
+    // (the server itself answers as a WebRTC peer) instead of being forwarded to another client.
+    if (targetSocketId === STAR_SERVER_ID) {
+      const lobbyId = findLobbyIdBySocket(socket.id);
+      if (lobbyId) starRelay.handleOffer(socket, lobbyId, offer);
+      return;
+    }
     io.to(targetSocketId).emit('webrtc:offer', { fromSocketId: socket.id, offer });
   });
 
   socket.on('webrtc:answer', ({ targetSocketId, answer }: { targetSocketId: string; answer: object }) => {
+    // (No server branch: in the star the SERVER answers; clients never send answers to the server.)
     io.to(targetSocketId).emit('webrtc:answer', { fromSocketId: socket.id, answer });
   });
 
-  socket.on('webrtc:ice', ({ targetSocketId, candidate }: { targetSocketId: string; candidate: object }) => {
+  socket.on('webrtc:ice', ({ targetSocketId, candidate }: { targetSocketId: string; candidate: { candidate: string; sdpMid?: string | null } }) => {
+    if (targetSocketId === STAR_SERVER_ID) {
+      starRelay.handleIce(socket.id, candidate);
+      return;
+    }
     io.to(targetSocketId).emit('webrtc:ice', { fromSocketId: socket.id, candidate });
   });
 
@@ -486,6 +500,7 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     console.log(`[SERVER] Client disconnected: ${socket.id}`);
+    starRelay.removePeer(socket.id); // tear down this client's server-side WebRTC peer (star topology)
     const lobbyId = findLobbyIdBySocket(socket.id);
     const room = gameRooms.get(lobbyId ?? '');
 
