@@ -6,6 +6,13 @@
 export const NETWORK_SERVER_URL = 'http://localhost';
 export const NETWORK_SERVER_PORT = 3000;
 
+// ── Transport topology (arch-webrtc-star migration) ───────────────────────────────────────────
+// 'mesh'  = N-to-N WebRTC peer mesh (original; what ships for the event).
+// 'star'  = single WebRTC connection per client to a server relay (node-datachannel), scales to 20.
+// The star path is built incrementally behind this flag; keep 'mesh' until the star is validated.
+export type NetworkTransport = 'mesh' | 'star';
+export const NETWORK_TRANSPORT: NetworkTransport = 'mesh';
+
 // ── Platform deployment (Feira de Jogos) ──────────────────────────────────────────────────────
 // The platform serves the game same-origin under https://feira-de-jogos.dev.br/<slug>/ and reverse-
 // proxies the Socket.io connection by a SLUG-PREFIXED path (the friend's Expelled game uses
