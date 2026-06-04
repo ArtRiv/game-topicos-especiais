@@ -17,7 +17,7 @@ export class LobbyManager {
       players: [player],
       mode: null,
       status: 'waiting',
-      config: { format: '3v3', mapId: 'WORLD', maxPlayers: 6, winTarget: 30 },
+      config: { format: '3v3', mapId: 'STAGES', maxPlayers: 6, winTarget: 30 },
     };
     this.#lobbies.set(lobbyId, lobby);
     this.#socketToLobby.set(socketId, lobbyId);

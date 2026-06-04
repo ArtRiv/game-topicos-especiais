@@ -36,8 +36,8 @@ export type MapPoolEntry = {
 };
 
 export const MAP_POOL: readonly MapPoolEntry[] = [
-  { id: 'WORLD', displayName: 'Open Field', thumbnailKey: 'MAP_THUMB_WORLD' },
-  { id: 'DUNGEON_1', displayName: 'Dungeon', thumbnailKey: 'MAP_THUMB_DUNGEON_1' },
+  // Only Arena for the event. (WORLD/DUNGEON_1 removed from the pool — re-add when their spawns/balance
+  // are ready.) Keep the array shape so the lobby map picker still works with a single entry.
   { id: 'STAGES', displayName: 'Arena', thumbnailKey: 'MAP_THUMB_STAGES' },
 ] as const;
 

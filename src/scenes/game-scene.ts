@@ -4178,11 +4178,13 @@ export class GameScene extends Phaser.Scene {
     // 500) so the map name lands as a deliberate match-start beat. Still well within the server's
     // 5500 ms COUNTDOWN window (worst case "DUNGEON 1" = 9 chars → 1100 ms reveal + 900 hold +
     // 350 fade ≈ 2.35 s, leaving the 5..1 digits room to play under it).
-    const BANNER_MS_PER_CHAR = 120;
-    const BANNER_MIN_MS = 1100;
-    const BANNER_MAX_MS = 2600;
-    const BANNER_HOLD_MS = 900; // hold after the reveal before the fade-out
-    const BANNER_FADE_MS = 350;
+    // Slowed further (user: "finishing too fast"). For "ARENA" (5 chars): 5×260=1300 → floored to
+    // 1800 ms reveal + 1400 ms hold + 400 fade ≈ 3.6 s — still inside the 5500 ms COUNTDOWN window.
+    const BANNER_MS_PER_CHAR = 260;
+    const BANNER_MIN_MS = 1800;
+    const BANNER_MAX_MS = 3200;
+    const BANNER_HOLD_MS = 1400; // hold after the reveal before the fade-out
+    const BANNER_FADE_MS = 400;
 
     const name = this.#levelData.level.replace(/_/g, ' ').toUpperCase();
 
@@ -4610,13 +4612,9 @@ export class GameScene extends Phaser.Scene {
       /* offline */
     }
 
-    // ── Pickup-granted special spells (VoidOrb, DarkBolt) ──
-    // Spawn one of each near the player's start so both specials are reachable
-    // for testing. They sit on opposite sides so the "only one collectable at a
-    // time" rule is easy to demonstrate: grab one, then grab the other and the
-    // first one's charges are replaced. Move into per-room Tiled data later.
-    this.#spawnVoidOrbPickup(playerStartPosition.x, playerStartPosition.y);
-    this.#spawnDarkBoltPickup(playerStartPosition.x, playerStartPosition.y);
+    // NOTE: the default VoidOrb/DarkBolt arena pickups were removed — special spells now spawn at
+    // random map locations during the match (server-authoritative NetworkedSpecialPickup). The local
+    // #spawnVoidOrbPickup / #spawnDarkBoltPickup helpers remain for any future per-room Tiled use.
 
     // Star Shield: always-available special. If the player has nothing else
     // equipped, seed the slot with 1 charge so R can cast immediately. After

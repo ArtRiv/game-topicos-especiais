@@ -36,8 +36,7 @@ export type MapPoolEntry = {
 };
 
 export const MAP_POOL: readonly MapPoolEntry[] = [
-  { id: 'WORLD', displayName: 'Open Field', thumbnailKey: 'MAP_THUMB_WORLD' },
-  { id: 'DUNGEON_1', displayName: 'Dungeon', thumbnailKey: 'MAP_THUMB_DUNGEON_1' },
+  // Only Arena for the event (mirror src/networking/types.ts). Re-add WORLD/DUNGEON_1 later.
   { id: 'STAGES', displayName: 'Arena', thumbnailKey: 'MAP_THUMB_STAGES' },
 ] as const;
 
