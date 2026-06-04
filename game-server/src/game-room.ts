@@ -5,6 +5,7 @@ import {
   RESPAWN_DELAY_MS,
   MAX_SPELL_DAMAGE,
   RESPAWN_INVULN_MAX_MS,
+  PLAYER_MAX_HP,
 } from './types.js';
 
 // Phase 14 (D-09): server-side copy of per-map team spawnpoints. The server has no access to the
@@ -43,9 +44,14 @@ export class GameRoom {
   #respawnHandles = new Map<string, ReturnType<typeof setTimeout>>();      // playerId → pending respawn timer
   #playerInfo = new Map<string, PlayerInfo>();                              // playerId → info (for team lookups)
   #matchMode: MatchMode = 'respawn';                                        // D-12: structural support, no UI surface in 9.3
+  #winTarget: number = 30;                                                   // TDM kill target (per-match, from lobby config)
   #spawnPoints = new Map<string, { x: number; y: number }>();               // playerId → original spawn (D-10)
   #matchSpawns: SpawnAssignment[] = [];                                      // match-start spawns, replayable on scene-ready
-  #maxHp: number = 100;                                                     // mirror client CONFIG.PLAYER_START_MAX_HEALTH
+  #maxHp: number = PLAYER_MAX_HP;                                           // mirror client CONFIG.PLAYER_START_MAX_HEALTH
+
+  // --- Special-spell pickups (server-authoritative spawn + first-claim-wins) ---
+  #pendingPickups = new Map<string, { spellType: string; x: number; y: number; claimedBy: string | null }>();
+  #pickupHandles: ReturnType<typeof setTimeout>[] = [];
 
   // --- Phase 14: team-deathmatch scoring state (D-04, D-07) ---
   #teamScores: [number, number] = [0, 0];                                   // shared per-team kill total
@@ -318,6 +324,39 @@ export class GameRoom {
   public setMatchMode(mode: MatchMode): void { this.#matchMode = mode; }
   public get matchMode(): MatchMode { return this.#matchMode; }
 
+  // Per-match TDM kill target (from lobby config; default 30). Read by the win-check in server.ts.
+  public setWinTarget(target: number): void { this.#winTarget = target; }
+  public get winTarget(): number { return this.#winTarget; }
+
+  // --- Special-spell pickups ---
+  public addPendingPickup(pickupId: string, spellType: string, x: number, y: number): void {
+    this.#pendingPickups.set(pickupId, { spellType, x, y, claimedBy: null });
+  }
+
+  /** First-claim-wins. Returns true exactly once per pickupId (the winning claim); later claims drop. */
+  public tryClaimPickup(pickupId: string, playerId: string): boolean {
+    const p = this.#pendingPickups.get(pickupId);
+    if (!p || p.claimedBy !== null) return false;
+    p.claimedBy = playerId;
+    return true;
+  }
+
+  /** Un-collected pickups (for replay to a late-booting client via match:scene-ready). */
+  public getActivePickups(): { pickupId: string; spellType: string; x: number; y: number }[] {
+    const out: { pickupId: string; spellType: string; x: number; y: number }[] = [];
+    for (const [pickupId, p] of this.#pendingPickups) {
+      if (p.claimedBy === null) out.push({ pickupId, spellType: p.spellType, x: p.x, y: p.y });
+    }
+    return out;
+  }
+
+  public pushPickupHandle(h: ReturnType<typeof setTimeout>): void { this.#pickupHandles.push(h); }
+
+  public clearPickupTimers(): void {
+    for (const h of this.#pickupHandles) clearTimeout(h);
+    this.#pickupHandles = [];
+  }
+
   /** D-12/D-14: start the server-authoritative respawn-invuln window for a player. validateHit
    *  rejects any spell:hit on this player until RESPAWN_INVULN_MAX_MS from now. Called by server.ts
    *  on match start and on each respawn callback — never from a client message. */
@@ -409,5 +448,8 @@ export class GameRoom {
     this.#deaths.clear();
     // Phase 14 (D-14): drop any lingering invuln windows so a rematch starts unprotected.
     this.#invulnUntil.clear();
+    // Special-spell pickups: cancel pending spawns + clear state so a rematch starts fresh.
+    this.clearPickupTimers();
+    this.#pendingPickups.clear();
   }
 }

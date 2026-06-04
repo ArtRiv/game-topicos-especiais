@@ -297,8 +297,11 @@ export class UiScene extends Phaser.Scene {
 
   public async updateHealthInHud(data: PlayerHealthUpdated): Promise<void> {
     if (data.type === PLAYER_HEALTH_UPDATE_TYPE.INCREASE) {
-      // if player has increased their health, picking up hearts, new heart container, fairy, etc.,
-      // need to update their health here
+      // Health went UP (respawn refill, heart pickup, heal). The HUD previously did nothing here, so
+      // after a TDM death/respawn the hearts stayed empty/white. Redraw every heart to its correct
+      // frame for the new HP and animate each newly-restored heart with a quick pop so the refill
+      // reads as a deliberate "back in the fight" beat.
+      this.#refillHearts(data.previousHealth, data.currentHealth);
       return;
     }
 
@@ -312,13 +315,68 @@ export class UiScene extends Phaser.Scene {
       if (!isHalfHeart) {
         animationName = HEART_ANIMATIONS.LOSE_FIRST_HALF;
       }
+      // Crash guard: a server↔client HP-scale mismatch (or any out-of-range HP) can make heartIndex
+      // fall outside #hearts. Indexing an undefined heart throws, and because this runs synchronously
+      // inside the damage handler the throw ABORTS damage application — health silently never drops
+      // ("spells compute but nothing happens"). Skip the missing heart instead of throwing so the
+      // HUD can never break the damage pipeline again.
+      const heart = this.#hearts[heartIndex];
+      if (heart === undefined) {
+        health -= 1;
+        continue;
+      }
       await new Promise((resolve) => {
-        this.#hearts[heartIndex].play(animationName);
-        this.#hearts[heartIndex].once(Phaser.Animations.Events.ANIMATION_COMPLETE_KEY + animationName, () => {
+        heart.play(animationName);
+        heart.once(Phaser.Animations.Events.ANIMATION_COMPLETE_KEY + animationName, () => {
           resolve(undefined);
         });
       });
       health -= 1;
+    }
+  }
+
+  /**
+   * Redraw the heart bar for a HEALTH-INCREASE (respawn refill / heal). There is no authored
+   * "gain heart" spritesheet animation (only the two LOSE animations exist), so we animate the
+   * refill ourselves: each heart is set to its correct frame for the new HP, and every heart that
+   * just came back (was empty/half, is now fuller) gets a quick scale "pop" staggered left→right.
+   */
+  #refillHearts(previousHealth: number, currentHealth: number): void {
+    const fullHearts = Math.floor(currentHealth / 2);
+    const hasHalf = currentHealth % 2 === 1;
+    const prevFull = Math.floor(previousHealth / 2);
+
+    for (let i = 0; i < this.#hearts.length; i += 1) {
+      const heart = this.#hearts[i];
+      if (heart === undefined) continue;
+
+      // Determine the target frame for this heart slot at the new HP.
+      let frame: string = HEART_TEXTURE_FRAME.EMPTY;
+      if (i < fullHearts) {
+        frame = HEART_TEXTURE_FRAME.FULL;
+      } else if (hasHalf && i === fullHearts) {
+        frame = HEART_TEXTURE_FRAME.HALF;
+      } else if (i >= Math.floor(DataManager.instance.data.maxHealth / 2)) {
+        frame = HEART_TEXTURE_FRAME.NONE; // slots beyond max HP stay blank
+      }
+
+      // Stop any leftover lose-animation tween/anim and force the frame.
+      heart.anims?.stop();
+      heart.setFrame(frame);
+
+      // Pop only the hearts that were just restored (became fuller than before).
+      if (i >= prevFull && i < fullHearts + (hasHalf ? 1 : 0)) {
+        heart.setScale(0.4);
+        this.tweens.add({
+          targets: heart,
+          scale: 1,
+          ease: 'Back.easeOut',
+          duration: 220,
+          delay: (i - prevFull) * 60,
+        });
+      } else {
+        heart.setScale(1);
+      }
     }
   }
 

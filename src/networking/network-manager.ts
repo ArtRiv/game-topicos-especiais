@@ -47,6 +47,9 @@ import type {
   TeamScorePayload,
   MatchEndedPayload,
   MatchSpawnsPayload,
+  PickupSpawnedPayload,
+  PickupClaimPayload,
+  PickupCollectedPayload,
 } from './types.js';
 
 // Messages exchanged over WebRTC data channels
@@ -138,19 +141,25 @@ export class NetworkManager {
   #msgRecvCount = 0;
   #metricsInterval: ReturnType<typeof setInterval> | null = null;
 
-  private constructor(serverUrl: string) {
+  private constructor(serverUrl: string | undefined, extraOptions: { path?: string } = {}) {
+    // serverUrl may be undefined → socket.io-client connects SAME-ORIGIN (platform deploy), deriving
+    // host+protocol from window.location. extraOptions.path carries the slug-prefixed proxy path.
     this.#socket = io(serverUrl, {
       autoConnect: false,
       reconnectionAttempts: 5,
       reconnectionDelay: 1000,
+      ...extraOptions,
     });
     this.#bindSocketEvents();
   }
 
-  static init(serverUrl?: string): NetworkManager {
+  static init(serverUrl?: string, extraOptions: { path?: string } = {}): NetworkManager {
     if (NetworkManager.#instance) return NetworkManager.#instance;
-    const url = serverUrl ?? `${NETWORK_SERVER_URL}:${NETWORK_SERVER_PORT}`;
-    NetworkManager.#instance = new NetworkManager(url);
+    // Same-origin platform mode passes a `path` option and a deliberately-undefined url (io() then
+    // uses window.location). Only fall back to the localhost default when neither a url NOR a path
+    // was provided (legacy/no-arg callers).
+    const url = serverUrl ?? (extraOptions.path ? undefined : `${NETWORK_SERVER_URL}:${NETWORK_SERVER_PORT}`);
+    NetworkManager.#instance = new NetworkManager(url, extraOptions);
     // Dev-only: expose to window for browser-console diagnostics + Playwright/manual repro.
     if (typeof window !== 'undefined' && NETWORK_DEBUG) {
       (window as unknown as { __NM__: NetworkManager }).__NM__ = NetworkManager.#instance;
@@ -199,10 +208,19 @@ export class NetworkManager {
   }
 
   /** Phase 14: true when the current match is team-deathmatch — gates the server-authoritative
-   *  death/respawn flow so the local HP-zero does NOT route to the legacy single-player GAME_OVER. */
+   *  death/respawn flow so the local HP-zero does NOT route to the legacy single-player GAME_OVER.
+   *
+   *  Event-readiness fix: mirror the SERVER's default (server.ts setMatchMode(lobby.mode ?? 'team-deathmatch')).
+   *  The mode is propagated to the client only via matchConfig.mode, and teardownMesh() nulls #matchMode on
+   *  return-to-lobby/rematch. The old strict `=== 'team-deathmatch'` check meant a null #matchMode (after a
+   *  teardown, or if the lobby:started mode didn't stick) made this return false — and on that player's next
+   *  death the legacy single-player GAME_OVER screen fired. Since the only non-TDM modes are 'respawn' and
+   *  'last-standing', treat ANY connected match as TDM unless it is EXPLICITLY one of those. A null mode can
+   *  never again resurrect the single-player game-over path mid-match. */
   get isTeamDeathmatch(): boolean {
-    return this.#matchMode === 'team-deathmatch';
+    return this.#matchMode !== 'respawn' && this.#matchMode !== 'last-standing';
   }
+
 
   get socketId(): string {
     return this.#socket.id ?? '';
@@ -265,6 +283,13 @@ export class NetworkManager {
     this.#socket.emit('match:scene-ready');
   }
 
+  /** Ask the server to replay any un-collected special-spell pickups that spawned before this client's
+   *  GameScene booted (same late-boot problem as match:scene-ready). The replay is idempotent — the
+   *  client dedupes by pickupId — so this is safe to call alongside sendSceneReady(). */
+  sendPickupRequest(): void {
+    this.#socket.emit('pickup:request-active');
+  }
+
   /** Client ack for the LOADING sync barrier (LFC-05). Sent exactly once when the local LoadingScene finishes preparation. */
   sendMatchLoaded(lobbyId: string): void {
     this.#socket.emit('match:loaded', { lobbyId } satisfies MatchLoadedPayload);
@@ -285,6 +310,12 @@ export class NetworkManager {
   /** Claim that a locally-cast spell hit a wall/environment. Host broadcasts spell:destroyed to all peers (D-04). */
   sendSpellHitEnvironment(payload: SpellHitEnvironmentPayload): void {
     this.#socket.emit('spell:hit-environment', payload);
+  }
+
+  /** Claim that the local player touched a special-spell pickup. Server resolves first-touch-wins
+   *  (by socket identity) and broadcasts pickup:collected. Carries only pickupId (anti-spoof). */
+  sendPickupClaim(payload: PickupClaimPayload): void {
+    this.#socket.emit('pickup:claimed', payload);
   }
 
   // --- Game methods (WebRTC data channels — low latency, P2P) ---
@@ -611,6 +642,13 @@ export class NetworkManager {
     // Phase 14 bugfix (TDM playtest #4): match-start team spawn assignments.
     this.#socket.on('match:spawns', (payload: MatchSpawnsPayload) => {
       EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_MATCH_SPAWNS, payload);
+    });
+    // Special-spell pickups — server-authoritative spawn + collect broadcasts.
+    this.#socket.on('pickup:spawned', (payload: PickupSpawnedPayload) => {
+      EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_PICKUP_SPAWNED, payload);
+    });
+    this.#socket.on('pickup:collected', (payload: PickupCollectedPayload) => {
+      EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_PICKUP_COLLECTED, payload);
     });
   }
 

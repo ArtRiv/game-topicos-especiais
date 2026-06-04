@@ -17,7 +17,7 @@ export class LobbyManager {
       players: [player],
       mode: null,
       status: 'waiting',
-      config: { format: '3v3', mapId: 'WORLD', maxPlayers: 6 },
+      config: { format: '3v3', mapId: 'WORLD', maxPlayers: 6, winTarget: 30 },
     };
     this.#lobbies.set(lobbyId, lobby);
     this.#socketToLobby.set(socketId, lobbyId);
@@ -128,6 +128,12 @@ export class LobbyManager {
       return { ok: false, reason: 'Invalid map' };
     }
 
+    // Validate winTarget if provided (host-gated like all config).
+    const VALID_WIN_TARGETS = [8, 15, 30];
+    if (partial.winTarget !== undefined && !VALID_WIN_TARGETS.includes(partial.winTarget)) {
+      return { ok: false, reason: 'Invalid win target' };
+    }
+
     // Compute new config (partial merge; maxPlayers always derived from format, never trusted from client)
     const nextFormat: LobbyFormat = partial.format ?? lobby.config.format;
     const nextMapId: string = partial.mapId ?? lobby.config.mapId;
@@ -138,7 +144,14 @@ export class LobbyManager {
       return { ok: false, reason: `Reduce players first (${lobby.players.length} > ${nextMaxPlayers} cap)` };
     }
 
-    lobby.config = { format: nextFormat, mapId: nextMapId, maxPlayers: nextMaxPlayers };
+    lobby.config = {
+      format: nextFormat,
+      mapId: nextMapId,
+      maxPlayers: nextMaxPlayers,
+      // Preserve winTarget when the host changes OTHER settings (without the `?? lobby.config.winTarget`,
+      // cycling format/map would silently reset the kill target to 30).
+      winTarget: partial.winTarget ?? lobby.config.winTarget ?? 30,
+    };
     return { ok: true, lobby };
   }
 

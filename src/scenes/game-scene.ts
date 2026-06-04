@@ -1,6 +1,6 @@
 import * as Phaser from 'phaser';
 import { SCENE_KEYS } from './scene-keys';
-import { ASSET_KEYS, CHEST_REWARD_TO_TEXTURE_FRAME } from '../common/assets';
+import { ASSET_KEYS, CHEST_REWARD_TO_TEXTURE_FRAME, CHARACTER_ANIMATIONS } from '../common/assets';
 import { Player } from '../game-objects/player/player';
 import { KeyboardComponent } from '../components/input/keyboard-component';
 import { Spider } from '../game-objects/enemies/spider';
@@ -62,6 +62,7 @@ import { ThunderSplash } from '../game-objects/spells/thunder-splash';
 import { LightningBeam } from '../game-objects/spells/lightning-beam';
 import { VoidOrbPickup } from '../game-objects/pickups/void-orb-pickup';
 import { DarkBoltPickup } from '../game-objects/pickups/dark-bolt-pickup';
+import { NetworkedSpecialPickup } from '../game-objects/pickups/networked-special-pickup';
 import { SpecialSpellInventory } from '../common/special-spell-inventory';
 import { AirBurst } from '../game-objects/spells/air-burst';
 // Side-effect import: registers SPELL_ID.DASH factory so remote dash casts replay the roll VFX.
@@ -100,9 +101,9 @@ import {
 import { NetworkManager } from '../networking/network-manager';
 import { RemoteInputComponent } from '../components/input/remote-input-component';
 import { MusicManager } from '../common/music-manager';
-import type { PlayerUpdateBroadcast, RoomTransitionPayload, PlayerDisconnectedPayload, PlayerUpdatePayload, SpellCastBroadcast, PlayerInfo, BreathStartBroadcast, BreathUpdateBroadcast, BreathEndBroadcast, EarthWallPillarBroadcast, EarthWallPillarDestroyBroadcast, MatchStateChangedPayload, MatchCountdownTickPayload, DamageConfirmedPayload, SpellDestroyedPayload, EliminationPayload, RespawnPayload, MatchConfig, MatchEndedPayload, MatchSpawnsPayload } from '../networking/types';
+import type { PlayerUpdateBroadcast, RoomTransitionPayload, PlayerDisconnectedPayload, PlayerUpdatePayload, SpellCastBroadcast, PlayerInfo, BreathStartBroadcast, BreathUpdateBroadcast, BreathEndBroadcast, EarthWallPillarBroadcast, EarthWallPillarDestroyBroadcast, MatchStateChangedPayload, MatchCountdownTickPayload, DamageConfirmedPayload, SpellDestroyedPayload, EliminationPayload, RespawnPayload, MatchConfig, MatchEndedPayload, MatchSpawnsPayload, PickupSpawnedPayload, PickupCollectedPayload } from '../networking/types';
 import { RUNTIME_CONFIG } from '../common/runtime-config';
-import type { Direction } from '../common/types';
+import type { Direction, CharacterAnimation } from '../common/types';
 
 /** Quick blue-water + brown-debris splash spawned when a water spell breaks
  *  against an EarthWall pillar. Pure visuals — no physics body, no damage.
@@ -208,6 +209,16 @@ export class GameScene extends Phaser.Scene {
   #remoteFireBreaths = new Map<string, FireBreath>();
   // Phase 9.3 (Plan 03): dedupe set for NETWORK_DAMAGE_CONFIRMED. Cleared on shutdown.
   #appliedDamageSpellIds: Set<string> = new Set();
+  // Event-readiness fix: playerIds currently DEAD (between elimination and respawn). The per-frame
+  // remote interpolation loop (#interpolateRemotePlayers) drives a remote's animation from the state
+  // it broadcasts over WebRTC — a dead player keeps sending IDLE/MOVE, which would replay walk/idle and
+  // OVERRIDE the death animation (the intermittent "death anim sometimes doesn't play" bug). While an id
+  // is in this set, the interpolation loop skips its state/animation updates so DIE_DOWN stays on screen.
+  // Set on #onElimination, cleared on #onRespawn.
+  #deadPlayerIds: Set<string> = new Set();
+  // Special-spell pickups: pickupId → sprite. Spawned from server pickup:spawned broadcasts, removed
+  // on pickup:collected (so all clients agree). Cleared on shutdown.
+  #pickups: Map<string, NetworkedSpecialPickup> = new Map();
   // Phase 9.3 (Plan 03): death overlay/countdown state for local-player elimination.
   #deathOverlay: Phaser.GameObjects.Rectangle | undefined;
   #deathCountdownText: Phaser.GameObjects.BitmapText | undefined;
@@ -3549,9 +3560,13 @@ export class GameScene extends Phaser.Scene {
       if (remote.invulnerableComponent.invulnerable) return;
       remote.lifeComponent.takeDamage(payload.amount);
       if (remote.lifeComponent.life === 0) {
-        // Death is server-authoritative (NETWORK_ELIMINATION) — the local state we set
-        // here is a best-guess that will be overridden when the elimination broadcast lands.
-        remote.stateMachine.setState(CHARACTER_STATES.DEATH_STATE, DIRECTION.DOWN);
+        // Death is server-authoritative: the `elimination` broadcast (#onElimination) is the SINGLE
+        // source of truth for the death visual (death anim + body disable + team tint). We deliberately
+        // DO NOT enter DEATH_STATE here. Two reasons it raced before: (1) DEATH_STATE.onEnter plays
+        // DIE_DOWN with ignoreIfPlaying:true, so the later #onElimination DIE_DOWN call was IGNORED and
+        // the corpse froze on the hurt/normal frame ("normal sprite locked in place"); (2) DEATH_STATE
+        // sets _isDefeated + disableObject (active=false), competing with #onElimination's tint. Letting
+        // #onElimination own it makes the corpse identical on every screen.
       } else {
         remote.stateMachine.setState(CHARACTER_STATES.HURT_STATE, DIRECTION.DOWN);
       }
@@ -3565,20 +3580,50 @@ export class GameScene extends Phaser.Scene {
     const nm = this.#safeNetworkManager();
     const isLocal = nm != null && payload.playerId === nm.localPlayerId;
 
+    // Mark this player dead so the per-frame remote interpolation loop stops applying their (still
+    // incoming) IDLE/MOVE animation over the death animation. Cleared on respawn.
+    this.#deadPlayerIds.add(payload.playerId);
+
     if (isLocal) {
       this.#applyLocalDeath();
       return;
     }
     const remote = this.#remotePlayers.get(payload.playerId);
     if (remote) {
-      remote.setTint(0x666666);
+      // Single authoritative death visual for a remote: disable body (spells pass through), play the
+      // death animation, keep the team color. This is the ONLY place a remote death visual is set
+      // (#onDamageConfirmed no longer enters DEATH_STATE), so there's no race.
+      if (remote.body) {
+        (remote.body as Phaser.Physics.Arcade.Body).enable = false;
+      }
+      // Force the DIE animation facing the remote's last direction. The component config defines all
+      // four (DIE_LEFT/RIGHT → DIE_SIDE with flipX); it's ignoreIfPlaying:true, so anims.stop() FIRST
+      // or the death frame never shows (sprite freezes on the normal pose).
+      remote.anims?.stop();
+      remote.animationComponent?.playAnimation(`DIE_${remote.direction}` as CharacterAnimation);
+      // Tint AFTER the frame swap, via the cached team tint (works even though a dead remote is
+      // active=false, which the old #applyTeamTint early-returned on).
+      this.#reapplyStoredTint(remote, payload.playerId);
     }
   };
 
   #applyLocalDeath(): void {
     this.#deathLockActive = true;
     this.#player.controls.isMovementLocked = true;
-    this.#player.setTint(0x666666);
+    // Bug fix (non-targetable corpse): disable the physics body so enemy spells pass through a dead
+    // player instead of exploding on the body. Re-enabled in #onRespawn. We disable only the body
+    // (not the whole game object) to keep the death overlay + respawn flow intact.
+    if (this.#player.body) {
+      (this.#player.body as Phaser.Physics.Arcade.Body).enable = false;
+    }
+    // Bug fix (death animation): force-play the death animation facing the player's last direction.
+    // The config defines all four (LEFT/RIGHT → DIE_SIDE + flipX); it's ignoreIfPlaying:true, so
+    // anims.stop() FIRST or the death frame may never render (sprite freezes on the normal/hurt pose).
+    // Apply team tint AFTER the frame-swap so the corpse keeps its team color (not the default sprite).
+    this.#player.anims?.stop();
+    this.#player.animationComponent?.playAnimation(`DIE_${this.#player.direction}` as CharacterAnimation);
+    const nmDeath = this.#safeNetworkManager();
+    if (nmDeath?.localPlayerId) this.#reapplyStoredTint(this.#player, nmDeath.localPlayerId);
     // Defensive velocity zero (mirrors #enterCountdownMode).
     if (this.#player.body) {
       (this.#player.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
@@ -3627,6 +3672,14 @@ export class GameScene extends Phaser.Scene {
     if (isLocal) {
       this.#clearLocalDeath();
       this.#player.setPosition(payload.x, payload.y);
+      // Bug fix (non-targetable corpse): re-enable the physics body disabled in #applyLocalDeath so
+      // the respawned player can collide / be hit again, and clear any latched defeated/invuln flags.
+      this.#player.revive();
+      // Bug fix (stuck dead sprite): the death animation holds on its last frame. setState(IDLE) can be
+      // a no-op if the machine thinks it's already idle (its onEnter never re-runs), so the DIE frame
+      // stays frozen. Force the idle animation directly, then set the state for input handling.
+      this.#player.animationComponent?.playAnimation(`IDLE_${this.#player.direction}` as CharacterAnimation);
+      this.#player.stateMachine.setState(CHARACTER_STATES.IDLE_STATE);
       this.#player.lifeComponent.resetToFull();
       // Phase 14 bugfix (server-authoritative HP): resetToFull only mutates the LifeComponent —
       // the HUD reads DataManager. Refresh it so the heart bar refills on respawn (without this,
@@ -3640,14 +3693,28 @@ export class GameScene extends Phaser.Scene {
       // tears down the death overlay + position/HP/tint are restored (do not blink while
       // the death overlay is up).
       this.#startInvulnBlink();
+      // No longer dead (cleared AFTER the idle animation is forced, so a stray interpolation update
+      // in between can't resurrect the dead-frame gate). Local isn't interp-driven, but keep symmetric.
+      this.#deadPlayerIds.delete(payload.playerId);
       return;
     }
     const remote = this.#remotePlayers.get(payload.playerId);
     if (remote) {
       remote.setPosition(payload.x, payload.y);
       remote.lifeComponent.resetToFull();
+      // Bug fix (non-targetable corpse): clear the latched _isDefeated flag + re-enable the body so the
+      // respawned remote can be hit again. Without this, after one death the caster's copy of the player
+      // stays `isDefeated` forever and every future hit short-circuits (line ~3548) — the player becomes
+      // permanently invincible on other screens.
+      remote.revive();
+      // Force idle animation directly so the DIE frame doesn't stay frozen (setState alone can no-op).
+      remote.animationComponent?.playAnimation(`IDLE_${remote.direction}` as CharacterAnimation);
+      remote.stateMachine.setState(CHARACTER_STATES.IDLE_STATE);
       // Phase 14 bugfix (#4): restore the remote's team tint (was set gray by #onElimination).
       this.#applyTeamTint(remote, payload.playerId);
+      // Clear the dead-gate AFTER the idle animation + state are set, so the interpolation loop can't
+      // apply a stale dead-frame in the gap (closes the ~ms race the review flagged).
+      this.#deadPlayerIds.delete(payload.playerId);
     }
   };
 
@@ -3685,6 +3752,36 @@ export class GameScene extends Phaser.Scene {
         this.#playSpawnInCue(remote, a.x, a.y);
       }
     }
+  };
+
+  // ─── Special-spell pickups (server-authoritative spawn + first-claim-wins) ───
+  // Server broadcasts pickup:spawned → every client renders the SAME pickup at the SAME spot. On the
+  // local player overlapping it, we optimistically grant the special + tell the server (pickup:claimed).
+  // The server resolves first-touch-wins and broadcasts pickup:collected → everyone destroys the sprite.
+  #onPickupSpawned = (payload: PickupSpawnedPayload): void => {
+    if (this.#pickups.has(payload.pickupId)) return;   // dedupe (e.g. late-boot replay)
+    if (!this.#player) return;
+    const pickup = new NetworkedSpecialPickup(this, payload.pickupId, payload.spellType, payload.x, payload.y);
+    this.#pickups.set(payload.pickupId, pickup);
+    let claimSent = false;   // one-shot guard so the overlap can't fire a second claim across frames
+    this.physics.add.overlap(this.#player, pickup, () => {
+      if (claimSent || !pickup.active) return;
+      claimSent = true;
+      // Stop the overlap from re-firing every frame before the server broadcast lands (would spam claims).
+      (pickup.body as Phaser.Physics.Arcade.Body | null)?.setEnable(false);
+      pickup.collect();   // optimistic local inventory grant
+      this.#safeNetworkManager()?.sendPickupClaim({ pickupId: payload.pickupId });
+    });
+  };
+
+  #onPickupCollected = (payload: PickupCollectedPayload): void => {
+    const pickup = this.#pickups.get(payload.pickupId);
+    if (!pickup) return;
+    pickup.destroy();
+    this.#pickups.delete(payload.pickupId);
+    // If WE won, collect() already granted the special on overlap. If someone else won and we never
+    // touched it, the sprite just disappears — no inventory change for us. (A non-winning optimistic
+    // collect() — both touched within one RTT — is a rare, harmless free spell; no rollback needed.)
   };
 
   /**
@@ -3875,6 +3972,10 @@ export class GameScene extends Phaser.Scene {
     this.#runLocalCountdown();
     // Request a replay of the match-start spawns (the COUNTDOWN→ACTIVE broadcast already elapsed).
     nm.sendSceneReady();
+    // Also replay any special-spell pickups that spawned before this GameScene booted (late-boot /
+    // mid-match reconnect) — without this, an early pickup is invisible/uncollectable on this client
+    // while it lives on everyone else's screen. Idempotent (client dedupes by pickupId).
+    nm.sendPickupRequest();
   }
 
   /**
@@ -4168,6 +4269,9 @@ export class GameScene extends Phaser.Scene {
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_RESPAWN, this.#onRespawn, this);
     // Phase 14 bugfix (TDM playtest #4): match-start team spawn assignments.
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_MATCH_SPAWNS, this.#onMatchSpawns, this);
+    // Special-spell pickups — server-driven spawn + collect.
+    EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_PICKUP_SPAWNED, this.#onPickupSpawned, this);
+    EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_PICKUP_COLLECTED, this.#onPickupCollected, this);
     // Phase 14 (Plan 04, D-06/D-08): launch the minimal results overlay on match ENDED.
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_MATCH_ENDED, this.#onMatchEnded, this);
 
@@ -4189,9 +4293,15 @@ export class GameScene extends Phaser.Scene {
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_RESPAWN, this.#onRespawn, this);
       // Phase 14 bugfix (TDM playtest #4): match-start spawn listener cleanup.
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_MATCH_SPAWNS, this.#onMatchSpawns, this);
+      // Special-spell pickups listener cleanup.
+      EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_PICKUP_SPAWNED, this.#onPickupSpawned, this);
+      EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_PICKUP_COLLECTED, this.#onPickupCollected, this);
       // Phase 14 (Plan 04): results-overlay launcher cleanup.
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_MATCH_ENDED, this.#onMatchEnded, this);
       this.#appliedDamageSpellIds.clear();
+      this.#deadPlayerIds.clear();
+      this.#pickups.forEach((p) => p.destroy());
+      this.#pickups.clear();
       this.#clearLocalDeath();
       // Phase 14 bugfix (#1/#2): cancel an in-flight local countdown so its timer never fires
       // against a torn-down scene (rematch / early stop).
@@ -5108,6 +5218,11 @@ export class GameScene extends Phaser.Scene {
     this.#remotePlayers.set(playerId, remote);
     remote.setData('playerId', playerId);
     this.#remotePlayerGroup.add(remote);
+    // Populate the team-tint cache (setData('teamTint')) so death/respawn can re-apply the exact team
+    // color via #reapplyStoredTint without re-resolving through matchPlayers (which can be racy). The
+    // constructor already applied `tint`; this just records it for later restore. (Was the corpse-color
+    // bug: the cache was never set for remotes, so dead bodies fell back to a white/default resolve.)
+    this.#applyTeamTint(remote, playerId);
     return remote;
   }
 
@@ -5128,7 +5243,12 @@ export class GameScene extends Phaser.Scene {
   };
 
   #buildLocalPlayerSnapshot(): PlayerUpdatePayload | null {
-    if (!this.#player?.active) return null;
+    // Don't broadcast position/animation while DEAD: a dead local player otherwise keeps emitting
+    // IDLE/MOVE snapshots, which on peers' screens would replay walk/idle over the death animation
+    // (the intermittent "death anim doesn't play" bug). #deadPlayerIds gates this on the RECEIVER side
+    // too; stopping it at the SOURCE here removes the race entirely. #deathLockActive is set in
+    // #applyLocalDeath and cleared in #clearLocalDeath (on respawn), so broadcasting resumes on respawn.
+    if (!this.#player?.active || this.#deathLockActive) return null;
     return {
       x: this.#player.x,
       y: this.#player.y,
@@ -5196,6 +5316,15 @@ export class GameScene extends Phaser.Scene {
         remote.setFlipX(target.flipX);
       }
 
+      // Skip ALL state/animation updates for a DEAD remote: it keeps broadcasting IDLE/MOVE over WebRTC,
+      // and applying that here would override the death animation (intermittent "death anim doesn't play"
+      // bug). Position still interpolates above (harmless — a dead body holds position anyway). Cleared
+      // from #deadPlayerIds on respawn, after which normal animation resumes.
+      const remoteId = remote.getData('playerId') as string | undefined;
+      if (remoteId !== undefined && this.#deadPlayerIds.has(remoteId)) {
+        continue;
+      }
+
       if (target.state && remote.stateMachine) {
         const currentState = remote.stateMachine.currentStateName;
         const stateChanged = target.state !== currentState;
@@ -5231,8 +5360,33 @@ export class GameScene extends Phaser.Scene {
    *  a respawn — the old #onRespawn clearTint() dropped the team color. Clears the tint when the
    *  resolved color is white (no team / offline) so we never leave a stale tint behind. */
   #applyTeamTint(player: Player, playerId: string): void {
-    if (!player?.active) return;
+    if (!player) return;
     const tint = this.#resolvePlayerTint(playerId);
+    // Cache the resolved team tint on the object so death/respawn can re-apply the SAME color without
+    // re-resolving through matchPlayers (which can be racy or unavailable mid-death). #reapplyStoredTint
+    // uses this. We intentionally DO NOT early-return on !player.active: a dead remote has active=false
+    // (disableObject) but must still show its team color while down.
+    player.setData('teamTint', tint);
+    if (tint === 0xffffff) {
+      player.clearTint();
+    } else {
+      player.setTint(tint);
+    }
+  }
+
+  /** Re-apply the team tint cached by #applyTeamTint, without re-resolving (used on death/respawn so the
+   *  corpse keeps its exact team color even if matchPlayers is momentarily unavailable). Falls back to a
+   *  fresh resolve if nothing was cached yet. */
+  #reapplyStoredTint(player: Player, playerId: string): void {
+    if (!player) return;
+    let tint = player.getData('teamTint') as number | undefined;
+    // A cached white (0xffffff) means the tint was resolved BEFORE team data arrived (race at spawn).
+    // Re-resolve in that case — by death time the team is known — and refresh the cache so the corpse
+    // shows the real team color instead of a stale white. (Root cause of "corpse color still wrong".)
+    if (tint === undefined || tint === 0xffffff) {
+      tint = this.#resolvePlayerTint(playerId);
+      player.setData('teamTint', tint);
+    }
     if (tint === 0xffffff) {
       player.clearTint();
     } else {

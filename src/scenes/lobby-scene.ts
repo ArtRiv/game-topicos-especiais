@@ -6,7 +6,7 @@ import type { Lobby, LobbyConfig, LobbyFormat, MatchConfig, PlayerInfo } from '.
 import { MAP_POOL } from '../networking/types.js';
 import { ASSET_KEYS } from '../common/assets.js';
 import { LOBBY_VOLUME, MusicManager } from '../common/music-manager';
-import { SKIP_TO_LOBBY } from '../common/config';
+import { SKIP_TO_LOBBY, resolveConnection } from '../common/config';
 
 // BitmapText replaces Phaser.GameObjects.Text. Press_Start_2P TTF was
 // pre-rasterized via Snowb into Press_Start-2.png + Press_Start-2.fnt
@@ -995,15 +995,14 @@ export class LobbyScene extends Phaser.Scene {
    */
   #skipToLobbyConnect(): void {
     this.#playerName = this.#dialogueInputValue.nick || 'Player';
-    const ip = this.#dialogueInputValue.ip || 'localhost';
-    const port = 3000;
-    const url = ip.includes(':') ? `http://${ip}` : `http://${ip}:${port}`;
+    // resolveConnection picks same-origin + slug path on the platform, or http(s)://<ip>:<port> on LAN.
+    const { url, options } = resolveConnection(this.#dialogueInputValue.ip);
 
     EVENT_BUS.once(CUSTOM_EVENTS.NETWORK_CONNECTED, this.#onConnected, this);
     EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_DISCONNECTED, this.#onSkipConnectFail, this);
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_DISCONNECTED, this.#onSkipConnectFail, this);
 
-    const nm = NetworkManager.init(url);
+    const nm = NetworkManager.init(url, options);
     nm.connect();
   }
 
@@ -1020,18 +1019,17 @@ export class LobbyScene extends Phaser.Scene {
     if (this.#dialogueText) this.#dialogueText.setText('Abrindo o portal...');
     if (this.#dialogueErrorText) this.#dialogueErrorText.setText('');
 
-    const ip = this.#dialogueInputValue.ip || 'localhost';
     const nick = this.#dialogueInputValue.nick || 'Player';
     this.#playerName = nick;
 
-    const port = 3000;
-    const url = ip.includes(':') ? `http://${ip}` : `http://${ip}:${port}`;
+    // resolveConnection picks same-origin + slug path on the platform, or http(s)://<ip>:<port> on LAN.
+    const { url, options } = resolveConnection(this.#dialogueInputValue.ip);
 
     EVENT_BUS.once(CUSTOM_EVENTS.NETWORK_CONNECTED, this.#onConnected, this);
     EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_DISCONNECTED, this.#onDialogueConnectFail, this);
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_DISCONNECTED, this.#onDialogueConnectFail, this);
 
-    const nm = NetworkManager.init(url);
+    const nm = NetworkManager.init(url, options);
     nm.connect();
   }
 
@@ -1292,11 +1290,11 @@ export class LobbyScene extends Phaser.Scene {
       const formats: LobbyFormat[] = ['1v1', '2v2', '3v3', '4v4', '5v5', '6v6', '7v7', '8v8', '9v9', '10v10'];
       let fmtIdx = Math.max(0, formats.indexOf(cfg.format));
 
-      const formatLabel = this.#crispText(cx - 8, 104, 'Format:', FONT_SMALL_WHITE).setOrigin(1, 0.5);
-      const fmtValueText = this.#crispText(cx + 40, 104, formats[fmtIdx], FONT_SMALL_WHITE).setOrigin(0.5, 0.5);
+      const formatLabel = this.#crispText(cx - 8, 100, 'Format:', FONT_SMALL_WHITE).setOrigin(1, 0.5);
+      const fmtValueText = this.#crispText(cx + 40, 100, formats[fmtIdx], FONT_SMALL_WHITE).setOrigin(0.5, 0.5);
 
-      const fmtBgPrev = this.add.rectangle(cx + 12, 104, 20, 14, BTN_COLOR).setInteractive();
-      const fmtLabelPrev = this.#crispText(cx + 12, 104, '<', FONT_SMALL_WHITE).setOrigin(0.5);
+      const fmtBgPrev = this.add.rectangle(cx + 12, 100, 20, 14, BTN_COLOR).setInteractive();
+      const fmtLabelPrev = this.#crispText(cx + 12, 100, '<', FONT_SMALL_WHITE).setOrigin(0.5);
       fmtBgPrev.on('pointerover', () => fmtBgPrev.setFillStyle(BTN_HOVER));
       fmtBgPrev.on('pointerout', () => fmtBgPrev.setFillStyle(BTN_COLOR));
       fmtBgPrev.on('pointerdown', () => {
@@ -1305,8 +1303,8 @@ export class LobbyScene extends Phaser.Scene {
         NetworkManager.getInstance().sendLobbySetConfig({ format: formats[fmtIdx] });
       });
 
-      const fmtBgNext = this.add.rectangle(cx + 68, 104, 20, 14, BTN_COLOR).setInteractive();
-      const fmtLabelNext = this.#crispText(cx + 68, 104, '>', FONT_SMALL_WHITE).setOrigin(0.5);
+      const fmtBgNext = this.add.rectangle(cx + 68, 100, 20, 14, BTN_COLOR).setInteractive();
+      const fmtLabelNext = this.#crispText(cx + 68, 100, '>', FONT_SMALL_WHITE).setOrigin(0.5);
       fmtBgNext.on('pointerover', () => fmtBgNext.setFillStyle(BTN_HOVER));
       fmtBgNext.on('pointerout', () => fmtBgNext.setFillStyle(BTN_COLOR));
       fmtBgNext.on('pointerdown', () => {
@@ -1316,6 +1314,35 @@ export class LobbyScene extends Phaser.Scene {
       });
 
       this.#configBlockObjects.push(formatLabel, fmtBgPrev, fmtLabelPrev, fmtValueText, fmtBgNext, fmtLabelNext);
+
+      // Match-length row — cycle control mirroring Format (host-only). winTarget: 8 / 15 / 30 kills.
+      const winTargets = [8, 15, 30];
+      let wtIdx = Math.max(0, winTargets.indexOf(cfg.winTarget ?? 30));
+
+      const wtLabel = this.#crispText(cx - 8, 114, 'Match:', FONT_SMALL_WHITE).setOrigin(1, 0.5);
+      const wtValueText = this.#crispText(cx + 40, 114, `${winTargets[wtIdx]}`, FONT_SMALL_WHITE).setOrigin(0.5, 0.5);
+
+      const wtBgPrev = this.add.rectangle(cx + 12, 114, 20, 14, BTN_COLOR).setInteractive();
+      const wtLabelPrev = this.#crispText(cx + 12, 114, '<', FONT_SMALL_WHITE).setOrigin(0.5);
+      wtBgPrev.on('pointerover', () => wtBgPrev.setFillStyle(BTN_HOVER));
+      wtBgPrev.on('pointerout', () => wtBgPrev.setFillStyle(BTN_COLOR));
+      wtBgPrev.on('pointerdown', () => {
+        wtIdx = (wtIdx - 1 + winTargets.length) % winTargets.length;
+        wtValueText.setText(`${winTargets[wtIdx]}`);
+        NetworkManager.getInstance().sendLobbySetConfig({ winTarget: winTargets[wtIdx] });
+      });
+
+      const wtBgNext = this.add.rectangle(cx + 68, 114, 20, 14, BTN_COLOR).setInteractive();
+      const wtLabelNext = this.#crispText(cx + 68, 114, '>', FONT_SMALL_WHITE).setOrigin(0.5);
+      wtBgNext.on('pointerover', () => wtBgNext.setFillStyle(BTN_HOVER));
+      wtBgNext.on('pointerout', () => wtBgNext.setFillStyle(BTN_COLOR));
+      wtBgNext.on('pointerdown', () => {
+        wtIdx = (wtIdx + 1) % winTargets.length;
+        wtValueText.setText(`${winTargets[wtIdx]}`);
+        NetworkManager.getInstance().sendLobbySetConfig({ winTarget: winTargets[wtIdx] });
+      });
+
+      this.#configBlockObjects.push(wtLabel, wtBgPrev, wtLabelPrev, wtValueText, wtBgNext, wtLabelNext);
 
       // Map label — centered above the cards row.
       const mapLabel = this.#crispText(cx, 124, 'Map:', FONT_SMALL_WHITE).setOrigin(0.5, 0);
@@ -1345,9 +1372,10 @@ export class LobbyScene extends Phaser.Scene {
       });
     } else {
       // Non-host: read-only labels mirroring the host control positions.
-      const fmtLabel = this.#crispText(cx, 104, `Format: ${cfg.format}`, FONT_SMALL_WHITE).setOrigin(0.5, 0.5);
+      const fmtLabel = this.#crispText(cx, 100, `Format: ${cfg.format}`, FONT_SMALL_WHITE).setOrigin(0.5, 0.5);
+      const wtReadLabel = this.#crispText(cx, 114, `Match: ${cfg.winTarget ?? 30} kills`, FONT_SMALL_WHITE).setOrigin(0.5, 0.5);
       const mapReadLabel = this.#crispText(cx, 124, `Map: ${mapDisplay}`, FONT_SMALL_WHITE).setOrigin(0.5, 0);
-      this.#configBlockObjects.push(fmtLabel, mapReadLabel);
+      this.#configBlockObjects.push(fmtLabel, wtReadLabel, mapReadLabel);
 
       // Still render the cards (read-only — no pointer handlers, dimmer overlay
       // on non-selected cards) so non-hosts get the same visual map preview.

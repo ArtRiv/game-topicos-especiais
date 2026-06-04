@@ -25,6 +25,7 @@ export type LobbyConfig = {
   format: LobbyFormat;
   mapId: string;          // value from MAP_POOL[i].id
   maxPlayers: number;     // derived: parseInt(format) * 2
+  winTarget?: number;     // TDM kill target (8 | 15 | 30); default 30 when absent
   // Future optional fields (LBC-07): timeLimit?, friendlyFire?, spellModifiers? — add as optional top-level keys, no nesting.
 };
 
@@ -207,6 +208,27 @@ export type MatchSpawnsPayload = {
   spawns: SpawnAssignment[];
 };
 
+// ── Special-spell pickups (server-authoritative spawn + first-claim-wins) ──────────────────────
+/** Server → all clients: a pickup appeared at (x,y). spellType is a SPELL_ID constant. */
+export type PickupSpawnedPayload = {
+  pickupId: string;
+  spellType: string;   // 'DARK_BOLT' | 'VOID_ORB'
+  x: number;
+  y: number;
+};
+
+/** Client → server: I (the sender's socket) touched this pickup. Server derives the player from
+ *  the socket — the claim carries ONLY pickupId so a client can't spoof another player's grab. */
+export type PickupClaimPayload = {
+  pickupId: string;
+};
+
+/** Server → all clients: pickup resolved to a winner. Everyone destroys the sprite. */
+export type PickupCollectedPayload = {
+  pickupId: string;
+  playerId: string;
+};
+
 /** Outbound from any client: my spell hit an environment object (D-04 wall desync fix). */
 export type SpellHitEnvironmentPayload = {
   spellId: string;
@@ -232,6 +254,12 @@ export const PLAUSIBILITY_RANGE_PX = 96;       // ~2 tiles at 32 px tilesize. TO
 export const PLAUSIBILITY_STALE_MS = 200;      // last position update must be within this window. TODO: tune from playtest
 export const RESPAWN_DELAY_MS = 5000;          // D-09 default. TODO: tune from playtest
 export const MAX_SPELL_DAMAGE = 50;            // RESEARCH.md §2 landmine: cap-check claimed damage. TODO: tune from playtest
+
+/** Server-authoritative player max HP. MUST mirror the client's CONFIG.PLAYER_START_MAX_HEALTH
+ *  (src/common/config/player.ts). The client HUD renders floor(maxHealth/2) hearts, so a mismatch
+ *  here makes the server send HP values the HUD can't render (out-of-range heart index → crash →
+ *  damage application aborts → "spells compute but health never drops"). Keep these two in lockstep. */
+export const PLAYER_MAX_HP = 10;
 
 /** Phase 14 tunable — server-side authority for the team-deathmatch win condition. */
 export const TDM_WIN_TARGET = 30;   // D-01: first team to 30 kills wins. TODO: tune from playtest.
