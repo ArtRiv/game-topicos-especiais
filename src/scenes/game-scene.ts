@@ -3596,11 +3596,11 @@ export class GameScene extends Phaser.Scene {
       if (remote.body) {
         (remote.body as Phaser.Physics.Arcade.Body).enable = false;
       }
-      // Force the DIE animation facing the remote's last direction. The component config defines all
-      // four (DIE_LEFT/RIGHT → DIE_SIDE with flipX); it's ignoreIfPlaying:true, so anims.stop() FIRST
-      // or the death frame never shows (sprite freezes on the normal pose).
+      // Force the DIE animation facing the remote's last direction. The config is ignoreIfPlaying:true,
+      // which after a stop() off a looping anim can silently no-op (intermittent "death anim doesn't
+      // play"). force:true passes ignoreIfPlaying:false so the death animation ALWAYS restarts.
       remote.anims?.stop();
-      remote.animationComponent?.playAnimation(`DIE_${remote.direction}` as CharacterAnimation);
+      remote.animationComponent?.playAnimation(`DIE_${remote.direction}` as CharacterAnimation, { force: true });
       // Tint AFTER the frame swap, via the cached team tint (works even though a dead remote is
       // active=false, which the old #applyTeamTint early-returned on).
       this.#reapplyStoredTint(remote, payload.playerId);
@@ -3617,11 +3617,10 @@ export class GameScene extends Phaser.Scene {
       (this.#player.body as Phaser.Physics.Arcade.Body).enable = false;
     }
     // Bug fix (death animation): force-play the death animation facing the player's last direction.
-    // The config defines all four (LEFT/RIGHT → DIE_SIDE + flipX); it's ignoreIfPlaying:true, so
-    // anims.stop() FIRST or the death frame may never render (sprite freezes on the normal/hurt pose).
-    // Apply team tint AFTER the frame-swap so the corpse keeps its team color (not the default sprite).
+    // force:true overrides the config's ignoreIfPlaying:true so the DIE animation can't silently no-op
+    // off a looping idle/hurt (the intermittent "death anim doesn't play"). Tint AFTER the frame-swap.
     this.#player.anims?.stop();
-    this.#player.animationComponent?.playAnimation(`DIE_${this.#player.direction}` as CharacterAnimation);
+    this.#player.animationComponent?.playAnimation(`DIE_${this.#player.direction}` as CharacterAnimation, { force: true });
     const nmDeath = this.#safeNetworkManager();
     if (nmDeath?.localPlayerId) this.#reapplyStoredTint(this.#player, nmDeath.localPlayerId);
     // Defensive velocity zero (mirrors #enterCountdownMode).
@@ -4587,6 +4586,25 @@ export class GameScene extends Phaser.Scene {
       default:
         exhaustiveGuard(startingDoor.direction);
     }
+
+    // Spawn-teleport fix: derive the local player's TEAM spawnpoint client-side so they APPEAR at it,
+    // instead of being created at the door/center and then snapped by the later match:spawns broadcast
+    // (the ~8s intro outlasts the 5.5s countdown, so that snap always landed after create() → visible
+    // teleport). matchPlayers (with team) + localPlayerId are populated at lobby:started, before create().
+    // The #onMatchSpawns server snap still runs as authority — now a no-op (same position). Offline play
+    // keeps the door fallback.
+    try {
+      const nmSpawn = NetworkManager.getInstance();
+      const me = nmSpawn.matchPlayers?.find((p) => p.id === nmSpawn.localPlayerId);
+      if (me) {
+        const teamKey = me.team === 1 ? 'teamB' : 'teamA';
+        const spawn = CONFIG.SPAWNPOINTS[this.#levelData.level]?.[teamKey]?.[0];
+        if (spawn) {
+          playerStartPosition.x = spawn.x;
+          playerStartPosition.y = spawn.y;
+        }
+      }
+    } catch { /* offline / no NetworkManager — keep the door position */ }
 
     this.#player = new Player({
       scene: this,

@@ -134,7 +134,12 @@ export class NetworkManager {
   // gets its own tick and the main thread can breathe between them. Handles are tracked so a
   // teardown before they fire can cancel them.
   #offerStaggerHandles: ReturnType<typeof setTimeout>[] = [];
-  static #OFFER_STAGGER_MS = 30;
+  // Event hardening: bumped 30→50ms. Each WebRTC offer does ~20-40ms of synchronous work (PC ctor +
+  // 2 createDataChannel) before its first await; 30ms let those overlap and contributed to the 6-player
+  // host freeze. 50ms spaces them out (5 offers = 250ms total, well inside the 5000ms countdown). Don't
+  // push much higher without re-testing the COUNTDOWN→ACTIVE gate. Post-event: a star/relay topology
+  // removes this entirely (see .planning/ architecture notes).
+  static #OFFER_STAGGER_MS = 50;
 
   // Network performance metrics
   #msgSentCount = 0;

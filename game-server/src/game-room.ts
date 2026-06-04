@@ -17,7 +17,7 @@ type MapSpawns = { teamA: SpawnPoint[]; teamB: SpawnPoint[] };
 const SPAWNPOINTS: Record<string, MapSpawns> = {
   WORLD:     { teamA: [{ x: 96, y: 96 }, { x: 96, y: 224 }],  teamB: [{ x: 384, y: 96 }, { x: 384, y: 224 }] },
   DUNGEON_1: { teamA: [{ x: 80, y: 120 }, { x: 80, y: 240 }], teamB: [{ x: 400, y: 120 }, { x: 400, y: 240 }] },
-  STAGES:    { teamA: [{ x: 96, y: 160 }, { x: 128, y: 96 }], teamB: [{ x: 384, y: 160 }, { x: 352, y: 224 }] },
+  STAGES:    { teamA: [{ x: 96, y: 160 }, { x: 128, y: 96 }, { x: 96, y: 224 }], teamB: [{ x: 384, y: 160 }, { x: 352, y: 224 }, { x: 384, y: 96 }] },
 };
 
 const VALID_NEXT: Record<MatchState, MatchState[]> = {
