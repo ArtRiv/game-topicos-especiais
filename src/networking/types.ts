@@ -25,6 +25,7 @@ export type LobbyConfig = {
   format: LobbyFormat;
   mapId: string;          // value from MAP_POOL[i].id
   maxPlayers: number;     // derived: parseInt(format) * 2
+  winTarget?: number;     // TDM kill target (8 | 15 | 30); default 30 when absent
   // Future optional fields (LBC-07): timeLimit?, friendlyFire?, spellModifiers? — add as optional top-level keys, no nesting.
 };
 
@@ -35,8 +36,8 @@ export type MapPoolEntry = {
 };
 
 export const MAP_POOL: readonly MapPoolEntry[] = [
-  { id: 'WORLD', displayName: 'Open Field', thumbnailKey: 'MAP_THUMB_WORLD' },
-  { id: 'DUNGEON_1', displayName: 'Dungeon', thumbnailKey: 'MAP_THUMB_DUNGEON_1' },
+  // Only Arena for the event. (WORLD/DUNGEON_1 removed from the pool — re-add when their spawns/balance
+  // are ready.) Keep the array shape so the lobby map picker still works with a single entry.
   { id: 'STAGES', displayName: 'Arena', thumbnailKey: 'MAP_THUMB_STAGES' },
 ] as const;
 
@@ -265,6 +266,27 @@ export type SpawnAssignment = {
  *  (replacing the tilemap-door "spawn in the middle" placement). */
 export type MatchSpawnsPayload = {
   spawns: SpawnAssignment[];
+};
+
+// ── Special-spell pickups (server-authoritative spawn + first-claim-wins) ──────────────────────
+/** Server → all clients: a pickup appeared at (x,y). spellType is a SPELL_ID constant. */
+export type PickupSpawnedPayload = {
+  pickupId: string;
+  spellType: string;   // 'DARK_BOLT' | 'VOID_ORB'
+  x: number;
+  y: number;
+};
+
+/** Client → server: I (the sender's socket) touched this pickup. Server derives the player from
+ *  the socket — the claim carries ONLY pickupId so a client can't spoof another player's grab. */
+export type PickupClaimPayload = {
+  pickupId: string;
+};
+
+/** Server → all clients: pickup resolved to a winner. Everyone destroys the sprite. */
+export type PickupCollectedPayload = {
+  pickupId: string;
+  playerId: string;
 };
 
 /** Outbound from any client: my spell hit an environment object (D-04 wall desync fix). */

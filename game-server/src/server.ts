@@ -3,6 +3,7 @@ import express from 'express';
 import { Server } from 'socket.io';
 import { LobbyManager } from './lobby-manager.js';
 import { GameRoom } from './game-room.js';
+import { StarRelay, STAR_SERVER_ID } from './star-relay.js';
 import type {
   RoomTransitionPayload,
   MatchState,
@@ -23,10 +24,25 @@ import type {
   SpawnAssignment,
   MatchSpawnsPayload,
 } from './types.js';
-import { COUNTDOWN_DURATION_MS, FIGHT_HOLD_MS, TDM_WIN_TARGET } from './types.js';
+import { COUNTDOWN_DURATION_MS, FIGHT_HOLD_MS, PLAYER_MAX_HP } from './types.js';
+import type { PickupSpawnedPayload, PickupClaimPayload, PickupCollectedPayload } from './types.js';
 import { decode as msgpackDecode } from '@msgpack/msgpack';
+import { randomUUID } from 'crypto';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
+
+// ── Special-spell pickups (server-authoritative, seeded per match) ────────────────────────────
+// FEATURE FLAG: set false to disable pickups entirely (e.g. if anything misbehaves at the booth —
+// the rest of the match is unaffected). Can also be toggled via env: PICKUPS_ENABLED=false.
+const PICKUPS_ENABLED = process.env.PICKUPS_ENABLED !== 'false';
+const PICKUP_SPELLS = ['DARK_BOLT', 'VOID_ORB'] as const;
+// Conservative interior box (px) inside the spawnpoint cluster (teamA/teamB span x 96..384, y 96..224)
+// so pickups land on walkable floor. The server has no tile-collision data, so this is best-effort —
+// do NOT widen it to the full map or pickups will drop inside walls.
+const PICKUP_BOX = { minX: 120, maxX: 360, minY: 110, maxY: 210 };
+// Spawn times (ms after ACTIVE). First is ≥45s so every client's GameScene is alive (its ~8s loading
+// cinematic finished) before the first pickup — sidesteps the late-boot replay problem. ±10s jitter.
+const PICKUP_TIMES_MS = [45_000, 105_000, 165_000, 225_000];
 
 const app = express();
 const httpServer = createServer(app);
@@ -36,6 +52,7 @@ const io = new Server(httpServer, {
 
 const lobbyManager = new LobbyManager();
 const gameRooms = new Map<string, GameRoom>(); // lobbyId → GameRoom
+const starRelay = new StarRelay(io); // arch-webrtc-star: server-side WebRTC peer for the star topology
 
 function broadcastMatchState(lobbyId: string, room: GameRoom): void {
   const payload: MatchStateChangedPayload = {
@@ -93,21 +110,22 @@ function startCountdown(lobbyId: string, room: GameRoom): void {
     } catch {
       return;
     }
-    // Phase 14 (D-10): farthest-from-enemy spawn assignment at match start, replacing the naive
-    // per-index offset. Two passes: register everyone first so #playerInfo is fully populated (the
-    // living-enemy team lookups inside pickSpawn need all players present), then resolve each player's
-    // spawn via room.pickSpawn(id, mapId) and re-register at that position. Each player also gets an
-    // opening invuln window (D-12) so the first moments after the cinematic are protected.
+    // Phase 14 (D-10): random team spawn assignment at match start, replacing the naive per-index
+    // offset. Two passes: register everyone first so #playerInfo is fully populated, then resolve each
+    // player's spawn via room.pickSpawn(id, mapId) and re-register at that position. Each player also
+    // gets an opening invuln window (D-12) so the first moments after the cinematic are protected.
     const lobby = lobbyManager.getLobbyById(lobbyId);
     const spawnAssignments: SpawnAssignment[] = [];
     if (lobby) {
-      const maxHp = 100; // mirror CONFIG.PLAYER_START_MAX_HEALTH (server-authoritative copy)
+      const maxHp = PLAYER_MAX_HP; // mirror CONFIG.PLAYER_START_MAX_HEALTH (server-authoritative copy)
       const mapId = lobby.config.mapId ?? 'WORLD';
-      // Pass 1: register every player so pickSpawn can see all teams/HP/positions.
+      // Pass 1: register every player so pickStartSpawn can see the full team roster.
       lobby.players.forEach((info) => room.registerPlayer(info, 0, 0, maxHp));
-      // Pass 2: resolve farthest-from-enemy spawn per player and re-register at that position.
+      // Pass 2: resolve the DETERMINISTIC match-start spawn per player and re-register at that position.
+      // Deterministic (not random) so the client computes the identical spot locally and places the
+      // player there immediately — no late snap / match-start teleport. Respawns stay random (pickSpawn).
       lobby.players.forEach((info) => {
-        const s = room.pickSpawn(info.id, mapId);
+        const s = room.pickStartSpawn(info.id, mapId);
         room.registerPlayer(info, s.x, s.y, maxHp);
         room.startInvuln(info.id);   // D-12: opening invuln, consistent with respawn invuln
         spawnAssignments.push({ playerId: info.id, x: s.x, y: s.y });
@@ -127,8 +145,36 @@ function startCountdown(lobbyId: string, room: GameRoom): void {
       const spawnsPayload: MatchSpawnsPayload = { spawns: spawnAssignments };
       io.to(`lobby:${lobbyId}`).emit('match:spawns', spawnsPayload);
     }
+    // Start this match's special-spell pickup spawns (server picks places/times, broadcasts).
+    schedulePickups(lobbyId, room);
   }, COUNTDOWN_DURATION_MS + FIGHT_HOLD_MS);
   room.pushCountdownHandle(transitionHandle);
+}
+
+/**
+ * Schedule this match's special-spell pickups. Server-authoritative: positions, times, and spell
+ * types are chosen HERE (once) and broadcast to the whole lobby, so every client renders the same
+ * pickup at the same place — there's no client RNG to desync. Each match gets its own random layout
+ * (Math.random per spawn). Pickups are collected first-touch-wins (resolved in the pickup:claimed
+ * handler). Identity-bound + ACTIVE-gated like the countdown ticks so a destroyed/ended room can't leak.
+ */
+function schedulePickups(lobbyId: string, room: GameRoom): void {
+  if (!PICKUPS_ENABLED) return;
+  for (const atMs of PICKUP_TIMES_MS) {
+    const jitter = Math.floor((Math.random() * 2 - 1) * 10_000); // ±10s
+    const handle = setTimeout(() => {
+      if (gameRooms.get(lobbyId) !== room) return;
+      if (room.state !== 'ACTIVE') return;
+      const spellType = PICKUP_SPELLS[Math.floor(Math.random() * PICKUP_SPELLS.length)];
+      const x = Math.round(PICKUP_BOX.minX + Math.random() * (PICKUP_BOX.maxX - PICKUP_BOX.minX));
+      const y = Math.round(PICKUP_BOX.minY + Math.random() * (PICKUP_BOX.maxY - PICKUP_BOX.minY));
+      const pickupId = randomUUID();
+      room.addPendingPickup(pickupId, spellType, x, y);
+      const payload: PickupSpawnedPayload = { pickupId, spellType, x, y };
+      io.to(`lobby:${lobbyId}`).emit('pickup:spawned', payload);
+    }, Math.max(0, atMs + jitter));
+    room.pushPickupHandle(handle);
+  }
 }
 
 io.on('connection', (socket) => {
@@ -213,6 +259,9 @@ io.on('connection', (socket) => {
     // The mode is read ONLY from the server-side lobby record (host-gated by startLobby) — never
     // from a client message (T-14-10).
     room.setMatchMode((lobby.mode ?? 'team-deathmatch') as MatchMode);
+    // Per-match TDM kill target from lobby config (host-gated). Read ONLY from the server-side lobby
+    // record, never from a client message — same trust model as setMatchMode.
+    room.setWinTarget(lobby.config.winTarget ?? 30);
     gameRooms.set(lobby.id, room);
 
     // Transition LOBBY → LOADING and broadcast (LFC-03). Order matters: state must change BEFORE
@@ -276,15 +325,32 @@ io.on('connection', (socket) => {
   });
 
   // WebRTC signaling relay — server just forwards these between peers
-  socket.on('webrtc:offer', ({ targetSocketId, offer }: { targetSocketId: string; offer: object }) => {
+  socket.on('webrtc:offer', ({ targetSocketId, offer }: { targetSocketId: string; offer: { sdp: string; type: string } }) => {
+    // Star topology: an offer addressed to the reserved server id is consumed by the StarRelay
+    // (the server itself answers as a WebRTC peer) instead of being forwarded to another client.
+    if (targetSocketId === STAR_SERVER_ID) {
+      const lobbyId = findLobbyIdBySocket(socket.id);
+      if (!lobbyId) return;
+      // Resolve the server-assigned playerId for tagging this peer's relayed messages (anti-spoof).
+      const lobby = lobbyManager.getLobbyById(lobbyId);
+      const playerId = lobby?.players.find((p) => p.socketId === socket.id)?.id;
+      if (!playerId) return;
+      starRelay.handleOffer(socket, lobbyId, playerId, offer);
+      return;
+    }
     io.to(targetSocketId).emit('webrtc:offer', { fromSocketId: socket.id, offer });
   });
 
   socket.on('webrtc:answer', ({ targetSocketId, answer }: { targetSocketId: string; answer: object }) => {
+    // (No server branch: in the star the SERVER answers; clients never send answers to the server.)
     io.to(targetSocketId).emit('webrtc:answer', { fromSocketId: socket.id, answer });
   });
 
-  socket.on('webrtc:ice', ({ targetSocketId, candidate }: { targetSocketId: string; candidate: object }) => {
+  socket.on('webrtc:ice', ({ targetSocketId, candidate }: { targetSocketId: string; candidate: { candidate: string; sdpMid?: string | null } }) => {
+    if (targetSocketId === STAR_SERVER_ID) {
+      starRelay.handleIce(socket.id, candidate);
+      return;
+    }
     io.to(targetSocketId).emit('webrtc:ice', { fromSocketId: socket.id, candidate });
   });
 
@@ -353,8 +419,8 @@ io.on('connection', (socket) => {
       io.to(`lobby:${lobbyId}`).emit('elimination', elim);
 
       room.scheduleRespawn(claim.targetId, () => {
-        // Phase 14 (D-10): pick a FRESH farthest-from-enemy spawn each respawn (not the original
-        // single spawn point) and start the respawn invuln window (D-12/D-14) before broadcasting.
+        // Phase 14 (D-10): pick a FRESH random team spawn each respawn (not the original single
+        // spawn point) and start the respawn invuln window (D-12/D-14) before broadcasting.
         const mapId = lobbyManager.getLobbyById(lobbyId)?.config.mapId ?? 'WORLD';
         const spawn = room.pickSpawn(claim.targetId, mapId);
         room.startInvuln(claim.targetId);
@@ -375,10 +441,11 @@ io.on('connection', (socket) => {
         const scorePayload: TeamScorePayload = { teamScores: scores, lastScoringTeam };
         io.to(`lobby:${lobbyId}`).emit('match:team-score', scorePayload);
 
-        if (scores[0] >= TDM_WIN_TARGET || scores[1] >= TDM_WIN_TARGET) {
+        const winTarget = room.winTarget;   // per-match target from lobby config (default 30)
+        if (scores[0] >= winTarget || scores[1] >= winTarget) {
           // Snapshot stats/MVP BEFORE transitioning — transitionTo('ENDED') calls
           // clearCombatState() which wipes #kills/#deaths/#playerInfo (D-07 data loss otherwise).
-          const winningTeam = scores[0] >= TDM_WIN_TARGET ? 0 : 1;
+          const winningTeam = scores[0] >= winTarget ? 0 : 1;
           const endedPayload: MatchEndedPayload = {
             winningTeam,
             teamScores: scores,
@@ -408,8 +475,38 @@ io.on('connection', (socket) => {
     io.to(`lobby:${lobbyId}`).emit('spell:destroyed', out);
   });
 
+  /** A client claims its local player touched a pickup. First-claim-wins (resolved by socket
+   *  identity, never a client-supplied playerId). The winning claim broadcasts pickup:collected so
+   *  the sprite disappears for everyone; losing/duplicate claims are silently dropped. */
+  socket.on('pickup:claimed', ({ pickupId }: PickupClaimPayload) => {
+    const lobbyId = findLobbyIdBySocket(socket.id);
+    if (!lobbyId) return;
+    const room = gameRooms.get(lobbyId);
+    if (!room || room.state !== 'ACTIVE') return;
+    const playerId = room.getPlayerIdBySocketId(socket.id);  // anti-spoof: derive from socket
+    if (!playerId) return;
+    if (!room.tryClaimPickup(pickupId, playerId)) return;     // first-claim-wins; dupes dropped
+    const out: PickupCollectedPayload = { pickupId, playerId };
+    io.to(`lobby:${lobbyId}`).emit('pickup:collected', out);
+  });
+
+  // Late-boot replay: a client whose GameScene booted after an early pickup spawned (its loading
+  // cinematic outlasts the countdown) requests un-collected pickups via match:scene-ready. We piggy-
+  // back the existing scene-ready hook isn't possible here (different handler), so emit on a dedicated
+  // request. The first pickup is ≥45s in, so this is belt-and-suspenders.
+  socket.on('pickup:request-active', () => {
+    const lobbyId = findLobbyIdBySocket(socket.id);
+    if (!lobbyId) return;
+    const room = gameRooms.get(lobbyId);
+    if (!room || room.state !== 'ACTIVE') return;
+    for (const p of room.getActivePickups()) {
+      socket.emit('pickup:spawned', p satisfies PickupSpawnedPayload);
+    }
+  });
+
   socket.on('disconnect', () => {
     console.log(`[SERVER] Client disconnected: ${socket.id}`);
+    starRelay.removePeer(socket.id); // tear down this client's server-side WebRTC peer (star topology)
     const lobbyId = findLobbyIdBySocket(socket.id);
     const room = gameRooms.get(lobbyId ?? '');
 

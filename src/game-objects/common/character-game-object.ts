@@ -305,4 +305,19 @@ export abstract class CharacterGameObject extends Phaser.Physics.Arcade.Sprite i
     this.active = true;
     this.visible = true;
   }
+
+  /**
+   * Clear the defeated flag, re-enable collision, and restore invulnerability state so a character
+   * can be hit again. Used by TDM server-authoritative respawn: once a player enters DEATH_STATE the
+   * `_isDefeated` flag latches true, which makes future hits short-circuit (`if (remote.isDefeated)
+   * return;`) and `enableObject()` no-op — so without this, a respawned remote could never be hit
+   * again on the caster's screen. Position/HP/tint are restored separately by the respawn handler.
+   */
+  public revive(): void {
+    this._isDefeated = false;
+    this._invulnerableComponent.invulnerable = false;
+    (this.body as Phaser.Physics.Arcade.Body).enable = true;
+    this.active = true;
+    this.visible = true;
+  }
 }

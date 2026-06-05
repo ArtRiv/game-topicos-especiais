@@ -11,8 +11,8 @@ export const LIGHTNING_SPRITE_VARIANT: 'CURRENT' | 'MAGIC_PACK_9' = 'CURRENT';
 export const LIGHTNING_BURST_VARIANT: '002' | '003' = '003';
 
 // ─── Lightning combos (cross-element) ─────────────────────────────────────────
-export const LIGHTNING_BURST_COMBO_DAMAGE = 8;     // FireBolt + ThunderStrike
-export const LIGHTNING_STRIKE_COMBO_DAMAGE = 6;    // ThunderStrike + FireArea
+export const LIGHTNING_BURST_COMBO_DAMAGE = 5;     // FireBolt + ThunderStrike (event nerf: was 8 = 80% of 10 HP)
+export const LIGHTNING_STRIKE_COMBO_DAMAGE = 4;    // ThunderStrike + FireArea (event nerf: was 6)
 export const LIGHTNING_BURST_COMBO_BODY_RADIUS = 28;
 export const LIGHTNING_STRIKE_COMBO_BODY_RADIUS = 26;
 
