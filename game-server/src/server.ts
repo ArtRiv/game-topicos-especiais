@@ -110,21 +110,22 @@ function startCountdown(lobbyId: string, room: GameRoom): void {
     } catch {
       return;
     }
-    // Phase 14 (D-10): farthest-from-enemy spawn assignment at match start, replacing the naive
-    // per-index offset. Two passes: register everyone first so #playerInfo is fully populated (the
-    // living-enemy team lookups inside pickSpawn need all players present), then resolve each player's
-    // spawn via room.pickSpawn(id, mapId) and re-register at that position. Each player also gets an
-    // opening invuln window (D-12) so the first moments after the cinematic are protected.
+    // Phase 14 (D-10): random team spawn assignment at match start, replacing the naive per-index
+    // offset. Two passes: register everyone first so #playerInfo is fully populated, then resolve each
+    // player's spawn via room.pickSpawn(id, mapId) and re-register at that position. Each player also
+    // gets an opening invuln window (D-12) so the first moments after the cinematic are protected.
     const lobby = lobbyManager.getLobbyById(lobbyId);
     const spawnAssignments: SpawnAssignment[] = [];
     if (lobby) {
       const maxHp = PLAYER_MAX_HP; // mirror CONFIG.PLAYER_START_MAX_HEALTH (server-authoritative copy)
       const mapId = lobby.config.mapId ?? 'WORLD';
-      // Pass 1: register every player so pickSpawn can see all teams/HP/positions.
+      // Pass 1: register every player so pickStartSpawn can see the full team roster.
       lobby.players.forEach((info) => room.registerPlayer(info, 0, 0, maxHp));
-      // Pass 2: resolve farthest-from-enemy spawn per player and re-register at that position.
+      // Pass 2: resolve the DETERMINISTIC match-start spawn per player and re-register at that position.
+      // Deterministic (not random) so the client computes the identical spot locally and places the
+      // player there immediately — no late snap / match-start teleport. Respawns stay random (pickSpawn).
       lobby.players.forEach((info) => {
-        const s = room.pickSpawn(info.id, mapId);
+        const s = room.pickStartSpawn(info.id, mapId);
         room.registerPlayer(info, s.x, s.y, maxHp);
         room.startInvuln(info.id);   // D-12: opening invuln, consistent with respawn invuln
         spawnAssignments.push({ playerId: info.id, x: s.x, y: s.y });
@@ -418,8 +419,8 @@ io.on('connection', (socket) => {
       io.to(`lobby:${lobbyId}`).emit('elimination', elim);
 
       room.scheduleRespawn(claim.targetId, () => {
-        // Phase 14 (D-10): pick a FRESH farthest-from-enemy spawn each respawn (not the original
-        // single spawn point) and start the respawn invuln window (D-12/D-14) before broadcasting.
+        // Phase 14 (D-10): pick a FRESH random team spawn each respawn (not the original single
+        // spawn point) and start the respawn invuln window (D-12/D-14) before broadcasting.
         const mapId = lobbyManager.getLobbyById(lobbyId)?.config.mapId ?? 'WORLD';
         const spawn = room.pickSpawn(claim.targetId, mapId);
         room.startInvuln(claim.targetId);
