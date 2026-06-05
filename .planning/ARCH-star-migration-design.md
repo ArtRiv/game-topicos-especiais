@@ -52,5 +52,28 @@ Reuse `game-server/scripts/stress-test.mjs` (already measures RTT, throughput, r
 - Channel drop mid-match → `restartIce()` + socket.io reconnect.
 - Library fails → socket.io `game:player-update-mp` relay already exists as fallback.
 
+## IMPLEMENTATION STATUS (all phases built behind the flag)
+
+All 5 phases are implemented + committed on `arch-webrtc-star`, type-clean (client + server), server boots clean, 79 server tests pass. The mesh is **kept** (flag-gated) as the tested fallback — `NETWORK_TRANSPORT` defaults to `'mesh'`.
+
+- ✅ Phase 0: `node-datachannel` dep (verified on Windows) + `NETWORK_TRANSPORT` flag
+- ✅ Phase 1: client↔server single WebRTC connection (`StarRelay` server peer, `#initStarConnection` client)
+- ✅ Phase 2+3: position + event relay through the server (tagged with playerId, echo-suppressed)
+- ✅ Phase 4: server-tick snapshot aggregation (20Hz fan-out — the 20-player scaling win)
+- ✅ Phase 5: ICE-restart robustness on the single server connection
+
+### How to test the star (manual, 2 clients)
+1. In [src/common/config/network.ts](src/common/config/network.ts), set `NETWORK_TRANSPORT = 'star'`.
+2. Restart the game-server (`npm run dev` in `game-server/`) + Vite (`pnpm start`).
+3. Open 2 browser windows → lobby → assign teams → start.
+4. Watch the console: you should see `star-init`, `channel-open` (×2, pos + events), and remote players moving. With `NETWORK_DEBUG=true` you'll see the connection logs.
+5. Confirm: players see each other move (snapshot relay), spells cast across clients (event relay), and damage/death/respawn still work (those go over socket.io, unchanged).
+6. To compare: flip back to `'mesh'` and repeat — same gameplay, different transport.
+
+### Not yet done (needs you / future)
+- **A/B load test at 12-20 players:** the existing `game-server/scripts/stress-test.mjs` drives the socket.io relay path (good CPU/throughput proxy). A true WebRTC-star bot test needs a `--transport ndc` mode driving node-datachannel client PCs from the bots — a future add. Minimum viable: manual 6-browser check + the socket.io relay numbers.
+- **Deleting the mesh:** kept on purpose as the fallback. Delete only after the star is validated by real play + you've confirmed the deploy host supports it (see HARD GATE above).
+- **Optimizations:** drop the duplicate `sendPosMirror` (feed plausibility cache from the relay instead); MessagePack snapshot encoding.
+
 ## Future (100+ players, out of scope now)
 MessagePack snapshot encoding (msgpack already a server dep — ~40-60% smaller, near-zero effort), then area-of-interest culling + delta compression.
