@@ -103,6 +103,7 @@ import { RemoteInputComponent } from '../components/input/remote-input-component
 import { MusicManager } from '../common/music-manager';
 import type { PlayerUpdateBroadcast, RoomTransitionPayload, PlayerDisconnectedPayload, PlayerUpdatePayload, SpellCastBroadcast, PlayerInfo, BreathStartBroadcast, BreathUpdateBroadcast, BreathEndBroadcast, EarthWallPillarBroadcast, EarthWallPillarDestroyBroadcast, MatchStateChangedPayload, MatchCountdownTickPayload, DamageConfirmedPayload, SpellDestroyedPayload, EliminationPayload, RespawnPayload, MatchConfig, MatchEndedPayload, MatchSpawnsPayload, PickupSpawnedPayload, PickupCollectedPayload } from '../networking/types';
 import { RUNTIME_CONFIG } from '../common/runtime-config';
+import { pickStartSpawn } from '../common/spawn-assignment';
 import type { Direction, CharacterAnimation } from '../common/types';
 
 /** Quick blue-water + brown-debris splash spawned when a water spell breaks
@@ -344,6 +345,7 @@ export class GameScene extends Phaser.Scene {
 
   public update(_time: number, delta: number): void {
     this.#handleHitboxDebugToggle();
+    this.#handlePrintCoordsKey();
     this.#updateFireSpellCombos();
     this.#updateFireBreathChanneling();
     this.#updateFireBreathAreaCombo();
@@ -2276,6 +2278,13 @@ export class GameScene extends Phaser.Scene {
     this.physics.world.debugGraphic?.setVisible(false);
   }
 
+  #handlePrintCoordsKey(): void {
+    if (!this.#controls.isPrintCoordsKeyJustDown) return;
+    const x = Math.round(this.#player.x);
+    const y = Math.round(this.#player.y);
+    console.log(`[SPAWN] { x: ${x}, y: ${y} }`);
+  }
+
   #updateFireBreathChanneling(): void {
     // LFC-06: hard-gate spell input during COUNTDOWN. This handler ignores
     // isMovementLocked because the channel itself owns that flag (line ~280),
@@ -3733,13 +3742,17 @@ export class GameScene extends Phaser.Scene {
     const localId = nm?.localPlayerId ?? null;
     for (const a of payload.spawns) {
       if (localId !== null && a.playerId === localId) {
+        // With the deterministic match-start spawn (#setupPlayer + pickStartSpawn), the player is
+        // ALREADY here — this authoritative snap is a no-op (same x,y) on the normal intro path. Kept
+        // as the server's authority + the non-intro path (late joiner / replay after the cinematic).
         this.#player.setPosition(a.x, a.y);
         if (this.#player.body) {
           (this.#player.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
         }
         // The camera may still be following from #setupCamera; re-center on the true spawn so the
-        // player isn't off-screen at match start (the intro sequence re-attaches follow on finish).
-        this.cameras.main.centerOn(a.x, a.y);
+        // player isn't off-screen at match start. Only matters for the non-intro path — the intro's
+        // wide shot owns the camera and re-centers on map-center itself.
+        if (!this.#localIntroRan) this.cameras.main.centerOn(a.x, a.y);
         // Phase 14 bugfix (TDM playtest #5): a brief spawn-in cue so the placement reads as a
         // deliberate "you spawned here" beat rather than a silent teleport.
         this.#playSpawnInCue(this.#player, a.x, a.y);
@@ -4119,9 +4132,8 @@ export class GameScene extends Phaser.Scene {
   #playIntroCameraSequence(): void {
     const OUT_ZOOM = 0.6; // wide establishing (reuse the existing snap-out value)
     const PLAY_ZOOM = 1.0;
-    const CENTER_HOLD_MS = 400;
-    const PAN_MS = 1100;
-    const ZOOM_IN_MS = 900;
+    const CENTER_HOLD_MS = 400;   // wide-shot hold before the move
+    const MOVE_MS = 1100;         // pan + zoom run TOGETHER over this duration
 
     const cam = this.cameras.main;
     cam.stopFollow();
@@ -4135,22 +4147,38 @@ export class GameScene extends Phaser.Scene {
     const mapCenterY = roomSize.y - roomSize.height / 2;
     cam.centerOn(mapCenterX, mapCenterY);
 
-    const targetX = this.#player?.x ?? mapCenterX;
-    const targetY = this.#player?.y ?? mapCenterY;
-
-    // Hold on the wide shot, then pan → player. delayedCall is a one-shot scene timer
-    // (not a countdown driver — the countdown labels stay 100% server-driven).
+    // Hold the wide shot, then move in. The player is ALREADY at its deterministic team spawn
+    // (#setupPlayer + pickStartSpawn), so the move targets the real spot — no network wait.
+    //
+    // CAMERA-JUMP FIX: pan and zoom run as ONE concurrent move ending at PLAY_ZOOM centered on the
+    // player. Previously the pan ran at OUT_ZOOM then zoom ran after — but bounds-clamping at a
+    // wide zoom lands the camera at a DIFFERENT scroll than the follow camera uses at play zoom, so
+    // startFollow snapped (the "abrupt teleport to the player"). By zooming to PLAY_ZOOM during the
+    // pan, the move ends exactly where startFollow rests (same zoom → same bounds clamp) → seamless.
+    // Edge spawns near a bound (e.g. x=104 with a 480-wide viewport) simply settle off-centre, which
+    // is correct: a bounded camera cannot put an edge target dead-centre, and now there's no jump.
     this.time.delayedCall(CENTER_HOLD_MS, () => {
-      this.cameras.main.pan(targetX, targetY, PAN_MS, 'Sine.easeInOut', false, (_cam, progress) => {
+      // Defensive: the scene may have shut down (match end / rematch) during the 400ms hold. Bail if
+      // the player or camera is gone so we never pan/follow a destroyed object.
+      if (!this.#player || !this.#player.active || !this.cameras?.main) return;
+      const targetX = this.#player.x;
+      const targetY = this.#player.y;
+      // Zoom and pan concurrently, same duration, so the move ends at PLAY_ZOOM centered on the player.
+      this.cameras.main.zoomTo(PLAY_ZOOM, MOVE_MS, 'Sine.easeInOut');
+      this.cameras.main.pan(targetX, targetY, MOVE_MS, 'Sine.easeInOut', false, (_cam, progress) => {
         if (progress < 1) return; // pan callback fires every frame; act only on completion
-        // Step 4: zoom in to play distance once the pan finishes.
-        this.cameras.main.zoomTo(PLAY_ZOOM, ZOOM_IN_MS, 'Cubic.easeOut', false, (_zc, zp) => {
-          if (zp < 1) return;
-          // Re-attach follow so the camera tracks the player once gameplay resumes.
-          this.cameras.main.startFollow(this.#player);
-          // Step 5: reveal the HUD (UiScene fades #hudContainer in — Plan 04).
-          EVENT_BUS.emit(CUSTOM_EVENTS.HUD_REVEAL);
-        });
+        if (!this.#player || !this.#player.active || !this.cameras?.main) return; // scene torn down mid-pan
+        // DETERMINISTIC END STATE: Phaser updates panEffect BEFORE zoomEffect in the same frame
+        // (Camera.update order), so the pan's final centerOn can run a frame before zoom reaches
+        // PLAY_ZOOM exactly. Rather than depend on that ordering, pin the end state explicitly here:
+        // force the final zoom + recenter on the player, THEN startFollow. Now the camera is provably
+        // at the follow resting position (same zoom → same bounds clamp), so follow attaches with no
+        // snap — independent of effect-update ordering or sub-pixel eased-zoom residue.
+        this.cameras.main.setZoom(PLAY_ZOOM);
+        this.cameras.main.centerOn(this.#player.x, this.#player.y);
+        this.cameras.main.startFollow(this.#player);
+        // Reveal the HUD (UiScene fades #hudContainer in — Plan 04).
+        EVENT_BUS.emit(CUSTOM_EVENTS.HUD_REVEAL);
       });
     });
   }
@@ -4597,8 +4625,11 @@ export class GameScene extends Phaser.Scene {
       const nmSpawn = NetworkManager.getInstance();
       const me = nmSpawn.matchPlayers?.find((p) => p.id === nmSpawn.localPlayerId);
       if (me) {
-        const teamKey = me.team === 1 ? 'teamB' : 'teamA';
-        const spawn = CONFIG.SPAWNPOINTS[this.#levelData.level]?.[teamKey]?.[0];
+        // DETERMINISTIC match-start spawn, computed with the SAME rule the server uses
+        // (GameRoom.pickStartSpawn). Because client + server agree, the player APPEARS at the
+        // correct team spawn immediately and the later #onMatchSpawns snap is a no-op (same spot) —
+        // no match-start teleport, regardless of round-trip latency. Respawns stay random (server).
+        const spawn = pickStartSpawn(me.id, me.team, nmSpawn.matchPlayers, this.#levelData.level);
         if (spawn) {
           playerStartPosition.x = spawn.x;
           playerStartPosition.y = spawn.y;
