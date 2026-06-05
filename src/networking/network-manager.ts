@@ -865,13 +865,15 @@ export class NetworkManager {
 
     ch.onmessage = (e: MessageEvent<string>) => {
       this.#msgRecvCount++;
-      let msg: DcMessage;
+      let msg: DcMessage & { playerId?: string };
       try {
-        msg = JSON.parse(e.data) as DcMessage;
+        msg = JSON.parse(e.data) as DcMessage & { playerId?: string };
       } catch {
         return; // Drop malformed messages silently
       }
-      const playerId = this.#socketToPlayerId.get(fromSocketId) ?? fromSocketId;
+      // Star topology: messages arrive from the single server channel (fromSocketId === STAR_SERVER_ID)
+      // and the SERVER tags each with the originating playerId. Mesh: derive it from the peer's socket.
+      const playerId = msg.playerId ?? this.#socketToPlayerId.get(fromSocketId) ?? fromSocketId;
 
       switch (msg.type) {
         case 'pos':

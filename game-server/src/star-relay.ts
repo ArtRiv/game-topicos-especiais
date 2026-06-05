@@ -12,6 +12,7 @@ export const STAR_SERVER_ID = '__server__';
 /** One client's server-side WebRTC endpoint: the PeerConnection + its two inbound data channels. */
 interface StarPeer {
   socketId: string;
+  playerId: string; // the game playerId (for tagging relayed messages, anti-spoof: server-assigned)
   pc: NdcPeerConnection;
   unreliable?: NdcDataChannel; // 'pos' — position snapshots
   reliable?: NdcDataChannel; // 'events' — spell casts etc.
@@ -37,8 +38,9 @@ export class StarRelay {
   }
 
   /** Handle an inbound offer from a client (targetSocketId === STAR_SERVER_ID). Creates the server-side
-   *  answerer PeerConnection, wires answer + ICE back over socket.io, and registers the data channels. */
-  handleOffer(socket: Socket, lobbyId: string, offer: { sdp: string; type: string }): void {
+   *  answerer PeerConnection, wires answer + ICE back over socket.io, and registers the data channels.
+   *  playerId is the server-assigned game id used to tag this peer's relayed messages (anti-spoof). */
+  handleOffer(socket: Socket, lobbyId: string, playerId: string, offer: { sdp: string; type: string }): void {
     // Defensive: never double-create for the same socket.
     if (this.#peers.has(socket.id)) {
       this.#closePeer(socket.id);
@@ -47,7 +49,7 @@ export class StarRelay {
     const pc = new PeerConnection(`srv-${socket.id.slice(0, 6)}`, {
       iceServers: ['stun:stun.l.google.com:19302'],
     });
-    const peer: StarPeer = { socketId: socket.id, pc, lobbyId };
+    const peer: StarPeer = { socketId: socket.id, playerId, pc, lobbyId };
     this.#peers.set(socket.id, peer);
 
     // Send our ANSWER (and trickled ICE) back to this client over socket.io, mirroring the shape the
@@ -110,16 +112,41 @@ export class StarRelay {
   }
 
   /**
-   * Inbound message from a client's data channel. Phase 1 STUB — Phase 2 (position) and Phase 3
-   * (events) implement the relay; Phase 4 adds snapshot aggregation. For now, just count it so the
-   * milestone test can confirm bytes flow end-to-end.
+   * Inbound message from a client's data channel. The server tags it with the sender's playerId
+   * (anti-spoof — never trusts a client-supplied id) and forwards to every OTHER peer in the same
+   * lobby on the matching channel (unreliable→unreliable, reliable→reliable).
+   *
+   * Phase 2/3: immediate forward (position + events). Phase 4 replaces the POSITION path with
+   * snapshot aggregation (collect latest, fan out one batched snapshot per relay tick); events stay
+   * on immediate-forward. For now position is also immediate-forward so the relay is testable.
    */
   #msgCount = 0;
-  #onChannelMessage(_peer: StarPeer, _label: string, _msg: string | ArrayBuffer | Buffer): void {
+  #onChannelMessage(peer: StarPeer, label: string, msg: string | ArrayBuffer | Buffer): void {
     this.#msgCount++;
+    if (typeof msg !== 'string') return; // the client sends JSON strings; ignore binary for now
+
+    // Tag with the sender's server-assigned playerId so receivers attribute it correctly.
+    let tagged: string;
+    try {
+      const obj = JSON.parse(msg) as Record<string, unknown>;
+      obj.playerId = peer.playerId;
+      tagged = JSON.stringify(obj);
+    } catch {
+      return; // malformed — drop
+    }
+
+    const isPos = label === 'pos';
+    for (const other of this.#peers.values()) {
+      if (other.socketId === peer.socketId) continue; // echo-suppress sender
+      if (other.lobbyId !== peer.lobbyId) continue; // only same lobby
+      const ch = isPos ? other.unreliable : other.reliable;
+      if (ch && ch.isOpen()) {
+        try { ch.sendMessage(tagged); } catch { /* peer channel hiccup — skip */ }
+      }
+    }
   }
 
-  /** For the Phase 1 smoke test: how many peers are connected + messages seen. */
+  /** For the smoke/A-B test: how many peers are connected + messages relayed. */
   debugStats(): { peers: number; messages: number } {
     return { peers: this.#peers.size, messages: this.#msgCount };
   }

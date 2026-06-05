@@ -329,7 +329,12 @@ io.on('connection', (socket) => {
     // (the server itself answers as a WebRTC peer) instead of being forwarded to another client.
     if (targetSocketId === STAR_SERVER_ID) {
       const lobbyId = findLobbyIdBySocket(socket.id);
-      if (lobbyId) starRelay.handleOffer(socket, lobbyId, offer);
+      if (!lobbyId) return;
+      // Resolve the server-assigned playerId for tagging this peer's relayed messages (anti-spoof).
+      const lobby = lobbyManager.getLobbyById(lobbyId);
+      const playerId = lobby?.players.find((p) => p.socketId === socket.id)?.id;
+      if (!playerId) return;
+      starRelay.handleOffer(socket, lobbyId, playerId, offer);
       return;
     }
     io.to(targetSocketId).emit('webrtc:offer', { fromSocketId: socket.id, offer });
