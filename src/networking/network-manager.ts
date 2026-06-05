@@ -728,6 +728,28 @@ export class NetworkManager {
     this.#startMetricsLog();
   }
 
+  #starReconnecting = false;
+
+  /** Recover the single server connection after an ICE drop: restartIce() + a fresh offer over the
+   *  still-alive socket.io signaling. Guarded so overlapping state-change events don't stack offers.
+   *  If the whole socket dropped, socket.io's own reconnection re-runs lobby:started → #initStarConnection. */
+  async #restartStarConnection(pc: RTCPeerConnection): Promise<void> {
+    if (this.#starReconnecting) return;
+    this.#starReconnecting = true;
+    try {
+      pc.restartIce();
+      const offer = await pc.createOffer({ iceRestart: true });
+      await pc.setLocalDescription(offer);
+      this.#socket.emit('webrtc:offer', { targetSocketId: NetworkManager.STAR_SERVER_ID, offer });
+      this.#log('star-reoffer-sent', 'iceRestart');
+    } catch (err) {
+      if (NETWORK_DEBUG) console.warn('[NM] star reconnect failed:', err);
+    } finally {
+      // Allow another attempt if it drops again (small delay so we don't tight-loop).
+      setTimeout(() => { this.#starReconnecting = false; }, 3000);
+    }
+  }
+
   #createPeerConnection(peerSocketId: string): RTCPeerConnection {
     const pc = new RTCPeerConnection({
       iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
@@ -743,6 +765,18 @@ export class NetworkManager {
     pc.oniceconnectionstatechange = () => {
       const state = pc.iceConnectionState;
       this.#log('ice-state', `peer=${peerSocketId.slice(0, 4)}`, `state=${state}`);
+
+      // Star topology robustness: the single server connection is the client's ONLY link — never tear
+      // it down on a transient drop. On 'disconnected'/'failed', attempt an ICE restart + re-offer over
+      // the still-alive socket.io signaling. (In the mesh a peer drop legitimately removes that player.)
+      if (peerSocketId === NetworkManager.STAR_SERVER_ID) {
+        if (state === 'failed' || state === 'disconnected') {
+          this.#log('star-reconnect', `state=${state} → restartIce + re-offer`);
+          void this.#restartStarConnection(pc);
+        }
+        return;
+      }
+
       if (state === 'disconnected' || state === 'failed' || state === 'closed') {
         const player = this.#matchPlayers.find((p) => p.socketId === peerSocketId);
         this.#unreliableChannels.delete(peerSocketId);
