@@ -8,6 +8,7 @@ import {
   NETWORK_DEBUG,
   MAX_UNRELIABLE_BUFFERED_BYTES,
 } from '../common/config';
+import type { NetworkTransport } from '../common/config';
 import { RUNTIME_CONFIG } from '../common/runtime-config';
 import type {
   PlayerUpdatePayload,
@@ -131,6 +132,11 @@ export class NetworkManager {
   #meshHealthTimer: ReturnType<typeof setTimeout> | null = null;
   static #MESH_HEALTH_CHECK_DELAY_MS = 8000;
 
+  // Active transport for THIS instance. Defaults to the committed config (NETWORK_TRANSPORT) but is
+  // per-instance so tests can force a topology (_setTransportForTest) regardless of the build default.
+  // All transport branching reads this field, never the global const directly.
+  #transport: NetworkTransport = NETWORK_TRANSPORT;
+
   // Phase 14 bugfix (#5 host freeze): the host is players[0] and therefore the OFFERER for every
   // peer, so it would otherwise create all N-1 RTCPeerConnections (+ 2 data channels + ICE
   // gathering each) synchronously in one tick — a burst that stalls the host's main thread on a
@@ -196,6 +202,13 @@ export class NetworkManager {
    */
   static _createForTest(serverUrl: string): NetworkManager {
     return new NetworkManager(serverUrl);
+  }
+
+  /** TEST-ONLY: force this instance's transport regardless of the build default (NETWORK_TRANSPORT).
+   *  Call BEFORE connect()/lobby:started so the init fork + health metrics use the chosen topology.
+   *  Lets the mesh test-suite exercise the mesh path even when the committed default is 'star'. */
+  _setTransportForTest(transport: NetworkTransport): void {
+    this.#transport = transport;
   }
 
   get localPlayerId(): string {
@@ -455,7 +468,14 @@ export class NetworkManager {
    */
   debugSnapshot(): NetworkManagerSnapshot {
     const mySocketId = this.#socket.id ?? '';
-    const expectedPeers = this.#matchPlayers.filter((p) => p.socketId !== mySocketId).length;
+    // Transport-aware "expected connections":
+    //   - mesh: one peer connection PER other player (N-1).
+    //   - star: exactly ONE connection to the server relay, regardless of player count.
+    // Without this fork, the star path (1 relay connection) was wrongly compared against N-1 and the
+    // health check below always reported a false "Partial mesh" for any 2+ player star match.
+    const expectedPeers = this.#transport === 'star'
+      ? (this.#matchPlayers.length > 1 ? 1 : 0)   // a real match (>1 player) expects the 1 relay link
+      : this.#matchPlayers.filter((p) => p.socketId !== mySocketId).length;
     const unreliableOpen = [...this.#unreliableChannels.values()].filter((c) => c.readyState === 'open').length;
     const reliableOpen = [...this.#reliableChannels.values()].filter((c) => c.readyState === 'open').length;
 
@@ -572,8 +592,9 @@ export class NetworkManager {
       );
       EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_LOBBY_STARTED, { matchConfig });
       // Transport fork (arch-webrtc-star): 'star' opens ONE connection to the server relay;
-      // 'mesh' keeps the original N-to-N peer mesh. Default 'mesh' until the star is validated.
-      if (NETWORK_TRANSPORT === 'star') {
+      // 'mesh' keeps the original N-to-N peer mesh. Reads the per-instance #transport (config default,
+      // overridable in tests) so the mesh tests can exercise the mesh path under a 'star' build default.
+      if (this.#transport === 'star') {
         void this.#initStarConnection();
       } else {
         this.#initWebRTCMesh(matchConfig.players);
@@ -1024,7 +1045,8 @@ export class NetworkManager {
         if (snap.meshHealth.reliableOpen < snap.meshHealth.expectedPeers) {
           reasons.push(`reliable=${snap.meshHealth.reliableOpen}/${snap.meshHealth.expectedPeers}`);
         }
-        const msg = `Partial mesh: ${reasons.join(', ')}`;
+        const label = this.#transport === 'star' ? 'Partial star link' : 'Partial mesh';
+        const msg = `${label}: ${reasons.join(', ')}`;
         console.warn(`[NM] ${msg}`);
         EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_MESH_PARTIAL, { snapshot: snap, reasons });
       }

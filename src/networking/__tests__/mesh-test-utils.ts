@@ -104,7 +104,13 @@ export async function spawnMeshOfSize(
 ): Promise<NetworkManager[]> {
   const deadlineMs = opts.deadlineMs ?? 5000;
   const url = `http://localhost:${handle.port}`;
-  const nms = Array.from({ length: n }, () => NetworkManager._createForTest(url));
+  const nms = Array.from({ length: n }, () => {
+    const nm = NetworkManager._createForTest(url);
+    // Force the mesh path: these are mesh-topology tests, and the committed build default may be
+    // 'star'. Per-instance override keeps them valid regardless of NETWORK_TRANSPORT's default.
+    nm._setTransportForTest('mesh');
+    return nm;
+  });
 
   // Connect all sockets in parallel. EVENT_BUS is shared across the N managers,
   // so we poll the public isConnected getter rather than EVENT_BUS.once.

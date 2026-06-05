@@ -7,11 +7,13 @@ export const NETWORK_SERVER_URL = 'http://localhost';
 export const NETWORK_SERVER_PORT = 3000;
 
 // ── Transport topology (arch-webrtc-star migration) ───────────────────────────────────────────
-// 'mesh'  = N-to-N WebRTC peer mesh (original; what ships for the event).
+// 'mesh'  = N-to-N WebRTC peer mesh (original).
 // 'star'  = single WebRTC connection per client to a server relay (node-datachannel), scales to 20.
-// The star path is built incrementally behind this flag; keep 'mesh' until the star is validated.
+// Both paths fully coexist: the server supports either simultaneously (it routes signaling by target —
+// STAR_SERVER_ID → relay, peer socketId → mesh forward), so flipping this flag + restarting the client
+// is all it takes. 'star' is the default; 'mesh' remains a selectable, tested fallback.
 export type NetworkTransport = 'mesh' | 'star';
-export const NETWORK_TRANSPORT: NetworkTransport = 'mesh';
+export const NETWORK_TRANSPORT: NetworkTransport = 'star';
 
 // ── Platform deployment (Feira de Jogos) ──────────────────────────────────────────────────────
 // The platform serves the game same-origin under https://feira-de-jogos.dev.br/<slug>/ and reverse-
