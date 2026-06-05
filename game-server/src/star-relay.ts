@@ -29,12 +29,45 @@ interface StarPeer {
  * Phase 1: just establish the connection + both channels (message handlers are stubs).
  * Phase 2/3/4 add the position/event relay + the snapshot-aggregation tick.
  */
+/** Relay tick rate for the position snapshot fan-out (Hz). 20 Hz is the Overwatch-proven default;
+ *  tunable 20-30. Decoupled from the client send rate (clients still send at their own tick for local
+ *  smoothness; the server just samples the latest each tick). */
+const RELAY_TICK_HZ = 20;
+
 export class StarRelay {
   #io: Server;
   #peers = new Map<string, StarPeer>(); // socketId → peer
+  // Phase 4 scaling: latest position payload per playerId, per lobby. Overwritten on each inbound pos,
+  // fanned out as ONE batched snapshot per client per relay tick (instead of forwarding every pos).
+  #latestPos = new Map<string, Map<string, Record<string, unknown>>>(); // lobbyId → (playerId → payload)
+  #tickTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(io: Server) {
     this.#io = io;
+  }
+
+  /** Start the snapshot fan-out tick (idempotent). Called when the first peer connects. */
+  #ensureTick(): void {
+    if (this.#tickTimer) return;
+    this.#tickTimer = setInterval(() => this.#fanoutSnapshots(), Math.round(1000 / RELAY_TICK_HZ));
+  }
+
+  /** Build one snapshot per lobby (array of latest player positions) and send to each peer's
+   *  unreliable channel. ~N sends per tick instead of ~N² immediate forwards. */
+  #fanoutSnapshots(): void {
+    if (this.#peers.size === 0) return;
+    for (const [lobbyId, byPlayer] of this.#latestPos) {
+      if (byPlayer.size === 0) continue;
+      const players = [...byPlayer.values()];
+      const snapshot = JSON.stringify({ type: 'snapshot', players });
+      for (const peer of this.#peers.values()) {
+        if (peer.lobbyId !== lobbyId) continue;
+        const ch = peer.unreliable;
+        if (ch && ch.isOpen()) {
+          try { ch.sendMessage(snapshot); } catch { /* hiccup — next tick */ }
+        }
+      }
+    }
   }
 
   /** Handle an inbound offer from a client (targetSocketId === STAR_SERVER_ID). Creates the server-side
@@ -51,6 +84,7 @@ export class StarRelay {
     });
     const peer: StarPeer = { socketId: socket.id, playerId, pc, lobbyId };
     this.#peers.set(socket.id, peer);
+    this.#ensureTick(); // start the snapshot fan-out loop once we have at least one peer
 
     // Send our ANSWER (and trickled ICE) back to this client over socket.io, mirroring the shape the
     // client's #handleAnswer / #handleIceCandidate expect (fromSocketId === STAR_SERVER_ID).
@@ -109,6 +143,13 @@ export class StarRelay {
     try { peer.reliable?.close(); } catch { /* ignore */ }
     try { peer.pc.close(); } catch { /* ignore */ }
     this.#peers.delete(socketId);
+    // Drop this player's last position so the snapshot stops including a gone player.
+    this.#latestPos.get(peer.lobbyId)?.delete(peer.playerId);
+    // Stop the tick when no peers remain (and clear stale state).
+    if (this.#peers.size === 0) {
+      if (this.#tickTimer) { clearInterval(this.#tickTimer); this.#tickTimer = null; }
+      this.#latestPos.clear();
+    }
   }
 
   /**
@@ -125,21 +166,32 @@ export class StarRelay {
     this.#msgCount++;
     if (typeof msg !== 'string') return; // the client sends JSON strings; ignore binary for now
 
-    // Tag with the sender's server-assigned playerId so receivers attribute it correctly.
-    let tagged: string;
+    let obj: Record<string, unknown>;
     try {
-      const obj = JSON.parse(msg) as Record<string, unknown>;
-      obj.playerId = peer.playerId;
-      tagged = JSON.stringify(obj);
+      obj = JSON.parse(msg) as Record<string, unknown>;
     } catch {
       return; // malformed — drop
     }
+    obj.playerId = peer.playerId; // tag with the server-assigned id (anti-spoof)
 
-    const isPos = label === 'pos';
+    // POSITION (unreliable 'pos'): do NOT forward immediately. Store latest; the relay tick fans out
+    // ONE batched snapshot per client (the 20-player scaling win: ~N sends/tick, not ~N² per second).
+    if (label === 'pos') {
+      let byPlayer = this.#latestPos.get(peer.lobbyId);
+      if (!byPlayer) {
+        byPlayer = new Map();
+        this.#latestPos.set(peer.lobbyId, byPlayer);
+      }
+      byPlayer.set(peer.playerId, obj);
+      return;
+    }
+
+    // EVENTS (reliable): forward immediately to other peers in the lobby (low-frequency, latency-critical).
+    const tagged = JSON.stringify(obj);
     for (const other of this.#peers.values()) {
       if (other.socketId === peer.socketId) continue; // echo-suppress sender
-      if (other.lobbyId !== peer.lobbyId) continue; // only same lobby
-      const ch = isPos ? other.unreliable : other.reliable;
+      if (other.lobbyId !== peer.lobbyId) continue;
+      const ch = other.reliable;
       if (ch && ch.isOpen()) {
         try { ch.sendMessage(tagged); } catch { /* peer channel hiccup — skip */ }
       }

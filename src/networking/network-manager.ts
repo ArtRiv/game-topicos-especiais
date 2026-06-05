@@ -65,7 +65,10 @@ type DcMessage =
   | ({ type: 'earth-wall-pillar-destroy' } & EarthWallPillarDestroyPayload)
   | ({ type: 'beam-start' } & BeamStartPayload)
   | ({ type: 'beam-update' } & BeamUpdatePayload)
-  | ({ type: 'beam-end' } & BeamEndPayload);
+  | ({ type: 'beam-end' } & BeamEndPayload)
+  // Star topology (Phase 4): server-batched position snapshot — an array of per-player pos payloads,
+  // each carrying its own server-tagged playerId. Unpacked client-side into N NETWORK_PLAYER_UPDATE.
+  | ({ type: 'snapshot'; players: Array<PlayerUpdatePayload & { playerId: string }> });
 
 /** Plain-object snapshot of NetworkManager state for debugging (browser console + repro scripts). */
 export type NetworkManagerSnapshot = {
@@ -878,6 +881,19 @@ export class NetworkManager {
       switch (msg.type) {
         case 'pos':
           EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_PLAYER_UPDATE, { ...msg, playerId } as PlayerUpdateBroadcast);
+          break;
+        case 'snapshot':
+          // Star topology (Phase 4): the server batches all players' latest positions into one snapshot
+          // per relay tick. Unpack into one NETWORK_PLAYER_UPDATE per player — the exact event
+          // #onRemotePlayerUpdate already consumes. Each entry carries its own server-tagged playerId.
+          // Skip our own entry (the server includes everyone; we don't render ourselves as a remote).
+          if (Array.isArray((msg as { players?: unknown }).players)) {
+            for (const entry of (msg as unknown as { players: Array<Record<string, unknown>> }).players) {
+              const pid = entry.playerId as string | undefined;
+              if (!pid || pid === this.#localPlayerId) continue;
+              EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_PLAYER_UPDATE, { ...entry, playerId: pid } as unknown as PlayerUpdateBroadcast);
+            }
+          }
           break;
         case 'spell':
           EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_SPELL_CAST, { ...msg, playerId } as SpellCastBroadcast);
