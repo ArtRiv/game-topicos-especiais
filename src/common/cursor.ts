@@ -1,6 +1,8 @@
 import { RUNTIME_CONFIG } from './runtime-config';
 
-const CURSOR_URL = '/assets/cursor/cursor.png';
+// Relative (not '/assets/...') so the cursor resolves under the platform subpath
+// feira-de-jogos.dev.br/<slug>/ instead of 404-ing at the domain root. Works on LAN too.
+const CURSOR_URL = './assets/cursor/cursor.png';
 
 function apply(): void {
   const x = Math.max(0, Math.round(RUNTIME_CONFIG.CURSOR_HOTSPOT_X));

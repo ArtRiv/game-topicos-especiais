@@ -41,9 +41,9 @@ type CooldownEntry = {
   fading: boolean;
 };
 
-// x=8 aligns with mana bar; y=30 sits just below the "MP" label (mana bar at y=14, h=6, text at y=22)
+// x=8 aligns with mana bar; y=36 sits just below the "MP" label (mana bar at y=20, h=6, text at y=28)
 const COOLDOWN_HUD_X = 8;
-const COOLDOWN_HUD_Y = 30;
+const COOLDOWN_HUD_Y = 36;
 const COOLDOWN_ENTRY_H = 14; // icon 12px + 2px gap to next row
 const ICON_SIZE = 12;
 const BAR_W = 28;
@@ -78,7 +78,7 @@ const CAROUSEL_ANIM_DURATION_MS = 220;        // tween duration when rotating
 
 // ───────────────────────────────────────────────────────────────────────────────
 // Phase 14 (D-15/D-16, UI-SPEC surface 2): team-score plate layout. Top-center band
-// (canvas center-X 240, y ≈ 10) — clear of the mana bar (x=8,y=14) and hearts (x 157+).
+// (canvas center-X 240, y ≈ 10) — clear of the left-anchored hearts (x=8–88, y 2/10) and mana bar (x=8,y=20).
 // ───────────────────────────────────────────────────────────────────────────────
 const SCORE_PLATE_CENTER_X = 240;
 const SCORE_PLATE_Y = 10;
@@ -105,10 +105,7 @@ export class UiScene extends Phaser.Scene {
   #dialogContainerText!: Phaser.GameObjects.Text;
   #manaBarBg!: Phaser.GameObjects.Rectangle;
   #manaBarFill!: Phaser.GameObjects.Rectangle;
-  #manaText!: Phaser.GameObjects.Text;
-  #elementGem!: Phaser.GameObjects.Arc;
-  #elementLabel!: Phaser.GameObjects.Text;
-  #elementHintText!: Phaser.GameObjects.Text;
+  #manaText!: Phaser.GameObjects.BitmapText;
   // Pixel-perfect hint that pops in when Wind is the active element to remind
   // the player that SHIFT now triggers the wind super-dash instead of the
   // regular dash. Uses BitmapText (press_start_2p atlas) instead of WebFont
@@ -169,11 +166,11 @@ export class UiScene extends Phaser.Scene {
     const numberOfFullHearts = Math.floor(DataManager.instance.data.currentHealth / 2);
     const hasHalfHeart = DataManager.instance.data.currentHealth % 2 === 1;
     for (let i = 0; i < 20; i += 1) {
-      let x = 157 + 8 * i;
-      let y = 25;
+      let x = 8 + 8 * i;
+      let y = 2;
       if (i >= 10) {
-        x = 157 + 8 * (i - 10);
-        y = 33;
+        x = 8 + 8 * (i - 10);
+        y = 10;
       }
       let frame: string = HEART_TEXTURE_FRAME.NONE;
       if (i < numberOfFullHearts) {
@@ -193,47 +190,20 @@ export class UiScene extends Phaser.Scene {
     this.#dialogContainer.add(this.#dialogContainerText);
     this.#dialogContainer.visible = false;
 
-    // create mana bar
+    // create mana bar — sits below the two rows of hearts (hearts rows at y=2 and y=10, 8px tall each)
     const manaBarX = 8;
-    const manaBarY = 14;
+    const manaBarY = 20;
     const manaBarWidth = 60;
     const manaBarHeight = 6;
     this.#manaBarBg = this.add.rectangle(manaBarX, manaBarY, manaBarWidth, manaBarHeight, 0x222244).setOrigin(0);
     this.#manaBarFill = this.add.rectangle(manaBarX, manaBarY, manaBarWidth, manaBarHeight, 0x4444ff).setOrigin(0);
+    // BitmapText (pre-rasterized glyphs) instead of Text to avoid sub-pixel blur at 6px.
     this.#manaText = this.add
-      .text(manaBarX, manaBarY + manaBarHeight + 2, 'MP', {
-        fontFamily: ASSET_KEYS.FONT_PRESS_START_2P,
-        fontSize: 6,
-        color: '#8888ff',
-      })
-      .setOrigin(0);
+      .bitmapText(manaBarX, manaBarY + manaBarHeight + 2, 'press_start_2p', 'MP', 6)
+      .setOrigin(0)
+      .setTint(0x8888ff);
     this.#hudContainer.add([this.#manaBarBg, this.#manaBarFill, this.#manaText]);
 
-    // Element indicator — small text label kept above the carousel as a redundancy.
-    const elemX = 8;
-    const elemY = 290;
-    this.#elementGem = this.add.arc(elemX + 5, elemY + 5, 5, 0, 360, false, 0xff5500).setOrigin(0.5);
-    this.#elementLabel = this.add
-      .text(elemX + 13, elemY + 1, 'FIRE', {
-        fontFamily: ASSET_KEYS.FONT_PRESS_START_2P,
-        fontSize: '5px',
-        color: '#ff5500',
-      })
-      .setOrigin(0);
-    this.#elementHintText = this.add
-      .text(elemX, elemY + 12, '[SPACE]', {
-        fontFamily: ASSET_KEYS.FONT_PRESS_START_2P,
-        fontSize: '4px',
-        color: '#888888',
-      })
-      .setOrigin(0);
-
-    // Phase 14 (D-18 step 5 / UI-SPEC surface 1): the element / radial-menu affordance
-    // must reveal WITH the rest of the HUD on HUD_REVEAL. Historically these were added
-    // straight to the scene (NOT to #hudContainer), so they would have stayed visible
-    // during the cinematic. Parent them into #hudContainer now — only the parent changes;
-    // the refs still point at the same objects, so #updateElementIndicator still works.
-    this.#hudContainer.add([this.#elementGem, this.#elementLabel, this.#elementHintText]);
 
     this.#createElementCarousel();
     // Parent the carousel pieces into #hudContainer too so the radial-menu affordance
@@ -271,7 +241,6 @@ export class UiScene extends Phaser.Scene {
     EVENT_BUS.on(CUSTOM_EVENTS.PLAYER_HEALTH_UPDATED, this.updateHealthInHud, this);
     EVENT_BUS.on(CUSTOM_EVENTS.SHOW_DIALOG, this.showDialog, this);
     EVENT_BUS.on(CUSTOM_EVENTS.MANA_UPDATED, this.updateManaInHud, this);
-    EVENT_BUS.on(CUSTOM_EVENTS.ELEMENT_CHANGED, this.#updateElementIndicator, this);
     EVENT_BUS.on(CUSTOM_EVENTS.ELEMENT_CHANGED, this.#syncCarouselToElement, this);
     EVENT_BUS.on(CUSTOM_EVENTS.ELEMENT_CAROUSEL_STEP, this.#onCarouselStep, this);
     EVENT_BUS.on(CUSTOM_EVENTS.SPELL_CAST, this.#onSpellCast, this);
@@ -284,7 +253,6 @@ export class UiScene extends Phaser.Scene {
       EVENT_BUS.off(CUSTOM_EVENTS.PLAYER_HEALTH_UPDATED, this.updateHealthInHud, this);
       EVENT_BUS.off(CUSTOM_EVENTS.SHOW_DIALOG, this.showDialog, this);
       EVENT_BUS.off(CUSTOM_EVENTS.MANA_UPDATED, this.updateManaInHud, this);
-      EVENT_BUS.off(CUSTOM_EVENTS.ELEMENT_CHANGED, this.#updateElementIndicator, this);
       EVENT_BUS.off(CUSTOM_EVENTS.ELEMENT_CHANGED, this.#syncCarouselToElement, this);
       EVENT_BUS.off(CUSTOM_EVENTS.ELEMENT_CAROUSEL_STEP, this.#onCarouselStep, this);
       EVENT_BUS.off(CUSTOM_EVENTS.SPELL_CAST, this.#onSpellCast, this);
@@ -329,8 +297,11 @@ export class UiScene extends Phaser.Scene {
 
   public async updateHealthInHud(data: PlayerHealthUpdated): Promise<void> {
     if (data.type === PLAYER_HEALTH_UPDATE_TYPE.INCREASE) {
-      // if player has increased their health, picking up hearts, new heart container, fairy, etc.,
-      // need to update their health here
+      // Health went UP (respawn refill, heart pickup, heal). The HUD previously did nothing here, so
+      // after a TDM death/respawn the hearts stayed empty/white. Redraw every heart to its correct
+      // frame for the new HP and animate each newly-restored heart with a quick pop so the refill
+      // reads as a deliberate "back in the fight" beat.
+      this.#refillHearts(data.previousHealth, data.currentHealth);
       return;
     }
 
@@ -344,13 +315,68 @@ export class UiScene extends Phaser.Scene {
       if (!isHalfHeart) {
         animationName = HEART_ANIMATIONS.LOSE_FIRST_HALF;
       }
+      // Crash guard: a server↔client HP-scale mismatch (or any out-of-range HP) can make heartIndex
+      // fall outside #hearts. Indexing an undefined heart throws, and because this runs synchronously
+      // inside the damage handler the throw ABORTS damage application — health silently never drops
+      // ("spells compute but nothing happens"). Skip the missing heart instead of throwing so the
+      // HUD can never break the damage pipeline again.
+      const heart = this.#hearts[heartIndex];
+      if (heart === undefined) {
+        health -= 1;
+        continue;
+      }
       await new Promise((resolve) => {
-        this.#hearts[heartIndex].play(animationName);
-        this.#hearts[heartIndex].once(Phaser.Animations.Events.ANIMATION_COMPLETE_KEY + animationName, () => {
+        heart.play(animationName);
+        heart.once(Phaser.Animations.Events.ANIMATION_COMPLETE_KEY + animationName, () => {
           resolve(undefined);
         });
       });
       health -= 1;
+    }
+  }
+
+  /**
+   * Redraw the heart bar for a HEALTH-INCREASE (respawn refill / heal). There is no authored
+   * "gain heart" spritesheet animation (only the two LOSE animations exist), so we animate the
+   * refill ourselves: each heart is set to its correct frame for the new HP, and every heart that
+   * just came back (was empty/half, is now fuller) gets a quick scale "pop" staggered left→right.
+   */
+  #refillHearts(previousHealth: number, currentHealth: number): void {
+    const fullHearts = Math.floor(currentHealth / 2);
+    const hasHalf = currentHealth % 2 === 1;
+    const prevFull = Math.floor(previousHealth / 2);
+
+    for (let i = 0; i < this.#hearts.length; i += 1) {
+      const heart = this.#hearts[i];
+      if (heart === undefined) continue;
+
+      // Determine the target frame for this heart slot at the new HP.
+      let frame: string = HEART_TEXTURE_FRAME.EMPTY;
+      if (i < fullHearts) {
+        frame = HEART_TEXTURE_FRAME.FULL;
+      } else if (hasHalf && i === fullHearts) {
+        frame = HEART_TEXTURE_FRAME.HALF;
+      } else if (i >= Math.floor(DataManager.instance.data.maxHealth / 2)) {
+        frame = HEART_TEXTURE_FRAME.NONE; // slots beyond max HP stay blank
+      }
+
+      // Stop any leftover lose-animation tween/anim and force the frame.
+      heart.anims?.stop();
+      heart.setFrame(frame);
+
+      // Pop only the hearts that were just restored (became fuller than before).
+      if (i >= prevFull && i < fullHearts + (hasHalf ? 1 : 0)) {
+        heart.setScale(0.4);
+        this.tweens.add({
+          targets: heart,
+          scale: 1,
+          ease: 'Back.easeOut',
+          duration: 220,
+          delay: (i - prevFull) * 60,
+        });
+      } else {
+        heart.setScale(1);
+      }
     }
   }
 
@@ -463,25 +489,6 @@ export class UiScene extends Phaser.Scene {
     });
   };
 
-  #updateElementIndicator(data: ElementChangedData): void {
-    const colorMap: Record<Element, number> = {
-      FIRE: 0xff5500,
-      THUNDER: 0xffdd00,
-      EARTH: 0x886633,
-      ICE: 0x22ccff,
-      WIND: 0x44ff99,
-      WATER: 0x0088ff,
-      DARKNESS: 0x884bb6,
-    };
-    const hexColor = colorMap[data.element] ?? 0xffffff;
-    const cssColor = `#${hexColor.toString(16).padStart(6, '0')}`;
-    this.#elementGem.setFillStyle(hexColor);
-    this.#elementLabel.setText(data.element);
-    this.#elementLabel.setColor(cssColor);
-    // Wind-dash hint visibility tracks the active element.
-    this.#windDashHint?.setVisible(data.element === ELEMENT.WIND);
-  }
-
   #generateSpellIcons(): void {
     // Lightning — yellow zigzag bolt
     if (!this.textures.exists(ASSET_KEYS.SPELL_ICO_LIGHTNING)) {
@@ -521,19 +528,21 @@ export class UiScene extends Phaser.Scene {
 
   #getSpellIconKey(spellId: string): string {
     const map: Partial<Record<SpellId, string>> = {
-      FIRE_BOLT: ASSET_KEYS.SPELL_ICO_FIRE,
-      FIRE_AREA: ASSET_KEYS.SPELL_ICO_FIRE,
-      EARTH_BOLT: ASSET_KEYS.SPELL_ICO_ROCK,
-      EARTH_BUMP: ASSET_KEYS.SPELL_ICO_ROCK,
-      WATER_BALL: ASSET_KEYS.SPELL_ICO_WATER,
-      WATER_TORNADO: ASSET_KEYS.SPELL_ICO_WATER,
-      WATER_SPIKE: ASSET_KEYS.SPELL_ICO_WATER,
-      WIND_BOLT: ASSET_KEYS.SPELL_ICO_WIND,
-      THUNDER_STRIKE: ASSET_KEYS.SPELL_ICO_LIGHTNING,
+      FIRE_BOLT: ASSET_KEYS.ELEMENT_ICON_FIRE,
+      FIRE_AREA: ASSET_KEYS.ELEMENT_ICON_FIRE,
+      EARTH_BOLT: ASSET_KEYS.ELEMENT_ICON_EARTH,
+      EARTH_BUMP: ASSET_KEYS.ELEMENT_ICON_EARTH,
+      EARTH_WALL: ASSET_KEYS.ELEMENT_ICON_EARTH,
+      WATER_BALL: ASSET_KEYS.ELEMENT_ICON_WATER,
+      WATER_TORNADO: ASSET_KEYS.ELEMENT_ICON_WATER,
+      WATER_SPIKE: ASSET_KEYS.ELEMENT_ICON_WATER,
+      WIND_BOLT: ASSET_KEYS.ELEMENT_ICON_WIND,
+      THUNDER_STRIKE: ASSET_KEYS.ELEMENT_ICON_LIGHTNING,
+      LIGHTNING_BEAM: ASSET_KEYS.ELEMENT_ICON_LIGHTNING,
       ICE_SHARD: ASSET_KEYS.SPELL_ICO_ICE,
       VOID_ORB: ASSET_KEYS.SPELL_ICO_DARK,
     };
-    return map[spellId as SpellId] ?? ASSET_KEYS.SPELL_ICO_FIRE;
+    return map[spellId as SpellId] ?? ASSET_KEYS.ELEMENT_ICON_FIRE;
   }
 
   #getSpellBarColor(spellId: string): number {
@@ -542,11 +551,13 @@ export class UiScene extends Phaser.Scene {
       FIRE_AREA: 0xff5500,
       EARTH_BOLT: 0x886633,
       EARTH_BUMP: 0x886633,
+      EARTH_WALL: 0x886633,
       WATER_BALL: 0x0088ff,
       WATER_TORNADO: 0x0088ff,
       WATER_SPIKE: 0x0088ff,
       WIND_BOLT: 0x44ff99,
       THUNDER_STRIKE: 0xffdd00,
+      LIGHTNING_BEAM: 0xffdd00,
       ICE_SHARD: 0x22ccff,
       VOID_ORB: 0x884bb6,
     };
@@ -701,6 +712,7 @@ export class UiScene extends Phaser.Scene {
   /** Sync the carousel when the element changes from a non-carousel source (radial menu).
    *  No animation — snap, so we don't fight an in-flight tween. */
   #syncCarouselToElement(data: ElementChangedData): void {
+    this.#windDashHint?.setVisible(data.element === ELEMENT.WIND);
     const targetIdx = CAROUSEL_ELEMENTS.findIndex((e) => e === data.element);
     if (targetIdx < 0 || targetIdx === this.#carouselIndex) return;
     if (this.#carouselTween) {

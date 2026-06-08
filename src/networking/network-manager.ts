@@ -3,10 +3,12 @@ import { EVENT_BUS, CUSTOM_EVENTS } from '../common/event-bus.js';
 import {
   NETWORK_SERVER_URL,
   NETWORK_SERVER_PORT,
+  NETWORK_TRANSPORT,
   NETWORK_TICK_RATE_HZ,
   NETWORK_DEBUG,
   MAX_UNRELIABLE_BUFFERED_BYTES,
 } from '../common/config';
+import type { NetworkTransport } from '../common/config';
 import { RUNTIME_CONFIG } from '../common/runtime-config';
 import type {
   PlayerUpdatePayload,
@@ -47,6 +49,9 @@ import type {
   TeamScorePayload,
   MatchEndedPayload,
   MatchSpawnsPayload,
+  PickupSpawnedPayload,
+  PickupClaimPayload,
+  PickupCollectedPayload,
 } from './types.js';
 
 // Messages exchanged over WebRTC data channels
@@ -61,7 +66,10 @@ type DcMessage =
   | ({ type: 'earth-wall-pillar-destroy' } & EarthWallPillarDestroyPayload)
   | ({ type: 'beam-start' } & BeamStartPayload)
   | ({ type: 'beam-update' } & BeamUpdatePayload)
-  | ({ type: 'beam-end' } & BeamEndPayload);
+  | ({ type: 'beam-end' } & BeamEndPayload)
+  // Star topology (Phase 4): server-batched position snapshot — an array of per-player pos payloads,
+  // each carrying its own server-tagged playerId. Unpacked client-side into N NETWORK_PLAYER_UPDATE.
+  | ({ type: 'snapshot'; players: Array<PlayerUpdatePayload & { playerId: string }> });
 
 /** Plain-object snapshot of NetworkManager state for debugging (browser console + repro scripts). */
 export type NetworkManagerSnapshot = {
@@ -124,6 +132,11 @@ export class NetworkManager {
   #meshHealthTimer: ReturnType<typeof setTimeout> | null = null;
   static #MESH_HEALTH_CHECK_DELAY_MS = 8000;
 
+  // Active transport for THIS instance. Defaults to the committed config (NETWORK_TRANSPORT) but is
+  // per-instance so tests can force a topology (_setTransportForTest) regardless of the build default.
+  // All transport branching reads this field, never the global const directly.
+  #transport: NetworkTransport = NETWORK_TRANSPORT;
+
   // Phase 14 bugfix (#5 host freeze): the host is players[0] and therefore the OFFERER for every
   // peer, so it would otherwise create all N-1 RTCPeerConnections (+ 2 data channels + ICE
   // gathering each) synchronously in one tick — a burst that stalls the host's main thread on a
@@ -131,26 +144,37 @@ export class NetworkManager {
   // gets its own tick and the main thread can breathe between them. Handles are tracked so a
   // teardown before they fire can cancel them.
   #offerStaggerHandles: ReturnType<typeof setTimeout>[] = [];
-  static #OFFER_STAGGER_MS = 30;
+  // Event hardening: bumped 30→50ms. Each WebRTC offer does ~20-40ms of synchronous work (PC ctor +
+  // 2 createDataChannel) before its first await; 30ms let those overlap and contributed to the 6-player
+  // host freeze. 50ms spaces them out (5 offers = 250ms total, well inside the 5000ms countdown). Don't
+  // push much higher without re-testing the COUNTDOWN→ACTIVE gate. Post-event: a star/relay topology
+  // removes this entirely (see .planning/ architecture notes).
+  static #OFFER_STAGGER_MS = 50;
 
   // Network performance metrics
   #msgSentCount = 0;
   #msgRecvCount = 0;
   #metricsInterval: ReturnType<typeof setInterval> | null = null;
 
-  private constructor(serverUrl: string) {
+  private constructor(serverUrl: string | undefined, extraOptions: { path?: string } = {}) {
+    // serverUrl may be undefined → socket.io-client connects SAME-ORIGIN (platform deploy), deriving
+    // host+protocol from window.location. extraOptions.path carries the slug-prefixed proxy path.
     this.#socket = io(serverUrl, {
       autoConnect: false,
       reconnectionAttempts: 5,
       reconnectionDelay: 1000,
+      ...extraOptions,
     });
     this.#bindSocketEvents();
   }
 
-  static init(serverUrl?: string): NetworkManager {
+  static init(serverUrl?: string, extraOptions: { path?: string } = {}): NetworkManager {
     if (NetworkManager.#instance) return NetworkManager.#instance;
-    const url = serverUrl ?? `${NETWORK_SERVER_URL}:${NETWORK_SERVER_PORT}`;
-    NetworkManager.#instance = new NetworkManager(url);
+    // Same-origin platform mode passes a `path` option and a deliberately-undefined url (io() then
+    // uses window.location). Only fall back to the localhost default when neither a url NOR a path
+    // was provided (legacy/no-arg callers).
+    const url = serverUrl ?? (extraOptions.path ? undefined : `${NETWORK_SERVER_URL}:${NETWORK_SERVER_PORT}`);
+    NetworkManager.#instance = new NetworkManager(url, extraOptions);
     // Dev-only: expose to window for browser-console diagnostics + Playwright/manual repro.
     if (typeof window !== 'undefined' && NETWORK_DEBUG) {
       (window as unknown as { __NM__: NetworkManager }).__NM__ = NetworkManager.#instance;
@@ -180,6 +204,13 @@ export class NetworkManager {
     return new NetworkManager(serverUrl);
   }
 
+  /** TEST-ONLY: force this instance's transport regardless of the build default (NETWORK_TRANSPORT).
+   *  Call BEFORE connect()/lobby:started so the init fork + health metrics use the chosen topology.
+   *  Lets the mesh test-suite exercise the mesh path even when the committed default is 'star'. */
+  _setTransportForTest(transport: NetworkTransport): void {
+    this.#transport = transport;
+  }
+
   get localPlayerId(): string {
     return this.#localPlayerId;
   }
@@ -199,10 +230,19 @@ export class NetworkManager {
   }
 
   /** Phase 14: true when the current match is team-deathmatch — gates the server-authoritative
-   *  death/respawn flow so the local HP-zero does NOT route to the legacy single-player GAME_OVER. */
+   *  death/respawn flow so the local HP-zero does NOT route to the legacy single-player GAME_OVER.
+   *
+   *  Event-readiness fix: mirror the SERVER's default (server.ts setMatchMode(lobby.mode ?? 'team-deathmatch')).
+   *  The mode is propagated to the client only via matchConfig.mode, and teardownMesh() nulls #matchMode on
+   *  return-to-lobby/rematch. The old strict `=== 'team-deathmatch'` check meant a null #matchMode (after a
+   *  teardown, or if the lobby:started mode didn't stick) made this return false — and on that player's next
+   *  death the legacy single-player GAME_OVER screen fired. Since the only non-TDM modes are 'respawn' and
+   *  'last-standing', treat ANY connected match as TDM unless it is EXPLICITLY one of those. A null mode can
+   *  never again resurrect the single-player game-over path mid-match. */
   get isTeamDeathmatch(): boolean {
-    return this.#matchMode === 'team-deathmatch';
+    return this.#matchMode !== 'respawn' && this.#matchMode !== 'last-standing';
   }
+
 
   get socketId(): string {
     return this.#socket.id ?? '';
@@ -265,6 +305,13 @@ export class NetworkManager {
     this.#socket.emit('match:scene-ready');
   }
 
+  /** Ask the server to replay any un-collected special-spell pickups that spawned before this client's
+   *  GameScene booted (same late-boot problem as match:scene-ready). The replay is idempotent — the
+   *  client dedupes by pickupId — so this is safe to call alongside sendSceneReady(). */
+  sendPickupRequest(): void {
+    this.#socket.emit('pickup:request-active');
+  }
+
   /** Client ack for the LOADING sync barrier (LFC-05). Sent exactly once when the local LoadingScene finishes preparation. */
   sendMatchLoaded(lobbyId: string): void {
     this.#socket.emit('match:loaded', { lobbyId } satisfies MatchLoadedPayload);
@@ -285,6 +332,12 @@ export class NetworkManager {
   /** Claim that a locally-cast spell hit a wall/environment. Host broadcasts spell:destroyed to all peers (D-04). */
   sendSpellHitEnvironment(payload: SpellHitEnvironmentPayload): void {
     this.#socket.emit('spell:hit-environment', payload);
+  }
+
+  /** Claim that the local player touched a special-spell pickup. Server resolves first-touch-wins
+   *  (by socket identity) and broadcasts pickup:collected. Carries only pickupId (anti-spoof). */
+  sendPickupClaim(payload: PickupClaimPayload): void {
+    this.#socket.emit('pickup:claimed', payload);
   }
 
   // --- Game methods (WebRTC data channels — low latency, P2P) ---
@@ -415,7 +468,14 @@ export class NetworkManager {
    */
   debugSnapshot(): NetworkManagerSnapshot {
     const mySocketId = this.#socket.id ?? '';
-    const expectedPeers = this.#matchPlayers.filter((p) => p.socketId !== mySocketId).length;
+    // Transport-aware "expected connections":
+    //   - mesh: one peer connection PER other player (N-1).
+    //   - star: exactly ONE connection to the server relay, regardless of player count.
+    // Without this fork, the star path (1 relay connection) was wrongly compared against N-1 and the
+    // health check below always reported a false "Partial mesh" for any 2+ player star match.
+    const expectedPeers = this.#transport === 'star'
+      ? (this.#matchPlayers.length > 1 ? 1 : 0)   // a real match (>1 player) expects the 1 relay link
+      : this.#matchPlayers.filter((p) => p.socketId !== mySocketId).length;
     const unreliableOpen = [...this.#unreliableChannels.values()].filter((c) => c.readyState === 'open').length;
     const reliableOpen = [...this.#reliableChannels.values()].filter((c) => c.readyState === 'open').length;
 
@@ -531,7 +591,14 @@ export class NetworkManager {
         `peers=${matchConfig.players.map((p) => `${p.name}(${p.socketId.slice(0, 4)})`).join(',')}`,
       );
       EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_LOBBY_STARTED, { matchConfig });
-      this.#initWebRTCMesh(matchConfig.players);
+      // Transport fork (arch-webrtc-star): 'star' opens ONE connection to the server relay;
+      // 'mesh' keeps the original N-to-N peer mesh. Reads the per-instance #transport (config default,
+      // overridable in tests) so the mesh tests can exercise the mesh path under a 'star' build default.
+      if (this.#transport === 'star') {
+        void this.#initStarConnection();
+      } else {
+        this.#initWebRTCMesh(matchConfig.players);
+      }
       this.#scheduleMeshHealthCheck();
     });
 
@@ -612,6 +679,13 @@ export class NetworkManager {
     this.#socket.on('match:spawns', (payload: MatchSpawnsPayload) => {
       EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_MATCH_SPAWNS, payload);
     });
+    // Special-spell pickups — server-authoritative spawn + collect broadcasts.
+    this.#socket.on('pickup:spawned', (payload: PickupSpawnedPayload) => {
+      EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_PICKUP_SPAWNED, payload);
+    });
+    this.#socket.on('pickup:collected', (payload: PickupCollectedPayload) => {
+      EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_PICKUP_COLLECTED, payload);
+    });
   }
 
   // ---- WebRTC N-to-N mesh ----
@@ -656,6 +730,47 @@ export class NetworkManager {
     this.#startMetricsLog();
   }
 
+  /** Reserved signaling target id for the server-relay peer (star topology). The server routes
+   *  offer/answer/ice with this targetSocketId into its own node-datachannel PeerConnection. */
+  static readonly STAR_SERVER_ID = '__server__';
+
+  /**
+   * Star topology (arch-webrtc-star): open a SINGLE RTCPeerConnection to the server relay, with the
+   * same two channels the mesh uses per-peer (unreliable 'pos' + reliable 'events'). The client is
+   * always the offerer; the server answers. Reuses #createOffer / #setupDataChannel / the ICE-race
+   * buffering verbatim — the only difference from a mesh peer is the connection's identity is the
+   * reserved STAR_SERVER_ID instead of a peer's socketId.
+   */
+  async #initStarConnection(): Promise<void> {
+    if (typeof RTCPeerConnection === 'undefined') return; // Node/test guard
+    if (this.#peerConnections.has(NetworkManager.STAR_SERVER_ID)) return; // already connected
+    this.#log('star-init', 'opening single connection to server relay');
+    await this.#createOffer(NetworkManager.STAR_SERVER_ID);
+    this.#startMetricsLog();
+  }
+
+  #starReconnecting = false;
+
+  /** Recover the single server connection after an ICE drop: restartIce() + a fresh offer over the
+   *  still-alive socket.io signaling. Guarded so overlapping state-change events don't stack offers.
+   *  If the whole socket dropped, socket.io's own reconnection re-runs lobby:started → #initStarConnection. */
+  async #restartStarConnection(pc: RTCPeerConnection): Promise<void> {
+    if (this.#starReconnecting) return;
+    this.#starReconnecting = true;
+    try {
+      pc.restartIce();
+      const offer = await pc.createOffer({ iceRestart: true });
+      await pc.setLocalDescription(offer);
+      this.#socket.emit('webrtc:offer', { targetSocketId: NetworkManager.STAR_SERVER_ID, offer });
+      this.#log('star-reoffer-sent', 'iceRestart');
+    } catch (err) {
+      if (NETWORK_DEBUG) console.warn('[NM] star reconnect failed:', err);
+    } finally {
+      // Allow another attempt if it drops again (small delay so we don't tight-loop).
+      setTimeout(() => { this.#starReconnecting = false; }, 3000);
+    }
+  }
+
   #createPeerConnection(peerSocketId: string): RTCPeerConnection {
     const pc = new RTCPeerConnection({
       iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
@@ -671,6 +786,18 @@ export class NetworkManager {
     pc.oniceconnectionstatechange = () => {
       const state = pc.iceConnectionState;
       this.#log('ice-state', `peer=${peerSocketId.slice(0, 4)}`, `state=${state}`);
+
+      // Star topology robustness: the single server connection is the client's ONLY link — never tear
+      // it down on a transient drop. On 'disconnected'/'failed', attempt an ICE restart + re-offer over
+      // the still-alive socket.io signaling. (In the mesh a peer drop legitimately removes that player.)
+      if (peerSocketId === NetworkManager.STAR_SERVER_ID) {
+        if (state === 'failed' || state === 'disconnected') {
+          this.#log('star-reconnect', `state=${state} → restartIce + re-offer`);
+          void this.#restartStarConnection(pc);
+        }
+        return;
+      }
+
       if (state === 'disconnected' || state === 'failed' || state === 'closed') {
         const player = this.#matchPlayers.find((p) => p.socketId === peerSocketId);
         this.#unreliableChannels.delete(peerSocketId);
@@ -796,17 +923,32 @@ export class NetworkManager {
 
     ch.onmessage = (e: MessageEvent<string>) => {
       this.#msgRecvCount++;
-      let msg: DcMessage;
+      let msg: DcMessage & { playerId?: string };
       try {
-        msg = JSON.parse(e.data) as DcMessage;
+        msg = JSON.parse(e.data) as DcMessage & { playerId?: string };
       } catch {
         return; // Drop malformed messages silently
       }
-      const playerId = this.#socketToPlayerId.get(fromSocketId) ?? fromSocketId;
+      // Star topology: messages arrive from the single server channel (fromSocketId === STAR_SERVER_ID)
+      // and the SERVER tags each with the originating playerId. Mesh: derive it from the peer's socket.
+      const playerId = msg.playerId ?? this.#socketToPlayerId.get(fromSocketId) ?? fromSocketId;
 
       switch (msg.type) {
         case 'pos':
           EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_PLAYER_UPDATE, { ...msg, playerId } as PlayerUpdateBroadcast);
+          break;
+        case 'snapshot':
+          // Star topology (Phase 4): the server batches all players' latest positions into one snapshot
+          // per relay tick. Unpack into one NETWORK_PLAYER_UPDATE per player — the exact event
+          // #onRemotePlayerUpdate already consumes. Each entry carries its own server-tagged playerId.
+          // Skip our own entry (the server includes everyone; we don't render ourselves as a remote).
+          if (Array.isArray((msg as { players?: unknown }).players)) {
+            for (const entry of (msg as unknown as { players: Array<Record<string, unknown>> }).players) {
+              const pid = entry.playerId as string | undefined;
+              if (!pid || pid === this.#localPlayerId) continue;
+              EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_PLAYER_UPDATE, { ...entry, playerId: pid } as unknown as PlayerUpdateBroadcast);
+            }
+          }
           break;
         case 'spell':
           EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_SPELL_CAST, { ...msg, playerId } as SpellCastBroadcast);
@@ -903,7 +1045,8 @@ export class NetworkManager {
         if (snap.meshHealth.reliableOpen < snap.meshHealth.expectedPeers) {
           reasons.push(`reliable=${snap.meshHealth.reliableOpen}/${snap.meshHealth.expectedPeers}`);
         }
-        const msg = `Partial mesh: ${reasons.join(', ')}`;
+        const label = this.#transport === 'star' ? 'Partial star link' : 'Partial mesh';
+        const msg = `${label}: ${reasons.join(', ')}`;
         console.warn(`[NM] ${msg}`);
         EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_MESH_PARTIAL, { snapshot: snap, reasons });
       }

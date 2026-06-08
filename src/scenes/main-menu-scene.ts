@@ -276,7 +276,6 @@ export class MainMenuScene extends Phaser.Scene {
       { label: 'CONTA',           action: () => startScene(this, SCENE_KEYS.ACCOUNT_SCENE, 300) },
       { label: 'OPCOES',          action: () => startScene(this, SCENE_KEYS.OPTIONS_SCENE, 300) },
       { label: 'CREDITOS',        action: () => startScene(this, SCENE_KEYS.CREDITS_SCENE, 300) },
-      { label: 'SAIR',            action: () => console.info('[MainMenu] SAIR pressed') },
     ];
 
     const menuStartY = Math.round(cy - 30);

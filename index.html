@@ -18,12 +18,12 @@
        */
       @font-face {
         font-family: 'Press Start 2P';
-        src: url('/assets/fonts/Press_Start_2P/PressStart2P-Regular.ttf') format('truetype');
+        src: url('./assets/fonts/Press_Start_2P/PressStart2P-Regular.ttf') format('truetype');
         font-display: block;
       }
       @font-face {
         font-family: 'FONT_PRESS_START_2P';
-        src: url('/assets/fonts/Press_Start_2P/PressStart2P-Regular.ttf') format('truetype');
+        src: url('./assets/fonts/Press_Start_2P/PressStart2P-Regular.ttf') format('truetype');
         font-display: block;
       }
 
@@ -90,6 +90,17 @@
         margin: 0 !important;
         width: 100% !important;
         height: 100% !important;
+      }
+
+      /* Phaser positions its DOM overlay div based on the game's logical size,
+         but our CSS forces the canvas to fill the container. Pin the overlay to
+         (0,0) so DOM elements (lobby inputs) align with canvas-drawn elements.
+         will-change: transform forces GPU compositing so native form-control
+         chrome renders inside the scaled layer instead of at raw CSS coordinates. */
+      #game-container > div {
+        left: 0 !important;
+        top: 0 !important;
+        will-change: transform;
       }
     </style>
   </head>

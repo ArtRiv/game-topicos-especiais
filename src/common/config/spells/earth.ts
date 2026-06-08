@@ -57,7 +57,7 @@ export const EARTH_WALL_PILLAR_COUNT = 8;
 export const EARTH_WALL_PILLAR_SPACING = 8;
 export const EARTH_WALL_DURATION = 16000; // ms the wall stays up
 export const EARTH_WALL_MANA_COST = 0;
-export const EARTH_WALL_COOLDOWN = 100; // ms
+export const EARTH_WALL_COOLDOWN = 2000; // ms
 export const EARTH_WALL_HIT_FLASH_DURATION = 80; // ms white flash on hit
 export const EARTH_WALL_FIREBOLT_SPLASH_RADIUS = 24; // px — FireBolt hit damages adjacent pillars within this radius
 // Pillar collision body size (px). Smaller = looser fit; the 32×32 sprite has a
@@ -73,7 +73,7 @@ export const EARTH_WALL_PILLAR_BODY_HEIGHT = 16;
 // it lands instead of just exploding. (Old burst behaviour kept as the
 // "instant-explosion" branch via EarthFireBurst; this flow runs when the
 // bolt continues past the fire.)
-export const MOLTEN_BOLT_DAMAGE_MULTIPLIER = 2.0; // 2× normal earth bolt damage
+export const MOLTEN_BOLT_DAMAGE_MULTIPLIER = 1.5; // 1.5× normal earth bolt damage (event nerf: was 2.0)
 export const MOLTEN_BOLT_TINT = 0xff7a33;          // orange glow on the bolt sprite
 
 // ─── EarthBolt + FireArea combo: Lava Pool ────────────────────────────────────
@@ -101,6 +101,6 @@ export const EARTH_FIRE_BURST_SCALE = 0.6;
 export const EARTH_FIRE_BURST_BODY_RADIUS = 22;
 
 // ─── Earth + Fire combo explosion ─────────────────────────────────────────────
-export const EARTH_FIRE_EXPLOSION_DAMAGE = 5;
+export const EARTH_FIRE_EXPLOSION_DAMAGE = 3; // event nerf: was 5 = 50% of 10 HP
 export const EARTH_FIRE_EXPLOSION_SCALE = 2.0;
 export const EARTH_FIRE_EXPLOSION_BODY_RADIUS = 20;

@@ -5,6 +5,7 @@ import {
   RESPAWN_DELAY_MS,
   MAX_SPELL_DAMAGE,
   RESPAWN_INVULN_MAX_MS,
+  PLAYER_MAX_HP,
 } from './types.js';
 
 // Phase 14 (D-09): server-side copy of per-map team spawnpoints. The server has no access to the
@@ -16,7 +17,20 @@ type MapSpawns = { teamA: SpawnPoint[]; teamB: SpawnPoint[] };
 const SPAWNPOINTS: Record<string, MapSpawns> = {
   WORLD:     { teamA: [{ x: 96, y: 96 }, { x: 96, y: 224 }],  teamB: [{ x: 384, y: 96 }, { x: 384, y: 224 }] },
   DUNGEON_1: { teamA: [{ x: 80, y: 120 }, { x: 80, y: 240 }], teamB: [{ x: 400, y: 120 }, { x: 400, y: 240 }] },
-  STAGES:    { teamA: [{ x: 96, y: 160 }, { x: 128, y: 96 }], teamB: [{ x: 384, y: 160 }, { x: 352, y: 224 }] },
+  STAGES: {
+    teamA: [
+      { x: 104, y: 202 },
+      { x: 142, y: 486 },
+      { x: 125, y: 742 },
+      { x: 175, y: 958 },
+    ],
+    teamB: [
+      { x: 1218, y: 827 },
+      { x: 1027, y: 1022 },
+      { x: 937, y: 518 },
+      { x: 649, y: 199 },
+    ],
+  },
 };
 
 const VALID_NEXT: Record<MatchState, MatchState[]> = {
@@ -43,9 +57,14 @@ export class GameRoom {
   #respawnHandles = new Map<string, ReturnType<typeof setTimeout>>();      // playerId → pending respawn timer
   #playerInfo = new Map<string, PlayerInfo>();                              // playerId → info (for team lookups)
   #matchMode: MatchMode = 'respawn';                                        // D-12: structural support, no UI surface in 9.3
+  #winTarget: number = 30;                                                   // TDM kill target (per-match, from lobby config)
   #spawnPoints = new Map<string, { x: number; y: number }>();               // playerId → original spawn (D-10)
   #matchSpawns: SpawnAssignment[] = [];                                      // match-start spawns, replayable on scene-ready
-  #maxHp: number = 100;                                                     // mirror client CONFIG.PLAYER_START_MAX_HEALTH
+  #maxHp: number = PLAYER_MAX_HP;                                           // mirror client CONFIG.PLAYER_START_MAX_HEALTH
+
+  // --- Special-spell pickups (server-authoritative spawn + first-claim-wins) ---
+  #pendingPickups = new Map<string, { spellType: string; x: number; y: number; claimedBy: string | null }>();
+  #pickupHandles: ReturnType<typeof setTimeout>[] = [];
 
   // --- Phase 14: team-deathmatch scoring state (D-04, D-07) ---
   #teamScores: [number, number] = [0, 0];                                   // shared per-team kill total
@@ -202,48 +221,39 @@ export class GameRoom {
     return this.#matchSpawns;
   }
 
-  /** D-10/D-11: pick the player's team spawnpoint that is FARTHEST from any living enemy.
-   *  Server-authoritative — reads team from #playerInfo and living-enemy positions from
-   *  #lastPos/#hp; the client never asserts a spawn (T-14-06). Never throws (T-14-08):
-   *  unknown mapId falls back to WORLD, undefined team defaults to teamA, empty list returns {100,100}.
-   *  Overflow (more players than spawns) is implicitly safe — players may legitimately share the
-   *  farthest spawn (D-11 "reuse/cycle"). Distances are compared squared (no sqrt needed). */
+  /** D-10/D-11: pick one of the player's team spawnpoints at RANDOM (changed from the prior
+   *  farthest-from-enemy heuristic — random keeps spawns unpredictable each death, which the
+   *  enlarged per-team spawn sets on the event map make viable). Server-authoritative — reads team
+   *  from #playerInfo; the client never asserts a spawn (T-14-06). Never throws (T-14-08): unknown
+   *  mapId falls back to WORLD, undefined team defaults to teamA, empty list returns {100,100}.
+   *  Overflow (more players than spawns) is implicitly safe — players may legitimately share a spawn. */
   public pickSpawn(playerId: string, mapId: string): { x: number; y: number } {
     const team = this.#playerInfo.get(playerId)?.team;
     const map = SPAWNPOINTS[mapId] ?? SPAWNPOINTS['WORLD'];
     const list = team === 1 ? map.teamB : map.teamA;   // undefined/0 -> teamA (D-11)
     if (list.length === 0) return { x: 100, y: 100 };
+    return list[Math.floor(Math.random() * list.length)];
+  }
 
-    // Gather LIVING ENEMY positions (different team than this player, HP > 0, known position).
-    const enemies: { x: number; y: number }[] = [];
-    for (const info of this.#playerInfo.values()) {
-      if (info.id === playerId) continue;
-      if (info.team === team) continue;                // same team is not an enemy
-      if ((this.#hp.get(info.id) ?? 0) <= 0) continue; // dead -> not "living"
-      const pos = this.#lastPos.get(info.id);
-      if (pos) enemies.push({ x: pos.x, y: pos.y });
-    }
-
-    // No living enemies → deterministic first spawn.
-    if (enemies.length === 0) return list[0];
-
-    // Score each candidate by its distance to its NEAREST living enemy; pick the largest such distance.
-    let best = list[0];
-    let bestNearestSq = -1;
-    for (const cand of list) {
-      let nearestSq = Number.POSITIVE_INFINITY;
-      for (const e of enemies) {
-        const dx = cand.x - e.x;
-        const dy = cand.y - e.y;
-        const d2 = dx * dx + dy * dy;
-        if (d2 < nearestSq) nearestSq = d2;
-      }
-      if (nearestSq > bestNearestSq) {
-        bestNearestSq = nearestSq;
-        best = cand;
-      }
-    }
-    return best;
+  /** Match-START spawn — DETERMINISTIC, not random. The client computes the SAME assignment locally
+   *  (pickStartSpawn in src/common/spawn-assignment.ts) so it can place the player at the correct spot
+   *  the instant GameScene boots, with NO late server snap to correct it (which, on a slow round-trip,
+   *  showed up as a visible match-start teleport). Random spawns still apply on every RESPAWN (pickSpawn).
+   *
+   *  Rule: among this player's teammates (same team), sorted by id, take this player's index; spawn =
+   *  teamList[index % teamList.length]. Identical inputs on client + server → identical output. MUST be
+   *  called AFTER all players are registered (so the team roster is complete). Same fallbacks as pickSpawn. */
+  public pickStartSpawn(playerId: string, mapId: string): { x: number; y: number } {
+    const team = this.#playerInfo.get(playerId)?.team;
+    const map = SPAWNPOINTS[mapId] ?? SPAWNPOINTS['WORLD'];
+    const list = team === 1 ? map.teamB : map.teamA;   // undefined/0 -> teamA (D-11)
+    if (list.length === 0) return { x: 100, y: 100 };
+    const teammates = [...this.#playerInfo.values()]
+      .filter((p) => (p.team ?? 0) === (team ?? 0))
+      .map((p) => p.id)
+      .sort();
+    const idx = teammates.indexOf(playerId);
+    return list[(idx < 0 ? 0 : idx) % list.length];
   }
 
   /** D-05 friendly-fire check. Returns true only when BOTH players have a defined team that matches.
@@ -317,6 +327,39 @@ export class GameRoom {
    *  (T-09.3.02-07 mitigation). Lobby UI selector deferred to Phase 9.4 / 10. */
   public setMatchMode(mode: MatchMode): void { this.#matchMode = mode; }
   public get matchMode(): MatchMode { return this.#matchMode; }
+
+  // Per-match TDM kill target (from lobby config; default 30). Read by the win-check in server.ts.
+  public setWinTarget(target: number): void { this.#winTarget = target; }
+  public get winTarget(): number { return this.#winTarget; }
+
+  // --- Special-spell pickups ---
+  public addPendingPickup(pickupId: string, spellType: string, x: number, y: number): void {
+    this.#pendingPickups.set(pickupId, { spellType, x, y, claimedBy: null });
+  }
+
+  /** First-claim-wins. Returns true exactly once per pickupId (the winning claim); later claims drop. */
+  public tryClaimPickup(pickupId: string, playerId: string): boolean {
+    const p = this.#pendingPickups.get(pickupId);
+    if (!p || p.claimedBy !== null) return false;
+    p.claimedBy = playerId;
+    return true;
+  }
+
+  /** Un-collected pickups (for replay to a late-booting client via match:scene-ready). */
+  public getActivePickups(): { pickupId: string; spellType: string; x: number; y: number }[] {
+    const out: { pickupId: string; spellType: string; x: number; y: number }[] = [];
+    for (const [pickupId, p] of this.#pendingPickups) {
+      if (p.claimedBy === null) out.push({ pickupId, spellType: p.spellType, x: p.x, y: p.y });
+    }
+    return out;
+  }
+
+  public pushPickupHandle(h: ReturnType<typeof setTimeout>): void { this.#pickupHandles.push(h); }
+
+  public clearPickupTimers(): void {
+    for (const h of this.#pickupHandles) clearTimeout(h);
+    this.#pickupHandles = [];
+  }
 
   /** D-12/D-14: start the server-authoritative respawn-invuln window for a player. validateHit
    *  rejects any spell:hit on this player until RESPAWN_INVULN_MAX_MS from now. Called by server.ts
@@ -409,5 +452,8 @@ export class GameRoom {
     this.#deaths.clear();
     // Phase 14 (D-14): drop any lingering invuln windows so a rematch starts unprotected.
     this.#invulnUntil.clear();
+    // Special-spell pickups: cancel pending spawns + clear state so a rematch starts fresh.
+    this.clearPickupTimers();
+    this.#pendingPickups.clear();
   }
 }

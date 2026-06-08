@@ -12,6 +12,12 @@ import { typewrite } from '../common/typewriter';
 // the body of the file. All values in ms.
 // ---------------------------------------------------------------------------
 const T_MAP_NAME_MS     = 1500;
+// The map name TYPES over this sub-window, then holds the fully-revealed word for the
+// remainder of T_MAP_NAME_MS before Beat 2 (preview) starts. Without the hold the last
+// letter landed exactly as the next beat began, so the word read as "cut off". Keep this
+// < T_MAP_NAME_MS; the difference (≈600ms) is the readable hold. T_MAP_NAME_MS stays the
+// SLOT length so every downstream beat offset is unchanged.
+const T_MAP_NAME_REVEAL_MS = 900;
 const T_PREVIEW_FADE_MS = 1000;
 const T_MAP_INFO_MS     = 2000;
 const T_GAP_MS          = 500;
@@ -141,7 +147,9 @@ export class LoadingScene extends Phaser.Scene {
       .bitmapText(cx, Math.round(h * 0.20), BMFONT_KEY, '', 32)
       .setOrigin(0.5)
       .setTint(TINT_DISPLAY);
-    typewrite(this, nameText, mapName, T_MAP_NAME_MS);
+    // Type over T_MAP_NAME_REVEAL_MS (not the whole slot) so the finished word holds visibly
+    // for the remainder of T_MAP_NAME_MS before the preview beat begins.
+    typewrite(this, nameText, mapName, T_MAP_NAME_REVEAL_MS);
 
     // --- Beat 2: Map preview fade-in (y = h*0.40, scale ×4) ---
     // Thumbnail texture key from MAP_POOL entry. Plan 05 replaces the placeholder PNG.

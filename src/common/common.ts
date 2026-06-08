@@ -68,6 +68,7 @@ export const SPELL_ID = {
   AIR_BURST: 'AIR_BURST',
   DASH: 'DASH',
   STAR_SHIELD: 'STAR_SHIELD',
+  EARTH_WALL: 'EARTH_WALL',
 } as const;
 
 export const DEFAULT_UI_TEXT_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {

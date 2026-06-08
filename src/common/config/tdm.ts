@@ -8,7 +8,20 @@ export type MapSpawns = { teamA: SpawnPoint[]; teamB: SpawnPoint[] };
 export const SPAWNPOINTS: Record<string, MapSpawns> = {
   WORLD:     { teamA: [{ x: 96, y: 96 }, { x: 96, y: 224 }],  teamB: [{ x: 384, y: 96 }, { x: 384, y: 224 }] },
   DUNGEON_1: { teamA: [{ x: 80, y: 120 }, { x: 80, y: 240 }], teamB: [{ x: 400, y: 120 }, { x: 400, y: 240 }] },
-  STAGES:    { teamA: [{ x: 96, y: 160 }, { x: 128, y: 96 }], teamB: [{ x: 384, y: 160 }, { x: 352, y: 224 }] },
+  STAGES: {
+    teamA: [
+      { x: 104, y: 202 },
+      { x: 142, y: 486 },
+      { x: 125, y: 742 },
+      { x: 175, y: 958 },
+    ],
+    teamB: [
+      { x: 1218, y: 827 },
+      { x: 1027, y: 1022 },
+      { x: 937, y: 518 },
+      { x: 649, y: 199 },
+    ],
+  },
 };
 
 export const TDM_WIN_TARGET = 30;          // D-01 client mirror (server is authority).

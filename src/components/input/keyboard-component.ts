@@ -18,6 +18,7 @@ export class KeyboardComponent extends InputComponent {
   #carouselLeftKey: Phaser.Input.Keyboard.Key;  // Q — previous element
   #carouselRightKey: Phaser.Input.Keyboard.Key; // E — next element
   #specialCastKey: Phaser.Input.Keyboard.Key;   // R — cast pickup-granted special spell
+  #printCoordsKey: Phaser.Input.Keyboard.Key;   // M — print player world coords to console
 
   // Mouse-button state. Latched to "just down" on pointerdown and consumed at end of frame.
   #leftMouseJustDown = false;
@@ -42,6 +43,7 @@ export class KeyboardComponent extends InputComponent {
     this.#carouselLeftKey = keyboardPlugin.addKey(Phaser.Input.Keyboard.KeyCodes.Q);
     this.#carouselRightKey = keyboardPlugin.addKey(Phaser.Input.Keyboard.KeyCodes.E);
     this.#specialCastKey = keyboardPlugin.addKey(Phaser.Input.Keyboard.KeyCodes.R);
+    this.#printCoordsKey = keyboardPlugin.addKey(Phaser.Input.Keyboard.KeyCodes.M);
 
     // Prevent Chrome's default page-scroll on SPACE and any browser shortcuts on SHIFT
     // while the game canvas has focus. CTRL is intentionally NOT captured (D-19, Phase 9.3)
@@ -71,6 +73,7 @@ export class KeyboardComponent extends InputComponent {
     // Q          = element carousel: previous
     // E          = element carousel: next
     // F          = interact / action (rebound from E)
+    // M          = print player world coords to console (spawnpoint tool)
     // P          = toggle arcade physics hitboxes
     // mouse move = aim target position
     // CTRL       = no longer bound (D-19) — Ctrl+W/T/R passes through to browser
@@ -156,6 +159,10 @@ export class KeyboardComponent extends InputComponent {
 
   get isDebugToggleKeyJustDown(): boolean {
     return Phaser.Input.Keyboard.JustDown(this.#debugToggleKey);
+  }
+
+  get isPrintCoordsKeyJustDown(): boolean {
+    return Phaser.Input.Keyboard.JustDown(this.#printCoordsKey);
   }
 
   get isRadialMenuKeyJustDown(): boolean {

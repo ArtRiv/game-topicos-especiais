@@ -57,6 +57,10 @@ export const CUSTOM_EVENTS = {
   // Phase 14 bugfix (TDM playtest #4): match-start team spawn assignments — clients snap
   // local + remote players to their server-authoritative team spawn instead of the tilemap door.
   NETWORK_MATCH_SPAWNS: 'NETWORK_MATCH_SPAWNS',
+  // Special-spell pickups — server-authoritative spawn + first-claim-wins. Bridged from socket
+  // events (pickup:spawned / pickup:collected) in network-manager.ts.
+  NETWORK_PICKUP_SPAWNED: 'NETWORK_PICKUP_SPAWNED',
+  NETWORK_PICKUP_COLLECTED: 'NETWORK_PICKUP_COLLECTED',
   // HUD_REVEAL is INTERNAL (no socket bridge): Phase 14 cinematic step 5, GameScene -> UiScene HUD fade-in.
   HUD_REVEAL: 'HUD_REVEAL',
 } as const;
