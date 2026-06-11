@@ -6,8 +6,6 @@ import { DIRECTION, ELEMENT, SPELL_ID, SPELL_TYPE } from '../../common/common';
 import {
   FIRE_BREATH_BEAM_CONTACT_OVERLAP,
   FIRE_BREATH_DAMAGE_PER_TICK,
-  FIRE_BREATH_MANA_PER_TICK,
-  FIRE_BREATH_MANA_DRAIN_INTERVAL,
   FIRE_BREATH_MAX_REACH,
   FIRE_BREATH_STEP_SIZE,
   FIRE_BREATH_ANGLE_TOLERANCE,
@@ -21,8 +19,6 @@ import {
   FIRE_BREATH_FIRE_AREA_REACH_MULTIPLIER,
   FIRE_BREATH_FIRE_AREA_ANGLE_TOLERANCE,
 } from '../../common/config';
-import { ManaComponent } from '../../components/game-object/mana-component';
-
 type FireBreathImpact = {
   distance: number;
   point: Phaser.Math.Vector2;
@@ -33,7 +29,7 @@ export class FireBreath extends Phaser.GameObjects.Container implements ActiveSp
   readonly element: Element = ELEMENT.FIRE;
   readonly spellId: SpellId = SPELL_ID.FIRE_BREATH;
   readonly spellType: SpellType = SPELL_TYPE.CHANNELED;
-  readonly manaCost: number = FIRE_BREATH_MANA_PER_TICK;
+  readonly manaCost: number = 0;
   readonly cooldown: number = 0;
 
   get baseDamage(): number {
@@ -64,7 +60,6 @@ export class FireBreath extends Phaser.GameObjects.Container implements ActiveSp
     targetY: number,
     collisionLayer: Phaser.Tilemaps.TilemapLayer,
     blockingGroup: Phaser.GameObjects.Group,
-    manaComponent?: ManaComponent,
   ) {
     super(scene, playerX, playerY);
     scene.add.existing(this);
@@ -98,18 +93,7 @@ export class FireBreath extends Phaser.GameObjects.Container implements ActiveSp
       }
     });
 
-    // Drain mana on interval; end breath if mana runs out (skipped for remote/visual-only breaths)
-    this.#manaTimer = scene.time.addEvent({
-      delay: FIRE_BREATH_MANA_DRAIN_INTERVAL,
-      callback: () => {
-        if (this.#isEnding || !manaComponent) return;
-        const drained = manaComponent.consume(FIRE_BREATH_MANA_PER_TICK);
-        if (!drained) {
-          this.beginEnding();
-        }
-      },
-      loop: true,
-    });
+    this.#manaTimer = scene.time.addEvent({ delay: 9999999, loop: false, callback: () => {} });
 
     this.#syncTransform(playerX, playerY, targetX, targetY, true);
   }

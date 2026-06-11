@@ -59,7 +59,8 @@ import { IceShard } from '../game-objects/spells/ice-shard';
 import { WindBolt } from '../game-objects/spells/wind-bolt';
 import { ThunderStrike } from '../game-objects/spells/thunder-strike';
 import { ThunderSplash } from '../game-objects/spells/thunder-splash';
-import { LightningBeam } from '../game-objects/spells/lightning-beam';
+import { ChargedLightningRay } from '../game-objects/spells/charged-lightning-ray';
+import type { ActiveSpell } from '../game-objects/spells/base-spell';
 import { VoidOrbPickup } from '../game-objects/pickups/void-orb-pickup';
 import { DarkBoltPickup } from '../game-objects/pickups/dark-bolt-pickup';
 import { NetworkedSpecialPickup } from '../game-objects/pickups/networked-special-pickup';
@@ -78,7 +79,6 @@ import { SPELL_FACTORY_REGISTRY } from '../game-objects/spells/spell-registry';
 import { maybeSpawnGhost } from '../game-objects/spells/spell-ghost';
 import { ElementManager } from '../common/element-manager';
 import {
-  EARTH_WALL_MANA_COST,
   EARTH_WALL_COOLDOWN,
   EARTH_WALL_PILLAR_COUNT,
   EARTH_WALL_PILLAR_SPACING,
@@ -101,7 +101,7 @@ import {
 import { NetworkManager } from '../networking/network-manager';
 import { RemoteInputComponent } from '../components/input/remote-input-component';
 import { MusicManager } from '../common/music-manager';
-import type { PlayerUpdateBroadcast, RoomTransitionPayload, PlayerDisconnectedPayload, PlayerUpdatePayload, SpellCastBroadcast, PlayerInfo, BreathStartBroadcast, BreathUpdateBroadcast, BreathEndBroadcast, EarthWallPillarBroadcast, EarthWallPillarDestroyBroadcast, MatchStateChangedPayload, MatchCountdownTickPayload, DamageConfirmedPayload, SpellDestroyedPayload, EliminationPayload, RespawnPayload, MatchConfig, MatchEndedPayload, MatchSpawnsPayload, PickupSpawnedPayload, PickupCollectedPayload } from '../networking/types';
+import type { PlayerUpdateBroadcast, RoomTransitionPayload, PlayerDisconnectedPayload, PlayerUpdatePayload, SpellCastBroadcast, PlayerInfo, BreathStartBroadcast, BreathUpdateBroadcast, BreathEndBroadcast, EarthWallPillarBroadcast, EarthWallPillarDestroyBroadcast, MatchStateChangedPayload, MatchCountdownTickPayload, DamageConfirmedPayload, SpellDestroyedPayload, EliminationPayload, RespawnPayload, MatchConfig, MatchEndedPayload, MatchSpawnsPayload, PickupSpawnedPayload, PickupCollectedPayload, UpgradeOfferPayload, UpgradeAppliedPayload } from '../networking/types';
 import { RUNTIME_CONFIG } from '../common/runtime-config';
 import { pickStartSpawn } from '../common/spawn-assignment';
 import type { Direction, CharacterAnimation } from '../common/types';
@@ -182,6 +182,12 @@ export class GameScene extends Phaser.Scene {
   #activeFireBreath: FireBreath | undefined;
   #fireBreathDamageTimer: Phaser.Time.TimerEvent | undefined;
   #activeFireBreathAreaCombos: Set<FireArea> = new Set();
+  // ── Charged Lightning Ray (THUNDER slot-1 hold) state ──────────────────────
+  #chargingRay = false;            // true while the player holds to charge
+  #chargeRayStartMs = 0;           // scene.time.now when the hold began
+  #chargeRayAngle = 0;             // aim angle LOCKED at charge start (radians)
+  #chargeRayGlowFX: { outerStrength: number } | undefined; // pulsing caster glow during charge
+  #lastChargeRayCastMs = -Infinity; // cooldown clock (release time of the last ray)
   #earthWallGroup!: Phaser.GameObjects.Group;
   #debugFlyingObeliskGroup!: Phaser.GameObjects.Group;
   // Draw-mode state for the EarthWall spell
@@ -311,6 +317,11 @@ export class GameScene extends Phaser.Scene {
     this.#controls = new KeyboardComponent(this, this.input.keyboard);
     this.#configureArcadeDebug();
 
+    // TDM death-card upgrades: the DataManager singleton survives between matches, so a Tough
+    // Skin / Titan Heart max-health bump from the LAST match would otherwise leak into this one.
+    // Player + components are rebuilt fresh; only this singleton needs the explicit reset.
+    DataManager.instance.updatePlayerMaxHealth(CONFIG.PLAYER_START_MAX_HEALTH);
+
     this.#createLevel();
     if (this.#collisionLayer === undefined || this.#enemyCollisionLayer === undefined) {
       console.warn('Missing required collision layers for game.');
@@ -346,6 +357,7 @@ export class GameScene extends Phaser.Scene {
   public update(_time: number, delta: number): void {
     this.#handleHitboxDebugToggle();
     this.#handlePrintCoordsKey();
+    this.#handleCapturePickupSpawnKey();
     this.#updateFireSpellCombos();
     this.#updateFireBreathChanneling();
     this.#updateFireBreathAreaCombo();
@@ -364,7 +376,9 @@ export class GameScene extends Phaser.Scene {
     this.#handleCarouselInput();
     this.#handleDashInput();
     this.#handleSpecialCastInput();
-    this.#updateLightningBeamCombos();
+    this.#updateChargedLightningRay();
+    this.#updateChargedRayDamage();
+    this.#updateAoePvpDamage();
     this.#updateWaterSpikeEarthWallCombo();
     this.#updateWaterTornadoEarthWallCombo();
     this.#updateWindBoltEarthWallCombo();
@@ -680,10 +694,11 @@ export class GameScene extends Phaser.Scene {
         if (pushedSet.has(puddle)) continue;
         if (!this.physics.overlap(wind, puddle)) continue;
 
+        const windPushMult = (wind as WindBolt).pushMult ?? 1;
         const pushPx =
-          puddle.kind === 'water' ? WIND_PUDDLE_PUSH_PX_WATER :
+          (puddle.kind === 'water' ? WIND_PUDDLE_PUSH_PX_WATER :
           puddle.kind === 'mud' ? WIND_PUDDLE_PUSH_PX_MUD :
-          WIND_PUDDLE_PUSH_PX_LAVA;
+          WIND_PUDDLE_PUSH_PX_LAVA) * windPushMult;
         const pushMs =
           puddle.kind === 'water' ? WIND_PUDDLE_PUSH_DURATION_MS_WATER :
           puddle.kind === 'mud' ? WIND_PUDDLE_PUSH_DURATION_MS_MUD :
@@ -1925,8 +1940,31 @@ export class GameScene extends Phaser.Scene {
         // Spawn the shard slightly ahead of the pillar so it doesn't immediately collide.
         const shardX = px + nx * 12;
         const shardY = py + ny * 12;
-        const shard = new EarthBolt(this, shardX, shardY, shardX + nx * 200, shardY + ny * 200);
+        const shardTargetX = shardX + nx * 200;
+        const shardTargetY = shardY + ny * 200;
+        const shard = new EarthBolt(this, shardX, shardY, shardTargetX, shardTargetY);
         this.#player.spellCastingComponent.spellGroup.add(shard);
+        // BUGFIX: tag the shard with a per-cast id + casterId so the cross-player
+        // overlap (Overlap B) emits spell:hit for it — without these tags the
+        // shard dealt NO damage to other players (it was a bare projectile that
+        // bypassed SpellCastingComponent's tagging). Also broadcast it as an
+        // EARTH_BOLT cast so remote clients render + simulate the shard (the
+        // combo only runs on the caster's client). Mirrors the AIR_BURST/DASH
+        // self-broadcast pattern.
+        const shardId = Phaser.Math.RND.uuid();
+        const localId = this.#safeNetworkManager()?.localPlayerId;
+        shard.gameObject.setData('spellId', shardId);
+        shard.gameObject.setData('spellType', SPELL_ID.EARTH_BOLT);
+        if (localId) shard.gameObject.setData('casterId', localId);
+        EVENT_BUS.emit(CUSTOM_EVENTS.SPELL_CAST, {
+          spellInstanceId: shardId,
+          spellId: SPELL_ID.EARTH_BOLT,
+          slotIndex: -1,
+          casterX: shardX,
+          casterY: shardY,
+          targetX: shardTargetX,
+          targetY: shardTargetY,
+        });
       }
       if (hitAny) this.#bumpsThatShattered.add(bump);
     }
@@ -2057,7 +2095,7 @@ export class GameScene extends Phaser.Scene {
    * none). The slot is set by the last pickup the player walked over.
    *
    * Bypasses the element / slot pipeline entirely so it doesn't disturb the
-   * carousel or interfere with channeled spells like FireBreath / LightningBeam.
+   * carousel or interfere with held spells like FireBreath / the ChargedLightningRay.
    * The single-slot inventory persists across scene restarts (singleton).
    */
   #handleSpecialCastInput(): void {
@@ -2101,12 +2139,9 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.#spawnSpecialSpell(activeSpellId, targetX, targetY, direction);
-
-    // Star Shield is always-available — re-grant a fresh charge so the slot
-    // doesn't go empty. Other specials clear naturally (pickup model).
-    if (activeSpellId === SPELL_ID.STAR_SHIELD) {
-      SpecialSpellInventory.instance.setActive(SPELL_ID.STAR_SHIELD, 1);
-    }
+    // Star Shield is now a finite map pickup like VoidOrb / DarkBolt — the slot
+    // clears naturally when its last charge is spent (tryConsume above). The old
+    // post-cast re-grant that made the shield infinite has been removed.
   }
 
   /** Begin the DarkBolt cast windup. Locks the player in place via the same
@@ -2285,6 +2320,36 @@ export class GameScene extends Phaser.Scene {
     console.log(`[SPAWN] { x: ${x}, y: ${y} }`);
   }
 
+  /** Accumulated special-pickup spawnpoints captured this session (K key). */
+  #capturedPickupSpawns: { x: number; y: number }[] = [];
+
+  /**
+   * K key — capture the local player's current position as a special-pickup
+   * spawnpoint. Accumulates into #capturedPickupSpawns and prints (+ copies to
+   * clipboard) the full paste-ready array literal each press. Walk to each spot
+   * you want a pickup to be able to spawn, press K, then paste the final array
+   * into game-server PICKUP_SPAWNS (src/scenes/game-scene.ts is the capture tool;
+   * the server owns the spawn list). Same workflow as the TDM SPAWNPOINTS
+   * COPY VALUES flow.
+   */
+  #handleCapturePickupSpawnKey(): void {
+    if (!this.#controls.isCapturePickupSpawnKeyJustDown) return;
+    if (!this.#player?.active) return;
+    const x = Math.round(this.#player.x);
+    const y = Math.round(this.#player.y);
+    this.#capturedPickupSpawns.push({ x, y });
+    const body = this.#capturedPickupSpawns
+      .map((p) => `  { x: ${p.x}, y: ${p.y} },`)
+      .join('\n');
+    const snippet = `const PICKUP_SPAWNS = [\n${body}\n] as const;`;
+    console.log(`[PICKUP-SPAWN] captured #${this.#capturedPickupSpawns.length} at { x: ${x}, y: ${y} }`);
+    console.log(snippet);
+    // Best-effort clipboard copy (ignored if the page lacks clipboard permission).
+    try {
+      void navigator.clipboard?.writeText(snippet);
+    } catch { /* clipboard unavailable — console output is the fallback */ }
+  }
+
   #updateFireBreathChanneling(): void {
     // LFC-06: hard-gate spell input during COUNTDOWN. This handler ignores
     // isMovementLocked because the channel itself owns that flag (line ~280),
@@ -2313,10 +2378,6 @@ export class GameScene extends Phaser.Scene {
 
     // Key held but no active breath → start one
     if (!this.#activeFireBreath || !this.#activeFireBreath.active) {
-      if (this.#player.manaComponent.mana < CONFIG.FIRE_BREATH_MANA_PER_TICK) {
-        return;
-      }
-
       this.#activeFireBreath = new FireBreath(
         this,
         this.#player.x,
@@ -2325,7 +2386,6 @@ export class GameScene extends Phaser.Scene {
         controls.mouseWorldY,
         this.#collisionLayer,
         this.#blockingGroup,
-        this.#player.manaComponent,
       );
 
       // Damage tick while breath is active
@@ -2441,123 +2501,349 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
-   * LightningBeam — drives the per-frame damage + combo dispatch for any active
-   * LightningBeam game objects in the scene (local OR remote). The spell itself
-   * handles its own lifecycle (release → destroy) and mana drain; this handler is
-   * only responsible for "what's inside the beam right now":
-   *   - Damage enemies in the current room (deduped to once per drain-tick).
-   *   - Electrify any puddles overlapping the beam (one-shot per puddle per cast).
-   *
-   * Pattern mirrors `#applyFireBreathDamage` + the ThunderStrike/Puddle combo handler.
+   * Charged Lightning Ray state machine (THUNDER slot 1, press-HOLD-release).
+   * Mirrors #updateFireBreathChanneling but FAR simpler because the spell is
+   * cast-ONCE — nothing streams while charging:
+   *   - Hold START: lock the aim DIRECTION (from the cursor) and the player in
+   *     place, start a pulsing charge glow. Nothing damaging exists yet.
+   *   - Hold: grow the glow toward CHARGE_GLOW_MAX as the charge fills.
+   *   - Release: compute charge fraction → lerp damage + length (× the caster's
+   *     lightning modifiers) → spawn ONE ray + broadcast a single SPELL_CAST so
+   *     every client replicates the identical ray. A release shorter than
+   *     CHARGE_MIN_MS is cancelled (no ray, no mana, no cooldown).
    */
-  #updateLightningBeamCombos(): void {
-    // Collect every active beam from local + remote spell groups.
-    const beams: LightningBeam[] = [];
+  #updateChargedLightningRay(): void {
+    if (this.#combatLocked) return;
+    if (this.#deathLockActive) return;
+    if (!this.#player?.active) return;
+    if (ElementManager.instance.activeElement !== ELEMENT.THUNDER) {
+      // Element switched away mid-charge — abort cleanly.
+      if (this.#chargingRay) this.#cancelChargeRay();
+      return;
+    }
+    // Don't let a charge start while a DarkBolt windup owns the cast lock.
+    if (this.#darkBoltWindupActive) return;
+
+    const controls = this.#controls;
+    const isHolding = controls.isSpell2KeyDown;
+    const now = this.time.now;
+
+    // ── Not charging yet ──
+    if (!this.#chargingRay) {
+      if (!isHolding) return;
+      // Cooldown gate (after the last ray FIRED). Storm Cycle card shrinks the window.
+      const rayCdMult = this.#player.spellModifiers.lightningCooldownMult ?? 1;
+      if (now - this.#lastChargeRayCastMs < RUNTIME_CONFIG.CHARGED_RAY_COOLDOWN_MS * rayCdMult) return;
+
+      // Lock the aim direction at the cursor NOW — it never changes again.
+      this.#chargeRayAngle = Math.atan2(
+        controls.mouseWorldY - this.#player.y,
+        controls.mouseWorldX - this.#player.x,
+      );
+      this.#chargingRay = true;
+      this.#chargeRayStartMs = now;
+      this.#controls.isMovementLocked = true;
+      (this.#player.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
+      // Face the locked direction.
+      this.#player.direction = this.#chargeRayCardinal();
+      this.#player.setFlipX(this.#player.direction === DIRECTION.LEFT);
+      this.#startChargeRayGlow();
+      return;
+    }
+
+    // ── Charging: still holding → grow the glow ──
+    if (isHolding) {
+      (this.#player.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
+      const frac = this.#chargeRayFraction(now);
+      if (this.#chargeRayGlowFX) {
+        this.#chargeRayGlowFX.outerStrength =
+          RUNTIME_CONFIG.CHARGED_RAY_CHARGE_MAX_MS === 0
+            ? CONFIG.CHARGED_RAY_CHARGE_GLOW_MAX
+            : CONFIG.CHARGED_RAY_CHARGE_GLOW_START
+              + (CONFIG.CHARGED_RAY_CHARGE_GLOW_MAX - CONFIG.CHARGED_RAY_CHARGE_GLOW_START) * frac;
+      }
+      return;
+    }
+
+    // ── Released → fire (or cancel if too short) ──
+    const heldMs = now - this.#chargeRayStartMs;
+    if (heldMs < RUNTIME_CONFIG.CHARGED_RAY_CHARGE_MIN_MS) {
+      this.#cancelChargeRay();
+      return;
+    }
+    this.#fireChargedRay(now);
+  }
+
+  /** Charge fraction 0..1 from hold time, factoring the caster's charge-speed
+   *  modifier (>1 = fills faster). */
+  #chargeRayFraction(now: number): number {
+    const speedMult = this.#player?.spellModifiers.lightningChargeSpeedMult ?? 1;
+    const maxMs = RUNTIME_CONFIG.CHARGED_RAY_CHARGE_MAX_MS;
+    if (maxMs <= 0) return 1;
+    return Math.min(1, ((now - this.#chargeRayStartMs) * speedMult) / maxMs);
+  }
+
+  /** Cardinal facing for the locked charge angle. */
+  #chargeRayCardinal(): Direction {
+    const a = this.#chargeRayAngle;
+    if (Math.abs(Math.cos(a)) >= Math.abs(Math.sin(a))) {
+      return Math.cos(a) >= 0 ? DIRECTION.RIGHT : DIRECTION.LEFT;
+    }
+    return Math.sin(a) >= 0 ? DIRECTION.DOWN : DIRECTION.UP;
+  }
+
+  /** Start the pulsing charge glow on the caster sprite (preFX glow). */
+  #startChargeRayGlow(): void {
+    type PreFXCapable = Phaser.GameObjects.Sprite & {
+      preFX?: { addGlow: (color?: number, outer?: number, inner?: number, knockout?: boolean) => { outerStrength: number } };
+    };
+    const ps = this.#player as unknown as PreFXCapable;
+    if (ps.preFX) {
+      this.#chargeRayGlowFX = ps.preFX.addGlow(CONFIG.CHARGED_RAY_CHARGE_TINT, CONFIG.CHARGED_RAY_CHARGE_GLOW_START, 0, false);
+    }
+  }
+
+  /** Remove the charge glow + unlock movement. Safe to call multiple times. */
+  #clearChargeRayGlow(): void {
+    type PreFXCapable = Phaser.GameObjects.Sprite & { preFX?: { remove: (fx: unknown) => void } };
+    if (this.#chargeRayGlowFX && this.#player) {
+      (this.#player as unknown as PreFXCapable).preFX?.remove(this.#chargeRayGlowFX);
+    }
+    this.#chargeRayGlowFX = undefined;
+  }
+
+  /** Abort a charge without firing (too-short release / element switch / death). */
+  #cancelChargeRay(): void {
+    this.#chargingRay = false;
+    this.#clearChargeRayGlow();
+    this.#controls.isMovementLocked = false;
+  }
+
+  /** Resolve the charge → spawn the ray locally, apply mana + cooldown, and
+   *  broadcast a single SPELL_CAST so all clients replicate the identical ray. */
+  #fireChargedRay(now: number): void {
+    if (!this.#player?.active) { this.#cancelChargeRay(); return; }
+    const frac = this.#chargeRayFraction(now);
+    const mods = this.#player.spellModifiers;
+
+    const damage = Math.max(
+      1,
+      Math.round(
+        (RUNTIME_CONFIG.CHARGED_RAY_DAMAGE_MIN
+          + (RUNTIME_CONFIG.CHARGED_RAY_DAMAGE_MAX - RUNTIME_CONFIG.CHARGED_RAY_DAMAGE_MIN) * frac)
+        * mods.lightningDamageMult,
+      ),
+    );
+    const length = (RUNTIME_CONFIG.CHARGED_RAY_LENGTH_MIN_PX
+      + (RUNTIME_CONFIG.CHARGED_RAY_LENGTH_MAX_PX - RUNTIME_CONFIG.CHARGED_RAY_LENGTH_MIN_PX) * frac)
+      * mods.lightningRangeMult;
+
+    const angle = this.#chargeRayAngle;
+    const cx = this.#player.x;
+    const cy = this.#player.y;
+
+    // Spawn the local ray.
+    const ray = new ChargedLightningRay(this, cx, cy, angle, length, damage, this.#player);
+    this.#player.spellCastingComponent.spellGroup.add(ray.gameObject);
+
+    // Tag for the cross-player damage + dedupe pipeline.
+    const spellInstanceId = Phaser.Math.RND.uuid();
+    ray.gameObject.setData('spellId', spellInstanceId);
+    ray.gameObject.setData('spellType', SPELL_ID.LIGHTNING_BEAM);
+    const localId = this.#safeNetworkManager()?.localPlayerId;
+    if (localId) ray.gameObject.setData('casterId', localId);
+
+    // Broadcast cast-once. targetX/Y = ray ENDPOINT so the remote derives the same
+    // angle + length; damage rides along explicitly.
+    const endX = cx + Math.cos(angle) * length;
+    const endY = cy + Math.sin(angle) * length;
+    EVENT_BUS.emit(CUSTOM_EVENTS.SPELL_CAST, {
+      spellInstanceId,
+      spellId: SPELL_ID.LIGHTNING_BEAM,
+      slotIndex: -1,
+      casterX: cx,
+      casterY: cy,
+      targetX: endX,
+      targetY: endY,
+      damage,
+    });
+
+    this.#lastChargeRayCastMs = now;
+    this.#chargingRay = false;
+    this.#clearChargeRayGlow();
+    this.#controls.isMovementLocked = false;
+  }
+
+  /**
+   * ChargedLightningRay — applies the ray's SINGLE hit (deduped per cast via the
+   * ray's hitThisCastSet) and electrifies puddles it crosses. The ray has no
+   * Arcade body (its hitbox is a rotated rectangle), so the standard cross-player
+   * overlaps don't fire — we replicate the spell:hit protocol manually with
+   * isPointInBeam, exactly like the old beam did, but ONCE per cast instead of
+   * per tick. Damage is caster-authoritative: only the local ray reports hits;
+   * the remote replica is visual-only (the ray's fixed spellId means the server's
+   * dedup already collapses a stray double-report, but we don't emit from the
+   * victim side anyway).
+   */
+  #updateChargedRayDamage(): void {
+    const rays: ChargedLightningRay[] = [];
     const localGroup = this.#player?.spellCastingComponent?.spellGroup;
     if (localGroup) {
       for (const c of localGroup.getChildren()) {
-        if (c instanceof LightningBeam && c.active) beams.push(c);
+        if (c instanceof ChargedLightningRay && c.active) rays.push(c);
       }
     }
     if (this.#remoteSpellGroup) {
       for (const c of this.#remoteSpellGroup.getChildren()) {
-        if (c instanceof LightningBeam && c.active) beams.push(c);
+        if (c instanceof ChargedLightningRay && c.active) rays.push(c);
       }
     }
-    if (beams.length === 0) return;
+    if (rays.length === 0) return;
 
-    // Enemies — current room only (matches FireBreath scoping).
     const enemyGroup = this.#objectsByRoomId[this.#currentRoomId]?.enemyGroup;
-
     const nm = this.#safeNetworkManager();
-    for (const beam of beams) {
-      // ── Enemy damage (deduped per drain tick via beam.hitThisTickSet) ──
-      if (enemyGroup) {
+
+    for (const ray of rays) {
+      const rayCasterId = ray.getData('casterId') as string | undefined;
+      const isLocalRay = rayCasterId === undefined || rayCasterId === nm?.localPlayerId;
+
+      // ── Enemy damage (single hit per enemy per cast) — only the local ray
+      // damages bots so a remote replica doesn't double-hit.
+      if (enemyGroup && isLocalRay) {
         enemyGroup.getChildren().forEach((child) => {
           if (!child.active) return;
           const enemy = child as CharacterGameObject;
           if (enemy.isDefeated) return;
-          if (beam.hitThisTickSet.has(enemy)) return;
-          if (!beam.isPointInBeam(enemy.x, enemy.y)) return;
-          beam.hitThisTickSet.add(enemy);
-          enemy.hit(beam.aimDirection, beam.baseDamage);
+          if (ray.hitThisCastSet.has(enemy)) return;
+          if (!ray.isPointInBeam(enemy.x, enemy.y - 8)) return;
+          ray.hitThisCastSet.add(enemy);
+          enemy.hit(ray.aimDirection, ray.baseDamage);
         });
       }
 
-      // ── Cross-player damage — LightningBeam has no Arcade body so the
-      // standard cross-player overlaps (A/B in #registerColliders) never
-      // fire. Replicate the same protocol manually using isPointInBeam.
-      // Local beam: send spell:hit for every overlapping remote player
-      // (once per drain-tick via beam.hitThisTickSet — same dedupe set used
-      // for enemies). Remote beam: send spell:hit if local player is inside,
-      // so the caster's beam still credits damage on the local target.
-      if (nm) {
-        const beamSpellId = beam.getData('spellId') as string | undefined;
-        const beamCasterId = beam.getData('casterId') as string | undefined;
-        const beamSpellType = (beam.getData('spellType') as string | undefined) ?? 'LightningBeam';
-        const isLocalBeam = beamCasterId === undefined || beamCasterId === nm.localPlayerId;
-
-        if (isLocalBeam) {
-          // Local-cast beam → poke each remote player inside the beam.
-          for (const remote of this.#remotePlayers.values()) {
-            if (!remote.active || remote.isDefeated) continue;
-            if (remote.isStarShieldActive) continue; // shielded targets eat the beam silently
-            if (beam.hitThisTickSet.has(remote)) continue;
-            if (!beam.isPointInBeam(remote.x, remote.y)) continue;
-            beam.hitThisTickSet.add(remote);
-            const targetId = remote.getData('playerId') as string | undefined;
-            if (!targetId || !beamSpellId) continue;
-            if (this.#areSameTeam(nm.localPlayerId, targetId)) continue;
-            nm.sendSpellHit({
-              spellId: beamSpellId,
-              spellType: beamSpellType,
-              casterId: nm.localPlayerId,
-              targetId,
-              hitX: remote.x,
-              hitY: remote.y,
-              damage: beam.baseDamage,
-            });
-          }
-        } else if (
-          beamCasterId &&
-          this.#player?.active &&
-          !this.#player.isDefeated &&
-          !this.#player.isStarShieldActive && // Star Shield: full beam immunity. TODO(star-shield): reflect beam back along its axis.
-          !beam.hitThisTickSet.has(this.#player) &&
-          beam.isPointInBeam(this.#player.x, this.#player.y) &&
-          !this.#areSameTeam(beamCasterId, nm.localPlayerId) &&
-          beamSpellId
-        ) {
-          // Remote-cast beam intersecting the local player. Per-tick dedupe.
-          beam.hitThisTickSet.add(this.#player);
+      // ── Cross-player damage (single hit per remote player per cast),
+      // caster-authoritative.
+      if (nm && isLocalRay) {
+        const raySpellId = ray.getData('spellId') as string | undefined;
+        const raySpellType = (ray.getData('spellType') as string | undefined) ?? 'LIGHTNING_BEAM';
+        for (const remote of this.#remotePlayers.values()) {
+          if (!remote.active || remote.isDefeated) continue;
+          if (remote.isStarShieldActive) continue; // shielded targets eat the ray silently
+          if (ray.hitThisCastSet.has(remote)) continue;
+          if (!ray.isPointInBeam(remote.x, remote.y - 8)) continue;
+          ray.hitThisCastSet.add(remote);
+          const targetId = remote.getData('playerId') as string | undefined;
+          if (!targetId || !raySpellId) continue;
+          if (this.#areSameTeam(nm.localPlayerId, targetId)) continue;
           nm.sendSpellHit({
-            spellId: beamSpellId,
-            spellType: beamSpellType,
-            casterId: beamCasterId,
-            targetId: nm.localPlayerId,
-            hitX: this.#player.x,
-            hitY: this.#player.y,
-            damage: beam.baseDamage,
+            spellId: raySpellId,
+            spellType: raySpellType,
+            casterId: nm.localPlayerId,
+            targetId,
+            hitX: remote.x,
+            hitY: remote.y,
+            damage: ray.baseDamage,
           });
         }
       }
 
-      // ── Puddle combo — every overlapping puddle is (re-)electrified every frame.
-      // Puddle.electrify() ratchets charge to MAX on every call and early-returns if
-      // already running, so this is cheap. While the beam is sweeping a puddle the
-      // charge stays pinned at full; the moment the beam moves off, the puddle's own
-      // decay (ELEC_PUDDLE_DECAY_PER_SEC) takes over and it eventually fades.
+      // ── Puddle combo — electrify puddles the ray crosses (thunder + puddle).
       if (Puddle.all.size > 0) {
-        const casterId = beam.getData('casterId') as string | undefined;
-        const localId = this.#safeNetworkManager()?.localPlayerId;
-        const targetGroup = casterId === undefined || casterId === localId
-          ? localGroup
-          : this.#remoteSpellGroup;
+        const localId = nm?.localPlayerId;
+        const targetGroup = isLocalRay ? localGroup : this.#remoteSpellGroup;
         for (const p of Puddle.all) {
           if (!p.active) continue;
-          if (!beam.isPointInBeam(p.x, p.y)) continue;
-          p.electrify(RUNTIME_CONFIG.ELEC_PUDDLE_CHARGE_MAX, targetGroup, casterId ?? localId);
+          if (!ray.isPointInBeam(p.x, p.y)) continue;
+          p.electrify(RUNTIME_CONFIG.ELEC_PUDDLE_CHARGE_MAX, targetGroup, rayCasterId ?? localId);
         }
+      }
+    }
+  }
+
+  /** Last PvP tick seq we already credited damage for, per AoE spell instance.
+   *  Lets #updateAoePvpDamage fire exactly once per spell tick instead of every
+   *  frame (the spell bumps pvpTickSeq from its own damage timer). */
+  #aoeLastPvpTickSeq = new WeakMap<Phaser.GameObjects.GameObject, number>();
+
+  /** True for persistent tick-AoE spells whose PvP damage is driven by
+   *  #updateAoePvpDamage (per-tick ids). The generic cross-player overlaps must
+   *  skip these so they don't ALSO emit a static-id hit. */
+  #isTickAoeSpell(obj: Phaser.GameObjects.GameObject): boolean {
+    return obj instanceof FireArea
+      || obj instanceof VoidOrb
+      || obj instanceof LavaPool
+      || obj instanceof WaterTornado;
+  }
+
+  /**
+   * Cross-player tick damage for persistent AoE spells (FireArea, VoidOrb,
+   * LavaPool, WaterTornado). These only ever damaged bots — players took damage
+   * at most ONCE because the generic cross-player overlap emits spell:hit with
+   * the spell's FIXED spellId and the server dedupes by id, so every tick after
+   * the first was swallowed ("só dá dano uma vez").
+   *
+   * Fix: each spell bumps `pvpTickSeq` from its own damage timer; here we watch
+   * that counter and, on each new tick, emit a caster-authoritative spell:hit
+   * with a PER-TICK id (`${spellId}:t${seq}`) for every enemy player overlapping
+   * the body. Caster-authoritative (only the caster's client reports) — same
+   * model as the LightningBeam fix — so no double counting. The spell's real
+   * spellId is untouched (still used for spell:destroyed correlation).
+   */
+  #updateAoePvpDamage(): void {
+    const nm = this.#safeNetworkManager();
+    if (!nm) return; // offline / single-player — bots are handled inside the spell
+
+    // Collect AoE spells from the local spellGroup (caster-owned). Remote-cast
+    // replicas live in #remoteSpellGroup; we intentionally skip them so only the
+    // caster credits damage.
+    const localGroup = this.#player?.spellCastingComponent?.spellGroup;
+    if (!localGroup) return;
+
+    for (const child of localGroup.getChildren()) {
+      const isAoe = child instanceof FireArea
+        || child instanceof VoidOrb
+        || child instanceof LavaPool
+        || child instanceof WaterTornado;
+      if (!isAoe) continue;
+      const spell = child as (FireArea | VoidOrb | LavaPool | WaterTornado) & Phaser.GameObjects.GameObject;
+      if (!spell.active || !spell.isPvpDamageActive) continue;
+
+      // Only the caster's client drives damage. Locally-cast spells either have
+      // casterId == localPlayerId or (combo-spawned, e.g. LavaPool) no casterId
+      // at all — both mean "owned by this client".
+      const casterId = (spell.getData('casterId') as string | undefined) ?? nm.localPlayerId;
+      if (casterId !== nm.localPlayerId) continue;
+
+      // Fire once per spell tick.
+      const seq = spell.pvpTickSeq;
+      const last = this.#aoeLastPvpTickSeq.get(spell) ?? 0;
+      if (seq === last) continue;
+      this.#aoeLastPvpTickSeq.set(spell, seq);
+      if (seq === 0) continue; // no tick has fired yet
+
+      const baseSpellId = (spell.getData('spellId') as string | undefined);
+      const spellType = (spell.getData('spellType') as string | undefined)
+        ?? (spell.constructor as { name: string }).name;
+
+      for (const remote of this.#remotePlayers.values()) {
+        if (!remote.active || remote.isDefeated) continue;
+        if (remote.isStarShieldActive) continue; // shielded players eat AoE silently
+        const targetId = remote.getData('playerId') as string | undefined;
+        if (!targetId) continue;
+        if (this.#areSameTeam(nm.localPlayerId, targetId)) continue;
+        if (!this.physics.overlap(spell, remote)) continue;
+        // Per-tick id so the server treats each tick as a distinct hit. Fall back
+        // to a synthesised base if the spell was never tagged (combo-spawned).
+        const perTickId = `${baseSpellId ?? `aoe-${(spell.constructor as { name: string }).name}-${spell.x | 0}-${spell.y | 0}`}:t${seq}`;
+        nm.sendSpellHit({
+          spellId: perTickId,
+          spellType,
+          casterId: nm.localPlayerId,
+          targetId,
+          hitX: remote.x,
+          hitY: remote.y,
+          damage: spell.baseDamage,
+        });
       }
     }
   }
@@ -2739,8 +3025,6 @@ export class GameScene extends Phaser.Scene {
         return;
       }
       if (this.time.now - this.#earthWallLastCastTime < EARTH_WALL_COOLDOWN) return;
-      if (this.#player.manaComponent.mana < EARTH_WALL_MANA_COST) return;
-      if (EARTH_WALL_MANA_COST > 0) this.#player.manaComponent.consume(EARTH_WALL_MANA_COST);
       this.#earthWallLastCastTime = this.time.now;
       EVENT_BUS.emit(CUSTOM_EVENTS.SPELL_CAST, { spellId: SPELL_ID.EARTH_WALL });
       this.#earthWallDrawingMode = true;
@@ -2772,7 +3056,10 @@ export class GameScene extends Phaser.Scene {
     const minSpacing = EARTH_WALL_PILLAR_SPACING;
     if (distSq < minSpacing * minSpacing) return;
 
-    const pillar = new EarthWallPillar(this, tx, ty);
+    const ewMods = this.#player?.spellModifiers;
+    const ewHpBonus = ewMods?.earthWallPillarHpBonus ?? 0;
+    const ewDurMult = ewMods?.earthWallDurationMult ?? 1;
+    const pillar = new EarthWallPillar(this, tx, ty, ewHpBonus, ewDurMult);
     this.#earthWallGroup.add(pillar);
     this.#earthWallLastPlacedX = tx;
     this.#earthWallLastPlacedY = ty;
@@ -3270,6 +3557,10 @@ export class GameScene extends Phaser.Scene {
         explode?: () => void;
       };
       if (!spell.active) return;
+      // Tick-AoE spells are caster-authoritative via #updateAoePvpDamage (the
+      // REMOTE caster's client credits the damage). The victim must NOT also
+      // self-report, or the server would land both (different ids) → double hit.
+      if (this.#isTickAoeSpell(spell)) return;
       const nm = this.#safeNetworkManager();
       if (!nm) return;
       const spellId = spell.getData('spellId') as string | undefined;
@@ -3306,7 +3597,16 @@ export class GameScene extends Phaser.Scene {
       if (spell instanceof EarthBump) {
         if (!this.#earthBumpsThatPushedMe.has(spell)) {
           this.#earthBumpsThatPushedMe.add(spell);
-          this.#player.applyKnockback(spell.direction, spell.knockbackForce, spell.knockbackDuration);
+          // Launch the local player along the real bump→player line (radial),
+          // matching the local-cast behaviour in EarthBump.hitEnemy. The old
+          // cardinal-only push sent the player the "wrong way" on diagonals.
+          const nx = this.#player.x - spell.x;
+          const ny = this.#player.y - spell.y;
+          if (Math.hypot(nx, ny) < 1e-4) {
+            this.#player.applyKnockback(spell.direction, spell.knockbackForce, spell.knockbackDuration);
+          } else {
+            this.#player.applyKnockbackVector(nx, ny, spell.knockbackForce, spell.knockbackDuration);
+          }
         }
       } else {
         // Local visual feedback only — actual damage still gates on damage:confirmed (PVP-05, D-01).
@@ -3328,6 +3628,11 @@ export class GameScene extends Phaser.Scene {
         };
         const remote = remoteObj as Player;
         if (!spell.active || !remote.active) return;
+        // Tick-AoE spells (FireArea/VoidOrb/LavaPool/WaterTornado) are damaged
+        // via #updateAoePvpDamage with per-tick ids — skip them here so we don't
+        // ALSO emit a static-id hit (which the server would land once, stacking a
+        // double-hit on the first contact tick). See #updateAoePvpDamage.
+        if (this.#isTickAoeSpell(spell)) return;
         const nm = this.#safeNetworkManager();
         if (!nm) return;
         const spellId = spell.getData('spellId') as string | undefined;
@@ -3909,6 +4214,45 @@ export class GameScene extends Phaser.Scene {
     this.#deathCountdownTimer = undefined;
   }
 
+  /**
+   * TDM death-card upgrades: the server offered THIS player (offers go only to the dying
+   * player's socket) 3 cards to pick from during the death countdown. Launch the picker
+   * overlay scene on top of the death overlay and shrink the countdown text out of its way.
+   * The picker closes itself on selection confirmation (NETWORK_UPGRADE_APPLIED), on
+   * NETWORK_RESPAWN (auto-pick happened server-side), and on NETWORK_MATCH_ENDED.
+   */
+  #onUpgradeOffer = (payload: UpgradeOfferPayload): void => {
+    if (this.scene.isActive(SCENE_KEYS.CARD_PICKER_SCENE)) return;
+    // Tuck the RESPAWNING countdown below the score plate (score is at y=10, size 16 → ~y=26).
+    this.#deathCountdownText?.setFontSize(10);
+    this.#deathCountdownText?.setY(32);
+    this.scene.launch(SCENE_KEYS.CARD_PICKER_SCENE, payload);
+    this.scene.bringToTop(SCENE_KEYS.CARD_PICKER_SCENE);
+  };
+
+  /**
+   * TDM death-card upgrades: a player's pick (manual or auto) resolved server-side. The payload
+   * carries the player's COMPLETE recomputed modifier snapshot — overwrite the matching Player's
+   * modifiers (local or remote) so all clients render that player's spells identically. Spells
+   * read modifiers at cast time, so nothing else needs touching here except the always-on stats
+   * (move speed multiplier, max health) which live on components.
+   */
+  #onUpgradeApplied = (payload: UpgradeAppliedPayload): void => {
+    const nm = this.#safeNetworkManager();
+    const isLocal = nm != null && payload.playerId === nm.localPlayerId;
+    const target = isLocal ? this.#player : this.#remotePlayers.get(payload.playerId);
+    if (!target) return;
+
+    target.spellModifiers = { ...payload.modifiers };
+    target.setMoveSpeedMultiplier(payload.modifiers.moveSpeedMult);
+    const newMax = CONFIG.PLAYER_START_MAX_HEALTH + payload.modifiers.maxHealthBonus;
+    target.lifeComponent.setMaxLife(newMax);
+    if (isLocal) {
+      // HUD heart row rebuild (UiScene listens for PLAYER_MAX_HEALTH_UPDATED via DataManager).
+      DataManager.instance.updatePlayerMaxHealth(newMax);
+    }
+  };
+
   // D-04 wall-desync close: remove matching spell from BOTH groups on server broadcast.
   #onSpellDestroyed = (payload: SpellDestroyedPayload): void => {
     const scan = (group: Phaser.GameObjects.Group | undefined): void => {
@@ -4303,6 +4647,9 @@ export class GameScene extends Phaser.Scene {
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_PICKUP_COLLECTED, this.#onPickupCollected, this);
     // Phase 14 (Plan 04, D-06/D-08): launch the minimal results overlay on match ENDED.
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_MATCH_ENDED, this.#onMatchEnded, this);
+    // TDM death-card upgrades — offer (this player only) + applied (lobby-wide snapshot).
+    EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_UPGRADE_OFFER, this.#onUpgradeOffer, this);
+    EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_UPGRADE_APPLIED, this.#onUpgradeApplied, this);
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       EVENT_BUS.off(CUSTOM_EVENTS.OPENED_CHEST, this.#handleOpenChest, this);
@@ -4327,6 +4674,9 @@ export class GameScene extends Phaser.Scene {
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_PICKUP_COLLECTED, this.#onPickupCollected, this);
       // Phase 14 (Plan 04): results-overlay launcher cleanup.
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_MATCH_ENDED, this.#onMatchEnded, this);
+      // TDM death-card upgrades listener cleanup.
+      EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_UPGRADE_OFFER, this.#onUpgradeOffer, this);
+      EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_UPGRADE_APPLIED, this.#onUpgradeApplied, this);
       this.#appliedDamageSpellIds.clear();
       this.#deadPlayerIds.clear();
       this.#pickups.forEach((p) => p.destroy());
@@ -4352,8 +4702,6 @@ export class GameScene extends Phaser.Scene {
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_BREATH_END, this.#onRemoteBreathEnd, this);
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_EARTH_WALL_PILLAR, this.#onRemoteEarthWallPillar, this);
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_EARTH_WALL_PILLAR_DESTROY, this.#onRemoteEarthWallPillarDestroy, this);
-      EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_BEAM_UPDATE, this.#onRemoteBeamUpdate, this);
-      EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_BEAM_END, this.#onRemoteBeamEnd, this);
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_PLAYER_DISCONNECTED, this.#onRemotePlayerDisconnected, this);
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_MESH_PARTIAL, this.#onMeshPartial, this);
       EVENT_BUS.off(CUSTOM_EVENTS.SPELL_CAST, this.#onLocalSpellCast, this);
@@ -4665,13 +5013,10 @@ export class GameScene extends Phaser.Scene {
     // random map locations during the match (server-authoritative NetworkedSpecialPickup). The local
     // #spawnVoidOrbPickup / #spawnDarkBoltPickup helpers remain for any future per-room Tiled use.
 
-    // Star Shield: always-available special. If the player has nothing else
-    // equipped, seed the slot with 1 charge so R can cast immediately. After
-    // each cast the slot self-clears (charges → 0); the post-cast hook in
-    // #handleSpecialCastInput re-grants 1 more so the shield stays infinite.
-    if (SpecialSpellInventory.instance.activeSpellId === null) {
-      SpecialSpellInventory.instance.setActive(SPELL_ID.STAR_SHIELD, 1);
-    }
+    // Star Shield is a finite map pickup now (like VoidOrb / DarkBolt) — the
+    // player no longer SPAWNS with it equipped. Walk over a STAR_SHIELD pickup
+    // to gain 1 charge. (Removed: the boot-time seed + post-cast re-grant that
+    // made the shield permanent and present on spawn, which read as "immortal".)
   }
 
   /** Dispatch table for "what happens when a DarkBolt touches X". Called by
@@ -4730,7 +5075,7 @@ export class GameScene extends Phaser.Scene {
     // Lightning effects — delay destroy so the bolt visibly parks on top.
     if (
       target instanceof ThunderStrike ||
-      target instanceof LightningBeam ||
+      target instanceof ChargedLightningRay ||
       target instanceof LightningBurstCombo ||
       target instanceof LightningStrikeCombo
     ) {
@@ -5219,8 +5564,6 @@ export class GameScene extends Phaser.Scene {
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_BREATH_END, this.#onRemoteBreathEnd, this);
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_EARTH_WALL_PILLAR, this.#onRemoteEarthWallPillar, this);
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_EARTH_WALL_PILLAR_DESTROY, this.#onRemoteEarthWallPillarDestroy, this);
-    EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_BEAM_UPDATE, this.#onRemoteBeamUpdate, this);
-    EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_BEAM_END, this.#onRemoteBeamEnd, this);
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_PLAYER_DISCONNECTED, this.#onRemotePlayerDisconnected, this);
     EVENT_BUS.on(CUSTOM_EVENTS.SPELL_CAST, this.#onLocalSpellCast, this);
     // 3p desync fix (Cause #3): pre-spawn all known remote players from the
@@ -5468,7 +5811,7 @@ export class GameScene extends Phaser.Scene {
   // spellId (SPELL_ID type constant). The UUID is what rides the wire as SpellCastPayload.spellId.
   // The legacy `element` field carries the active element; receivers re-derive the spell type
   // from element + slot (or from a future broadcasted SPELL_ID — out of scope for this plan).
-  #onLocalSpellCast = (payload: { spellInstanceId?: string; spellId: string; slotIndex: number; casterX: number; casterY: number; targetX: number; targetY: number }): void => {
+  #onLocalSpellCast = (payload: { spellInstanceId?: string; spellId: string; slotIndex: number; casterX: number; casterY: number; targetX: number; targetY: number; damage?: number }): void => {
     // Phase 14 (D-12): a local cast cancels respawn invuln immediately (also covers dash,
     // which routes through SPELL_CAST). Guard on #invulnUntil > 0 so the common case is a
     // single comparison. This runs before the connectivity early-return so an offline/solo
@@ -5490,6 +5833,9 @@ export class GameScene extends Phaser.Scene {
       direction: this.#player.direction,
       targetX: payload.targetX,
       targetY: payload.targetY,
+      // Cast-once spells (ChargedLightningRay) carry pre-resolved damage so the
+      // remote replica matches exactly. Omitted/undefined for everything else.
+      ...(payload.damage !== undefined ? { damage: payload.damage } : {}),
     });
   };
 
@@ -5553,15 +5899,28 @@ export class GameScene extends Phaser.Scene {
         this.#spawnRemoteDashVfx(remoteCaster, payload.x, payload.y, payload.targetX!, payload.targetY!, direction, factoryKey === SPELL_ID.AIR_BURST);
       }
 
-      const spell = factory(
-        this,
-        payload.x,
-        payload.y,
-        payload.targetX as number,
-        payload.targetY as number,
-        direction,
-        remoteCaster,
-      );
+      // ChargedLightningRay replica: reconstruct the EXACT ray the caster fired.
+      // targetX/Y is the ray endpoint → angle + length are derived; damage rides
+      // in the optional payload field. Cast-once, no real-time sync. Build it
+      // directly (not via the registry factory, which only has the aim point and
+      // would default the length/damage) so the replica matches the caster 1:1.
+      let spell: ActiveSpell;
+      if (factoryKey === SPELL_ID.LIGHTNING_BEAM) {
+        const angle = Math.atan2(payload.targetY! - payload.y, payload.targetX! - payload.x);
+        const length = Math.hypot(payload.targetX! - payload.x, payload.targetY! - payload.y);
+        const damage = (payload as { damage?: number }).damage ?? RUNTIME_CONFIG.CHARGED_RAY_DAMAGE_MIN;
+        spell = new ChargedLightningRay(this, payload.x, payload.y, angle, length, damage, remoteCaster);
+      } else {
+        spell = factory(
+          this,
+          payload.x,
+          payload.y,
+          payload.targetX as number,
+          payload.targetY as number,
+          direction,
+          remoteCaster,
+        );
+      }
 
       this.#remoteSpellGroup.add(spell.gameObject);
 
@@ -5609,19 +5968,6 @@ export class GameScene extends Phaser.Scene {
     this.#remoteFireBreaths.delete(payload.playerId);
   };
 
-  /** Find the currently-active remote LightningBeam owned by `playerId`. The
-   *  beam's own spellId rotates per-tick (for damage dedupe), so we can't key
-   *  the lookup by spellId — at most one beam per remote caster is permitted,
-   *  so casterId is unique enough. */
-  #findRemoteBeamForPlayer(playerId: string): LightningBeam | undefined {
-    if (!this.#remoteSpellGroup) return undefined;
-    for (const c of this.#remoteSpellGroup.getChildren()) {
-      if (!(c instanceof LightningBeam) || !c.active) continue;
-      if ((c.getData('casterId') as string | undefined) === playerId) return c;
-    }
-    return undefined;
-  }
-
   /** Render dash VFX behind a remote caster — used for both AIR_BURST (wind
    *  super-dash, with the wind sheet behind) and DASH (vanilla dash). Called
    *  directly from #onRemoteSpellCast so the dispatch path is reliable and
@@ -5666,16 +6012,6 @@ export class GameScene extends Phaser.Scene {
       Player.spawnDashVfxFor(caster, nx, ny);
     }
   }
-
-  #onRemoteBeamUpdate = (payload: { playerId: string; targetX: number; targetY: number }): void => {
-    const beam = this.#findRemoteBeamForPlayer(payload.playerId);
-    if (beam) beam.setRemoteAim(payload.targetX, payload.targetY);
-  };
-
-  #onRemoteBeamEnd = (payload: { playerId: string }): void => {
-    const beam = this.#findRemoteBeamForPlayer(payload.playerId);
-    if (beam?.active) beam.destroy();
-  };
 
   #onRemoteEarthWallPillar = (payload: EarthWallPillarBroadcast): void => {
     const pillar = new EarthWallPillar(this, payload.x, payload.y);

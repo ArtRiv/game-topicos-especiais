@@ -27,9 +27,6 @@ export const CUSTOM_EVENTS = {
   NETWORK_BREATH_END: 'NETWORK_BREATH_END',
   NETWORK_EARTH_WALL_PILLAR: 'NETWORK_EARTH_WALL_PILLAR',
   NETWORK_EARTH_WALL_PILLAR_DESTROY: 'NETWORK_EARTH_WALL_PILLAR_DESTROY',
-  NETWORK_BEAM_START: 'NETWORK_BEAM_START',
-  NETWORK_BEAM_UPDATE: 'NETWORK_BEAM_UPDATE',
-  NETWORK_BEAM_END: 'NETWORK_BEAM_END',
   NETWORK_ROOM_TRANSITION: 'NETWORK_ROOM_TRANSITION',
   NETWORK_PLAYER_DISCONNECTED: 'NETWORK_PLAYER_DISCONNECTED',
   NETWORK_PLAYER_RECONNECTED: 'NETWORK_PLAYER_RECONNECTED',
@@ -61,6 +58,12 @@ export const CUSTOM_EVENTS = {
   // events (pickup:spawned / pickup:collected) in network-manager.ts.
   NETWORK_PICKUP_SPAWNED: 'NETWORK_PICKUP_SPAWNED',
   NETWORK_PICKUP_COLLECTED: 'NETWORK_PICKUP_COLLECTED',
+  // TDM death-card upgrades — bridged from socket events (upgrade:offer / upgrade:applied).
+  // OFFER arrives only on the dying player's socket; APPLIED is broadcast to the whole lobby.
+  NETWORK_UPGRADE_OFFER: 'NETWORK_UPGRADE_OFFER',
+  NETWORK_UPGRADE_APPLIED: 'NETWORK_UPGRADE_APPLIED',
+  // INTERNAL (no socket bridge): DataManager → UiScene max-health change, rebuilds the heart bar.
+  PLAYER_MAX_HEALTH_UPDATED: 'PLAYER_MAX_HEALTH_UPDATED',
   // HUD_REVEAL is INTERNAL (no socket bridge): Phase 14 cinematic step 5, GameScene -> UiScene HUD fade-in.
   HUD_REVEAL: 'HUD_REVEAL',
 } as const;

@@ -36,19 +36,24 @@ export class WaterSpike extends Phaser.Physics.Arcade.Sprite implements ActiveSp
   #darkPortalMask: Phaser.Display.Masks.BitmapMask | undefined;
   #voidPortalSourceOrb: VoidOrb | undefined;
 
+  #damageMult: number = 1;
+
   get baseDamage(): number {
-    return RUNTIME_CONFIG.WATER_SPIKE_DAMAGE;
+    return Math.max(1, Math.round(RUNTIME_CONFIG.WATER_SPIKE_DAMAGE * this.#damageMult));
   }
 
   get isDamageActive(): boolean {
     return this.#phase === 'rise' || this.#phase === 'loop';
   }
 
-  constructor(scene: Phaser.Scene, x: number, y: number) {
+  constructor(scene: Phaser.Scene, x: number, y: number, caster?: { spellModifiers?: { waterSpikeDamageMult?: number } }) {
+    // read before super so we can't use `this` yet — store in a closure temp
+    const damageMult = caster?.spellModifiers?.waterSpikeDamageMult ?? 1;
     // Offset y by half the frame height so the bottom of the 80px frame sits at the target position.
     // Never use setOrigin() on an Arcade Physics sprite — the body sync uses the body's own
     // width/height (not the frame size) and will drift the sprite sideways every update tick.
     super(scene, x, y - 40, ASSET_KEYS.WATER_SPIKE);
+    this.#damageMult = damageMult;
     scene.add.existing(this);
     scene.physics.add.existing(this);
 
@@ -226,4 +231,5 @@ export class WaterSpike extends Phaser.Physics.Arcade.Sprite implements ActiveSp
 }
 
 import { registerSpell } from './spell-registry';
-registerSpell(SPELL_ID.WATER_SPIKE, (scene, _x, _y, tx, ty) => new WaterSpike(scene, tx, ty));
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+registerSpell(SPELL_ID.WATER_SPIKE, (scene, _x, _y, tx, ty, _el, caster) => new WaterSpike(scene, tx, ty, caster as any));

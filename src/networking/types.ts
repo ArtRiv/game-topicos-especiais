@@ -26,7 +26,8 @@ export type LobbyConfig = {
   mapId: string;          // value from MAP_POOL[i].id
   maxPlayers: number;     // derived: parseInt(format) * 2
   winTarget?: number;     // TDM kill target (8 | 15 | 30); default 30 when absent
-  // Future optional fields (LBC-07): timeLimit?, friendlyFire?, spellModifiers? — add as optional top-level keys, no nesting.
+  upgradesEnabled?: boolean; // TDM death-card upgrades; default true when absent
+  // Future optional fields (LBC-07): timeLimit?, friendlyFire? — add as optional top-level keys, no nesting.
 };
 
 export type MapPoolEntry = {
@@ -78,6 +79,11 @@ export type SpellCastPayload = {
   direction: string;
   targetX: number;
   targetY: number;
+  // Optional pre-resolved damage carried by cast-once spells whose damage is
+  // decided at cast time rather than read from config on the receiver (e.g. the
+  // ChargedLightningRay, whose damage scales with charge). Absent for all other
+  // spells, which read their own config. Back-compat: older peers ignore it.
+  damage?: number;
 };
 
 export type SpellCastBroadcast = SpellCastPayload & { playerId: string };
@@ -106,33 +112,6 @@ export type BreathUpdateBroadcast = BreathUpdatePayload & { playerId: string };
 export type BreathEndPayload = Record<string, never>;
 
 export type BreathEndBroadcast = { playerId: string };
-
-/** LightningBeam channeled spell — start event. */
-export type BeamStartPayload = {
-  spellId: string;     // per-cast UUID (matches the spell-cast UUID emitted by the caster)
-  x: number;           // caster anchor
-  y: number;
-  targetX: number;     // current cursor world position
-  targetY: number;
-};
-
-export type BeamStartBroadcast = BeamStartPayload & { playerId: string };
-
-/** LightningBeam — per-tick aim update (sent at 20 Hz via unreliable channel). */
-export type BeamUpdatePayload = {
-  spellId: string;
-  x: number;
-  y: number;
-  targetX: number;
-  targetY: number;
-};
-
-export type BeamUpdateBroadcast = BeamUpdatePayload & { playerId: string };
-
-/** LightningBeam — end event. */
-export type BeamEndPayload = { spellId: string };
-
-export type BeamEndBroadcast = BeamEndPayload & { playerId: string };
 
 /** EarthWall — single pillar placement */
 export type EarthWallPillarPayload = {
@@ -251,6 +230,85 @@ export type RespawnPayload = {
   playerId: string;
   x: number;             // server-side original spawn point
   y: number;
+};
+
+// ── TDM death-card upgrades (server-authoritative; mirrors game-server/src/types.ts) ───────────
+
+export type CardRarity = 'BRONZE' | 'SILVER' | 'GOLD' | 'PRISMATIC';
+
+/** Complete per-player modifier snapshot, computed ONLY on the server from card stacks and
+ *  broadcast whole in every upgrade:applied. Clients overwrite, never accumulate. Structurally
+ *  identical to SpellModifiers (src/common/spell-modifiers.ts). */
+export type PlayerModifiers = {
+  fireballDamageMult: number;
+  fireballSpeedMult: number;
+  fireballSizeMult: number;
+  fireballCooldownMult: number;
+  fireAreaDamageMult: number;
+  fireAreaSizeMult: number;
+  fireAreaCooldownMult: number;
+  fireAreaDurationMult: number;
+  lightningDamageMult: number;
+  lightningRangeMult: number;
+  lightningChargeSpeedMult: number;
+  lightningCooldownMult: number;
+  tornadoPullMult: number;
+  tornadoSizeMult: number;
+  tornadoCooldownMult: number;
+  tornadoDurationMult: number;
+  waterSpikeDamageMult: number;
+  waterSpikeCooldownMult: number;
+  earthWallDurationMult: number;
+  earthWallPillarHpBonus: number;
+  earthBumpKnockbackMult: number;
+  earthBumpDamageMult: number;
+  earthBumpCooldownMult: number;
+  windBoltDamageMult: number;
+  windBoltSizeMult: number;
+  windBoltSpeedMult: number;
+  windBoltCooldownMult: number;
+  windBoltPushMult: number;
+  dashCooldownMult: number;
+  moveSpeedMult: number;
+  maxHealthBonus: number;
+};
+
+export type UpgradeCardCategory = 'FIREBALL' | 'FIRE_AREA' | 'LIGHTNING' | 'WATER_TORNADO' | 'WATER_SPIKE' | 'EARTH_WALL' | 'EARTH_BUMP' | 'WIND' | 'DASH' | 'PLAYER';
+
+/** One card inside an upgrade:offer — full display data so the client needs no catalog copy. */
+export type OfferedCard = {
+  cardId: string;
+  name: string;
+  description: string;
+  rarity: CardRarity;       // card's own rarity (≠ offer rarity only on thin-pool top-up)
+  category: UpgradeCardCategory;
+  currentLevel: number;     // player's stack BEFORE this pick
+  maxLevel: number;
+};
+
+/** Server → the dying player's socket ONLY: pick 1 of these before deadlineTs. */
+export type UpgradeOfferPayload = {
+  offerId: string;
+  rarity: CardRarity;
+  deathNumber: number;      // 1-based personal death count
+  cards: OfferedCard[];     // 1..3 (thin pool can yield fewer)
+  deadlineTs: number;       // server epoch ms = respawn fire time (auto-pick after)
+};
+
+/** Client → server: my pick. playerId is derived from the socket, never trusted from payload. */
+export type UpgradeSelectPayload = {
+  offerId: string;
+  cardId: string;
+};
+
+/** Server → ALL clients in lobby: a player's upgrade resolved (picked or auto-picked). */
+export type UpgradeAppliedPayload = {
+  playerId: string;
+  cardId: string;
+  newLevel: number;
+  rarity: CardRarity;
+  autoPicked: boolean;
+  modifiers: PlayerModifiers;   // complete snapshot — clients overwrite, never accumulate
 };
 
 /** Phase 14 bugfix (TDM playtest #4): one server spawn assignment for a player. */

@@ -15,7 +15,6 @@ import {
 import { ELEMENT, SPELL_ID } from '../common/common';
 import { DEFAULT_UI_TEXT_STYLE } from '../common/common';
 import { SpecialSpellInventory } from '../common/special-spell-inventory';
-import { ManaUpdatedData } from '../components/game-object/mana-component';
 import { ElementManager } from '../common/element-manager';
 import { Element, SpellId } from '../common/types';
 import { SPELL_CONFIG } from '../game-objects/spells/spell-registry';
@@ -103,9 +102,6 @@ export class UiScene extends Phaser.Scene {
   #hearts!: Phaser.GameObjects.Sprite[];
   #dialogContainer!: Phaser.GameObjects.Container;
   #dialogContainerText!: Phaser.GameObjects.Text;
-  #manaBarBg!: Phaser.GameObjects.Rectangle;
-  #manaBarFill!: Phaser.GameObjects.Rectangle;
-  #manaText!: Phaser.GameObjects.BitmapText;
   // Pixel-perfect hint that pops in when Wind is the active element to remind
   // the player that SHIFT now triggers the wind super-dash instead of the
   // regular dash. Uses BitmapText (press_start_2p atlas) instead of WebFont
@@ -190,21 +186,6 @@ export class UiScene extends Phaser.Scene {
     this.#dialogContainer.add(this.#dialogContainerText);
     this.#dialogContainer.visible = false;
 
-    // create mana bar — sits below the two rows of hearts (hearts rows at y=2 and y=10, 8px tall each)
-    const manaBarX = 8;
-    const manaBarY = 20;
-    const manaBarWidth = 60;
-    const manaBarHeight = 6;
-    this.#manaBarBg = this.add.rectangle(manaBarX, manaBarY, manaBarWidth, manaBarHeight, 0x222244).setOrigin(0);
-    this.#manaBarFill = this.add.rectangle(manaBarX, manaBarY, manaBarWidth, manaBarHeight, 0x4444ff).setOrigin(0);
-    // BitmapText (pre-rasterized glyphs) instead of Text to avoid sub-pixel blur at 6px.
-    this.#manaText = this.add
-      .bitmapText(manaBarX, manaBarY + manaBarHeight + 2, 'press_start_2p', 'MP', 6)
-      .setOrigin(0)
-      .setTint(0x8888ff);
-    this.#hudContainer.add([this.#manaBarBg, this.#manaBarFill, this.#manaText]);
-
-
     this.#createElementCarousel();
     // Parent the carousel pieces into #hudContainer too so the radial-menu affordance
     // reveals with the HUD (the gem panel + the per-element icons).
@@ -240,7 +221,6 @@ export class UiScene extends Phaser.Scene {
     // register event listeners
     EVENT_BUS.on(CUSTOM_EVENTS.PLAYER_HEALTH_UPDATED, this.updateHealthInHud, this);
     EVENT_BUS.on(CUSTOM_EVENTS.SHOW_DIALOG, this.showDialog, this);
-    EVENT_BUS.on(CUSTOM_EVENTS.MANA_UPDATED, this.updateManaInHud, this);
     EVENT_BUS.on(CUSTOM_EVENTS.ELEMENT_CHANGED, this.#syncCarouselToElement, this);
     EVENT_BUS.on(CUSTOM_EVENTS.ELEMENT_CAROUSEL_STEP, this.#onCarouselStep, this);
     EVENT_BUS.on(CUSTOM_EVENTS.SPELL_CAST, this.#onSpellCast, this);
@@ -248,11 +228,13 @@ export class UiScene extends Phaser.Scene {
     // Phase 14: live team-score plate + cinematic HUD reveal.
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_TEAM_SCORE, this.#onTeamScore, this);
     EVENT_BUS.on(CUSTOM_EVENTS.HUD_REVEAL, this.#onHudReveal, this);
+    // TDM death-card upgrades: max-health card picked → redraw the heart row (the 20 heart
+    // sprites are pre-allocated; only their frames change).
+    EVENT_BUS.on(CUSTOM_EVENTS.PLAYER_MAX_HEALTH_UPDATED, this.#onMaxHealthUpdated, this);
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       EVENT_BUS.off(CUSTOM_EVENTS.PLAYER_HEALTH_UPDATED, this.updateHealthInHud, this);
       EVENT_BUS.off(CUSTOM_EVENTS.SHOW_DIALOG, this.showDialog, this);
-      EVENT_BUS.off(CUSTOM_EVENTS.MANA_UPDATED, this.updateManaInHud, this);
       EVENT_BUS.off(CUSTOM_EVENTS.ELEMENT_CHANGED, this.#syncCarouselToElement, this);
       EVENT_BUS.off(CUSTOM_EVENTS.ELEMENT_CAROUSEL_STEP, this.#onCarouselStep, this);
       EVENT_BUS.off(CUSTOM_EVENTS.SPELL_CAST, this.#onSpellCast, this);
@@ -260,6 +242,7 @@ export class UiScene extends Phaser.Scene {
       // Phase 14 cleanup — mirror every new on() with an off().
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_TEAM_SCORE, this.#onTeamScore, this);
       EVENT_BUS.off(CUSTOM_EVENTS.HUD_REVEAL, this.#onHudReveal, this);
+      EVENT_BUS.off(CUSTOM_EVENTS.PLAYER_MAX_HEALTH_UPDATED, this.#onMaxHealthUpdated, this);
     });
   }
 
@@ -336,6 +319,17 @@ export class UiScene extends Phaser.Scene {
   }
 
   /**
+   * TDM death-card upgrades (Tough Skin / Titan Heart): the local player's max health changed.
+   * The 20 heart sprites already exist (created blank beyond the old max in create()), so a full
+   * frame redraw via #refillHearts is all that's needed — it reads the NEW max from DataManager
+   * and turns the freshly-unlocked slots from NONE into EMPTY (or FULL after the respawn refill).
+   */
+  #onMaxHealthUpdated = (): void => {
+    const current = DataManager.instance.data.currentHealth;
+    this.#refillHearts(current, current);
+  };
+
+  /**
    * Redraw the heart bar for a HEALTH-INCREASE (respawn refill / heal). There is no authored
    * "gain heart" spritesheet animation (only the two LOSE animations exist), so we animate the
    * refill ourselves: each heart is set to its correct frame for the new HP, and every heart that
@@ -388,11 +382,6 @@ export class UiScene extends Phaser.Scene {
       this.#dialogContainer.visible = false;
       EVENT_BUS.emit(CUSTOM_EVENTS.DIALOG_CLOSED);
     });
-  }
-
-  public updateManaInHud(data: ManaUpdatedData): void {
-    const percent = data.currentMana / data.maxMana;
-    this.#manaBarFill.setScale(percent, 1);
   }
 
   // ─── Team-score plate (Phase 14, surface 2 — D-15/D-16/D-17) ──────────────────
@@ -813,7 +802,10 @@ export class UiScene extends Phaser.Scene {
     this.#specialChargesText.setVisible(visible);
     if (visible && spellId) {
       const iconKey = UiScene.#SPECIAL_ICON_KEY[spellId] ?? ASSET_KEYS.VOID_ORB_BM_LOOP;
-      this.#specialIcon.setTexture(iconKey, 0);
+      // Star Shield sheet: frame 12 is the fully-formed bubble (frame 0 is the
+      // first intro frame and reads as a faint sliver). Other specials use 0.
+      const iconFrame = spellId === SPELL_ID.STAR_SHIELD ? 12 : 0;
+      this.#specialIcon.setTexture(iconKey, iconFrame);
       this.#specialChargesText.setText(`x${charges}`);
     }
   }

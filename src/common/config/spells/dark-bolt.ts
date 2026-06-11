@@ -19,8 +19,9 @@ export const DARK_BOLT_SPEED = 200;
 // 0,0 here is still consumed by SPELL_CONFIG for shape completeness.
 export const DARK_BOLT_MANA_COST = 0;
 export const DARK_BOLT_COOLDOWN = 0;
-// One pickup = one cast. Cheap to bump if the spell feels weak.
-export const DARK_BOLT_PICKUP_CHARGES = 5;
+// One pickup = one cast. (event balance pass: was 5 — a single special charge
+// per pickup, matching VoidOrb / StarShield.)
+export const DARK_BOLT_PICKUP_CHARGES = 1;
 // Spawn offset of the test pickup relative to the player start position.
 // Sits opposite the VoidOrb pickup so both are reachable for the replace test.
 export const DARK_BOLT_PICKUP_OFFSET_X = -40;

@@ -1,7 +1,7 @@
 // Dash (Phase 9.3, D-13) — base movement ability plus VFX. All numeric values are
 // also exposed via RUNTIME_CONFIG so they're tweakable from the debug panel.
 
-export const DASH_COOLDOWN_MS = 250; // ms between dashes
+export const DASH_COOLDOWN_MS = 1200; // ms between dashes
 export const DASH_DISTANCE_TILES = 1; // dash distance in tiles (96 px at 32 px/tile)
 export const DASH_DURATION_MS = 150; // dash motion duration → velocity = 640 px/s (RESEARCH.md §3)
 export const DASH_IFRAMES_ENABLED = false; // i-frames during dash (off by default)

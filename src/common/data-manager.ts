@@ -1,5 +1,5 @@
 import { LEVEL_NAME } from './common';
-import { PLAYER_START_MAX_HEALTH, PLAYER_MAX_MANA } from './config';
+import { PLAYER_START_MAX_HEALTH } from './config';
 import {
   CUSTOM_EVENTS,
   EVENT_BUS,
@@ -12,8 +12,6 @@ import { LevelName } from './types';
 export type PlayerData = {
   currentHealth: number;
   maxHealth: number;
-  currentMana: number;
-  maxMana: number;
   currentArea: {
     name: LevelName;
     startRoomId: number;
@@ -48,8 +46,6 @@ export class DataManager {
     this.#data = {
       currentHealth: PLAYER_START_MAX_HEALTH,
       maxHealth: PLAYER_START_MAX_HEALTH,
-      currentMana: PLAYER_MAX_MANA,
-      maxMana: PLAYER_MAX_MANA,
       currentArea: {
         name: LEVEL_NAME.DUNGEON_1,
         startRoomId: 3,
@@ -111,8 +107,6 @@ export class DataManager {
     this.#data = {
       currentHealth: PLAYER_START_MAX_HEALTH,
       maxHealth: PLAYER_START_MAX_HEALTH,
-      currentMana: PLAYER_MAX_MANA,
-      maxMana: PLAYER_MAX_MANA,
       currentArea: {
         name: LEVEL_NAME.DUNGEON_1,
         startRoomId: 3,
@@ -126,6 +120,18 @@ export class DataManager {
         STAGES: {},
       },
     };
+  }
+
+  /** TDM death-card upgrades (Tough Skin / Titan Heart): set the player's max health and notify
+   *  the HUD to rebuild the heart row. Also used at match start to reset back to the base value
+   *  (the DataManager singleton survives between matches; everything else is rebuilt fresh). */
+  public updatePlayerMaxHealth(maxHealth: number): void {
+    if (maxHealth === this.#data.maxHealth) {
+      return;
+    }
+    this.#data.maxHealth = maxHealth;
+    this.#data.currentHealth = Math.min(this.#data.currentHealth, maxHealth);
+    EVENT_BUS.emit(CUSTOM_EVENTS.PLAYER_MAX_HEALTH_UPDATED, maxHealth);
   }
 
   public updatePlayerCurrentHealth(health: number): void {

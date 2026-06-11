@@ -23,8 +23,10 @@ import type {
   MatchEndedPayload,
   SpawnAssignment,
   MatchSpawnsPayload,
+  UpgradeSelectPayload,
+  UpgradeAppliedPayload,
 } from './types.js';
-import { COUNTDOWN_DURATION_MS, FIGHT_HOLD_MS, PLAYER_MAX_HP } from './types.js';
+import { COUNTDOWN_DURATION_MS, FIGHT_HOLD_MS, PLAYER_MAX_HP, SPELL_MAX_BASE_DAMAGE } from './types.js';
 import type { PickupSpawnedPayload, PickupClaimPayload, PickupCollectedPayload } from './types.js';
 import { decode as msgpackDecode } from '@msgpack/msgpack';
 import { randomUUID } from 'crypto';
@@ -35,10 +37,27 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 // FEATURE FLAG: set false to disable pickups entirely (e.g. if anything misbehaves at the booth —
 // the rest of the match is unaffected). Can also be toggled via env: PICKUPS_ENABLED=false.
 const PICKUPS_ENABLED = process.env.PICKUPS_ENABLED !== 'false';
-const PICKUP_SPELLS = ['DARK_BOLT', 'VOID_ORB'] as const;
-// Conservative interior box (px) inside the spawnpoint cluster (teamA/teamB span x 96..384, y 96..224)
-// so pickups land on walkable floor. The server has no tile-collision data, so this is best-effort —
-// do NOT widen it to the full map or pickups will drop inside walls.
+const PICKUP_SPELLS = ['DARK_BOLT', 'VOID_ORB', 'STAR_SHIELD'] as const;
+// Hand-picked special-pickup spawnpoints (px). Capture these in-game with the K
+// key (walk to a spot → press K → the console prints a paste-ready PICKUP_SPAWNS
+// literal) and paste the result here. Each scheduled pickup picks a RANDOM entry
+// from this list, so spread them across the map for variety. Keep them on
+// walkable floor — the server has no tile-collision data, so a bad point will
+// drop a pickup inside a wall.
+const PICKUP_SPAWNS: ReadonlyArray<{ x: number; y: number }> = [
+  { x: 920, y: 888 },
+  { x: 587, y: 960 },
+  { x: 151, y: 925 },
+  { x: 392, y: 698 },
+  { x: 605, y: 562 },
+  { x: 890, y: 435 },
+  { x: 875, y: 198 },
+  { x: 1199, y: 149 },
+  { x: 340, y: 391 },
+  { x: 139, y: 221 },
+];
+// Fallback box used only if PICKUP_SPAWNS is somehow empty (kept so the feature
+// degrades gracefully rather than crashing on an empty-array index).
 const PICKUP_BOX = { minX: 120, maxX: 360, minY: 110, maxY: 210 };
 // Spawn times (ms after ACTIVE). First is ≥45s so every client's GameScene is alive (its ~8s loading
 // cinematic finished) before the first pickup — sidesteps the late-boot replay problem. ±10s jitter.
@@ -131,6 +150,11 @@ function startCountdown(lobbyId: string, room: GameRoom): void {
         spawnAssignments.push({ playerId: info.id, x: s.x, y: s.y });
       });
     }
+    // Death-card upgrades: roll the match's shared rarity sequence once, at the moment the match
+    // goes ACTIVE. Score-independent by construction — death number is the only input.
+    if (room.upgradesEnabled && room.matchMode === 'team-deathmatch') {
+      room.initRaritySequence();
+    }
     broadcastMatchState(lobbyId, room);
     // Phase 14 bugfix (TDM playtest #4): broadcast the match-start spawn assignments so clients
     // place every player at their team spawnpoint instead of the tilemap door ("spawn in the
@@ -166,8 +190,18 @@ function schedulePickups(lobbyId: string, room: GameRoom): void {
       if (gameRooms.get(lobbyId) !== room) return;
       if (room.state !== 'ACTIVE') return;
       const spellType = PICKUP_SPELLS[Math.floor(Math.random() * PICKUP_SPELLS.length)];
-      const x = Math.round(PICKUP_BOX.minX + Math.random() * (PICKUP_BOX.maxX - PICKUP_BOX.minX));
-      const y = Math.round(PICKUP_BOX.minY + Math.random() * (PICKUP_BOX.maxY - PICKUP_BOX.minY));
+      // Pick a random hand-placed spawnpoint. Fall back to the legacy random box
+      // only if the list is empty (degenerate config).
+      let x: number;
+      let y: number;
+      if (PICKUP_SPAWNS.length > 0) {
+        const spot = PICKUP_SPAWNS[Math.floor(Math.random() * PICKUP_SPAWNS.length)];
+        x = spot.x;
+        y = spot.y;
+      } else {
+        x = Math.round(PICKUP_BOX.minX + Math.random() * (PICKUP_BOX.maxX - PICKUP_BOX.minX));
+        y = Math.round(PICKUP_BOX.minY + Math.random() * (PICKUP_BOX.maxY - PICKUP_BOX.minY));
+      }
       const pickupId = randomUUID();
       room.addPendingPickup(pickupId, spellType, x, y);
       const payload: PickupSpawnedPayload = { pickupId, spellType, x, y };
@@ -262,6 +296,8 @@ io.on('connection', (socket) => {
     // Per-match TDM kill target from lobby config (host-gated). Read ONLY from the server-side lobby
     // record, never from a client message — same trust model as setMatchMode.
     room.setWinTarget(lobby.config.winTarget ?? 30);
+    // Death-card upgrades flag (host-gated, default ON). Same trust model as winTarget.
+    room.setUpgradesEnabled(lobby.config.upgradesEnabled ?? true);
     gameRooms.set(lobby.id, room);
 
     // Transition LOBBY → LOADING and broadcast (LFC-03). Order matters: state must change BEFORE
@@ -401,7 +437,17 @@ io.on('connection', (socket) => {
       return;
     }
 
-    const result = room.applyDamage(claim.targetId, claim.damage);
+    // Death-card upgrades: upgrade-aware damage clamp. For spell types with a known max base
+    // damage, a claim may not exceed ceil(maxBase × the CASTER's server-tracked damage mult) —
+    // an un-upgraded fireball can't claim 6 just because someone stacked Sunfire. Unknown spell
+    // types keep only the flat MAX_SPELL_DAMAGE cap inside applyDamage (claim.casterId remains
+    // client-asserted — victims also report hits — so this is a clamp, not full authority).
+    const maxBase = SPELL_MAX_BASE_DAMAGE[claim.spellType];
+    const clampedDamage = maxBase !== undefined
+      ? Math.min(claim.damage, Math.ceil(maxBase * room.getDamageMultFor(claim.casterId, claim.spellType)))
+      : claim.damage;
+
+    const result = room.applyDamage(claim.targetId, clampedDamage);
     const confirmed: DamageConfirmedPayload = {
       spellId: claim.spellId,
       targetId: claim.targetId,
@@ -410,7 +456,7 @@ io.on('connection', (socket) => {
       hitX: claim.hitX,
       hitY: claim.hitY,
       targetHp: result.newHp,        // Phase 14 bugfix: authoritative HP after the hit
-      maxHp: room.getMaxHp(),
+      maxHp: room.getMaxHpFor(claim.targetId),   // upgrade-aware (Tough Skin / Titan Heart)
     };
     io.to(`lobby:${lobbyId}`).emit('damage:confirmed', confirmed);
 
@@ -419,6 +465,14 @@ io.on('connection', (socket) => {
       io.to(`lobby:${lobbyId}`).emit('elimination', elim);
 
       room.scheduleRespawn(claim.targetId, () => {
+        // Death-card upgrades: a still-pending offer auto-picks at respawn fire. Resolve it
+        // BEFORE restoring HP so a health card raises the max the restore fills to.
+        const auto = room.autoResolveOffer(claim.targetId);
+        if (auto) {
+          const applied: UpgradeAppliedPayload = { playerId: claim.targetId, autoPicked: true, ...auto };
+          io.to(`lobby:${lobbyId}`).emit('upgrade:applied', applied);
+        }
+        room.restoreFullHp(claim.targetId);
         // Phase 14 (D-10): pick a FRESH random team spawn each respawn (not the original single
         // spawn point) and start the respawn invuln window (D-12/D-14) before broadcasting.
         const mapId = lobbyManager.getLobbyById(lobbyId)?.config.mapId ?? 'WORLD';
@@ -433,6 +487,13 @@ io.on('connection', (socket) => {
       // attribution reads the caster's team from #playerInfo, never from the client (T-14-01).
       if (room.matchMode === 'team-deathmatch') {
         room.recordDeath(claim.targetId);
+        // Death-card upgrades: roll the 3-card offer for this (post-increment) death and send it
+        // to the DYING player's socket only — nobody else sees the options.
+        const offer = room.rollUpgradeOffer(claim.targetId);
+        if (offer) {
+          const targetSocketId = room.getSocketIdByPlayerId(claim.targetId);
+          if (targetSocketId) io.to(targetSocketId).emit('upgrade:offer', offer);
+        }
         if (!room.isSameTeam(claim.casterId, claim.targetId)) {
           room.addTeamKill(claim.casterId);   // FF already short-circuited in validateHit; guard anyway (D-05)
         }
@@ -461,6 +522,25 @@ io.on('connection', (socket) => {
         }
       }
     }
+  });
+
+  /** Death-card upgrades: the dying player picked a card from their pending offer. The player is
+   *  derived from the SOCKET (anti-spoof) — the payload carries only offerId + cardId. Validation
+   *  (offer exists / matches / card in offer / before deadline) lives in applyUpgradeSelection;
+   *  failures are silently dropped, matching the bad-claim convention. On success the full
+   *  recomputed modifier snapshot is broadcast to the whole lobby so remote rendering stays in sync. */
+  socket.on('upgrade:select', (payload: UpgradeSelectPayload) => {
+    if (!payload || typeof payload.offerId !== 'string' || typeof payload.cardId !== 'string') return;
+    const lobbyId = findLobbyIdBySocket(socket.id);
+    if (!lobbyId) return;
+    const room = gameRooms.get(lobbyId);
+    if (!room || room.state !== 'ACTIVE') return;
+    const playerId = room.getPlayerIdBySocketId(socket.id);
+    if (!playerId) return;
+    const applied = room.applyUpgradeSelection(playerId, payload.offerId, payload.cardId);
+    if (!applied) return;
+    const broadcast: UpgradeAppliedPayload = { playerId, autoPicked: false, ...applied };
+    io.to(`lobby:${lobbyId}`).emit('upgrade:applied', broadcast);
   });
 
   /** Client claims a spell hit a wall / environment object (D-04 wall desync fix).

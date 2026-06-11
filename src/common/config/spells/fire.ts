@@ -26,7 +26,10 @@ export const FIRE_AREA_DAMAGE_PER_TICK = 1;
 export const FIRE_AREA_MANA_COST = 1; // 1/4 of max mana
 export const FIRE_AREA_COOLDOWN = 3000; // ms
 export const FIRE_AREA_DURATION = 5000; // ms - longer duration for easier combos
-export const FIRE_AREA_TICK_INTERVAL = 500; // ms between damage ticks
+// ms between damage ticks. Slowed from 500 → 800 so a player who walks into the
+// area has time to walk back out before the next tick instead of being chain-
+// ticked while trying to leave. (event balance pass)
+export const FIRE_AREA_TICK_INTERVAL = 800;
 
 // ─── FireArea + Puddle evaporate combo ───────────────────────────────────────
 // A FireArea sitting on top of a puddle slowly evaporates it. Each puddle has

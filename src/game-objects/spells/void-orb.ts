@@ -738,8 +738,17 @@ export class VoidOrb extends Phaser.Physics.Arcade.Sprite implements ActiveSpell
     });
   }
 
+  // ── PvP tick damage (see TickAoeSpell) ──────────────────────────────────────
+  #pvpTickSeq = 0;
+  get pvpTickSeq(): number { return this.#pvpTickSeq; }
+  get isPvpDamageActive(): boolean { return this.#phase !== 'end'; }
+
   #applyTickDamage(): void {
     if (this.#phase === 'end') return;
+    // Advance the PvP tick clock — GameScene#updateAoePvpDamage credits player
+    // damage caster-authoritatively off this counter (the orb's body overlap is
+    // re-tested there). Bots are still hit directly below.
+    this.#pvpTickSeq += 1;
     for (const enemy of this.#enemiesInArea) {
       if (!enemy.active || enemy.isDefeated) continue;
       if (this.scene.physics.overlap(this, enemy)) {

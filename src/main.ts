@@ -18,6 +18,7 @@ import { GameScene } from './scenes/game-scene';
 import { UiScene } from './scenes/ui-scene';
 import { GameOverScene } from './scenes/game-over-scene';
 import { TdmResultsScene } from './scenes/tdm-results-scene';
+import { CardPickerScene } from './scenes/card-picker-scene';
 import { RadialMenuScene } from './scenes/radial-menu-scene';
 import { DebugPanel } from './debug/debug-panel';
 import { LobbyDebugPanel } from './debug/lobby-debug-panel';
@@ -114,6 +115,7 @@ void (async () => {
   game.scene.add(SCENE_KEYS.UI_SCENE, UiScene);
   game.scene.add(SCENE_KEYS.GAME_OVER_SCENE, GameOverScene);
   game.scene.add(SCENE_KEYS.TDM_RESULTS_SCENE, TdmResultsScene);
+  game.scene.add(SCENE_KEYS.CARD_PICKER_SCENE, CardPickerScene);
   game.scene.add(SCENE_KEYS.RADIAL_MENU_SCENE, RadialMenuScene);
 
   // Boot flow per D-03: Splash -> MainMenu -> Lobby

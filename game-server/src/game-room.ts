@@ -1,4 +1,14 @@
-import type { MatchState, MatchMode, PlayerInfo, TdmPlayerStat, SpawnAssignment } from './types.js';
+import type {
+  MatchState,
+  MatchMode,
+  PlayerInfo,
+  TdmPlayerStat,
+  SpawnAssignment,
+  CardRarity,
+  PlayerModifiers,
+  OfferedCard,
+  UpgradeOfferPayload,
+} from './types.js';
 import {
   PLAUSIBILITY_RANGE_PX,
   PLAUSIBILITY_STALE_MS,
@@ -7,6 +17,15 @@ import {
   RESPAWN_INVULN_MAX_MS,
   PLAYER_MAX_HP,
 } from './types.js';
+import {
+  UPGRADE_CARDS,
+  getCardById,
+  computeModifiers,
+  DEFAULT_PLAYER_MODIFIERS,
+  generateRaritySequence,
+  RARITY_SEQUENCE_LENGTH,
+} from './upgrade-cards.js';
+import { randomUUID } from 'node:crypto';
 
 // Phase 14 (D-09): server-side copy of per-map team spawnpoints. The server has no access to the
 // client config barrel (src/common/config/tdm.ts), so this literal is duplicated here. KEEP IN SYNC
@@ -73,6 +92,12 @@ export class GameRoom {
   // --- Phase 14: server-authoritative respawn invuln (D-12, D-14) ---
   #invulnUntil = new Map<string, number>();                                 // playerId → epoch ms until which hits are rejected
 
+  // --- TDM death-card upgrades (server-authoritative) ---
+  #upgradesEnabled: boolean = false;                                        // from lobby config at lobby:start
+  #raritySequence: CardRarity[] = [];                                       // rolled once per match; Nth death → [min(N,len)-1]
+  #cardStacks = new Map<string, Map<string, number>>();                     // playerId → (cardId → level)
+  #pendingOffers = new Map<string, { offerId: string; cardIds: string[]; deadline: number }>(); // playerId → live offer
+
   get state(): MatchState { return this.#state; }
 
   addPlayer(playerId: string, socketId: string): void {
@@ -92,6 +117,9 @@ export class GameRoom {
       this.#hp.delete(playerId);
       this.#playerInfo.delete(playerId);
       this.#spawnPoints.delete(playerId);
+      // Death-card upgrades: a disconnect mid-offer just evaporates (no reconnect support).
+      this.#cardStacks.delete(playerId);
+      this.#pendingOffers.delete(playerId);
     }
     if (this.#players.size === 0) {
       this.clearCountdownTimers();
@@ -102,6 +130,14 @@ export class GameRoom {
 
   getPlayerIdBySocketId(socketId: string): string | undefined {
     return this.#players.get(socketId);
+  }
+
+  /** Reverse lookup for targeted emits (e.g. upgrade:offer goes only to the dying player). */
+  getSocketIdByPlayerId(playerId: string): string | undefined {
+    for (const [socketId, pid] of this.#players) {
+      if (pid === playerId) return socketId;
+    }
+    return undefined;
   }
 
   getOtherSocketIds(socketId: string): string[] {
@@ -310,17 +346,24 @@ export class GameRoom {
   }
 
   /** Schedule a respawn callback after RESPAWN_DELAY_MS unless matchMode is 'last-standing' (D-12).
-   *  Caller (server.ts) supplies the callback that broadcasts RespawnPayload to the lobby room. */
+   *  Caller (server.ts) supplies the callback that broadcasts RespawnPayload to the lobby room.
+   *  The HP restore lives in the callback path (server.ts calls restoreFullHp) — NOT here — because
+   *  the death-card auto-pick must resolve first (a Tough Skin auto-pick raises the max to restore to). */
   public scheduleRespawn(playerId: string, onFire: () => void): void {
     if (this.#matchMode === 'last-standing') return;            // D-12
     const existing = this.#respawnHandles.get(playerId);
     if (existing) clearTimeout(existing);
     const h = setTimeout(() => {
-      this.#hp.set(playerId, this.#maxHp);                       // restore HP at respawn
       this.#respawnHandles.delete(playerId);
       onFire();
     }, RESPAWN_DELAY_MS);
     this.#respawnHandles.set(playerId, h);
+  }
+
+  /** Restore a player to their (upgrade-aware) full HP. Called by server.ts in the respawn
+   *  callback AFTER the pending death-card offer is auto-resolved. */
+  public restoreFullHp(playerId: string): void {
+    this.#hp.set(playerId, this.getMaxHpFor(playerId));
   }
 
   /** D-12 structural support: respawn vs last-standing match mode. No client-facing setter exposed
@@ -372,6 +415,137 @@ export class GameRoom {
    *  Plan 04 is cosmetic-only and does NOT call this — the server cap is the authority). */
   public clearInvuln(playerId: string): void {
     this.#invulnUntil.delete(playerId);
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // TDM death-card upgrades. Server-authoritative: the rarity sequence, the 3
+  // offered cards, selection validation, auto-pick, per-player stacks, and the
+  // PlayerModifiers snapshot are all decided HERE. Clients only render offers
+  // and echo back a cardId.
+  // ──────────────────────────────────────────────────────────────────────────
+
+  public setUpgradesEnabled(enabled: boolean): void { this.#upgradesEnabled = enabled; }
+  public get upgradesEnabled(): boolean { return this.#upgradesEnabled; }
+
+  /** Roll the match's shared rarity sequence. Called once at COUNTDOWN→ACTIVE (TDM + upgrades on). */
+  public initRaritySequence(rand: () => number = Math.random): void {
+    this.#raritySequence = generateRaritySequence(rand);
+  }
+
+  /** Test/observability accessor. */
+  public getRaritySequence(): readonly CardRarity[] { return this.#raritySequence; }
+
+  /** Current snapshot of a player's modifiers from their card stacks. Defaults when no stacks. */
+  public getModifiersFor(playerId: string): PlayerModifiers {
+    const stacks = this.#cardStacks.get(playerId);
+    if (!stacks || stacks.size === 0) return { ...DEFAULT_PLAYER_MODIFIERS };
+    return computeModifiers(stacks);
+  }
+
+  /** Upgrade-aware per-player max HP: room base + flat card bonus (half-heart units). */
+  public getMaxHpFor(playerId: string): number {
+    return this.#maxHp + this.getModifiersFor(playerId).maxHealthBonus;
+  }
+
+  /** Damage multiplier the clamp allows a caster for a given spellType (1 when un-upgraded/unknown). */
+  public getDamageMultFor(playerId: string, spellType: string): number {
+    const mods = this.getModifiersFor(playerId);
+    if (spellType === 'FIRE_BOLT') return mods.fireballDamageMult;
+    if (spellType === 'LIGHTNING_BEAM') return mods.lightningDamageMult;
+    return 1;
+  }
+
+  /** Roll a 3-card offer for a player's CURRENT death count (call AFTER recordDeath). Rarity comes
+   *  from the match sequence; eligible = cards the player hasn't maxed. Thin pool tops up from other
+   *  rarities; a fully maxed-out player gets null (no offer this death). Replaces any stale offer. */
+  public rollUpgradeOffer(playerId: string, rand: () => number = Math.random): UpgradeOfferPayload | null {
+    if (!this.#upgradesEnabled || this.#raritySequence.length === 0) return null;
+    const deathNumber = this.#deaths.get(playerId) ?? 0;
+    if (deathNumber < 1) return null;
+    const rarity = this.#raritySequence[Math.min(deathNumber, RARITY_SEQUENCE_LENGTH) - 1];
+
+    const stacks = this.#cardStacks.get(playerId);
+    const levelOf = (cardId: string): number => stacks?.get(cardId) ?? 0;
+    const eligible = UPGRADE_CARDS.filter((c) => levelOf(c.id) < c.maxLevel);
+    const sameRarity = eligible.filter((c) => c.rarity === rarity);
+    const others = eligible.filter((c) => c.rarity !== rarity);
+
+    const pickRandom = <T>(pool: T[], count: number): T[] => {
+      const copy = [...pool];
+      const out: T[] = [];
+      while (copy.length > 0 && out.length < count) {
+        out.push(copy.splice(Math.floor(rand() * copy.length), 1)[0]);
+      }
+      return out;
+    };
+
+    const chosen = pickRandom(sameRarity, 3);
+    if (chosen.length < 3) chosen.push(...pickRandom(others, 3 - chosen.length));
+    if (chosen.length === 0) return null;
+
+    const offerId = randomUUID();
+    const deadline = Date.now() + RESPAWN_DELAY_MS;
+    this.#pendingOffers.set(playerId, { offerId, cardIds: chosen.map((c) => c.id), deadline });
+
+    const cards: OfferedCard[] = chosen.map((c) => ({
+      cardId: c.id,
+      name: c.name,
+      description: c.description,
+      rarity: c.rarity,
+      category: c.category,
+      currentLevel: levelOf(c.id),
+      maxLevel: c.maxLevel,
+    }));
+    return { offerId, rarity, deathNumber, cards, deadlineTs: deadline };
+  }
+
+  /** Validate + apply a player's pick. Returns the applied result (with the full recomputed
+   *  modifier snapshot) or null on any validation failure (silently dropped by the caller). */
+  public applyUpgradeSelection(
+    playerId: string,
+    offerId: string,
+    cardId: string,
+  ): { cardId: string; newLevel: number; rarity: CardRarity; modifiers: PlayerModifiers } | null {
+    const offer = this.#pendingOffers.get(playerId);
+    if (!offer || offer.offerId !== offerId) return null;
+    if (!offer.cardIds.includes(cardId)) return null;
+    // Small grace past the deadline for socket latency — the auto-pick path consumes the offer
+    // anyway, so this only matters for a select racing the respawn callback.
+    if (Date.now() > offer.deadline + 250) return null;
+    const card = getCardById(cardId);
+    if (!card) return null;
+
+    let stacks = this.#cardStacks.get(playerId);
+    if (!stacks) { stacks = new Map(); this.#cardStacks.set(playerId, stacks); }
+    const current = stacks.get(cardId) ?? 0;
+    if (current >= card.maxLevel) return null;   // defensive — maxed cards are never offered
+
+    const newLevel = current + 1;
+    stacks.set(cardId, newLevel);
+    this.#pendingOffers.delete(playerId);
+    return { cardId, newLevel, rarity: card.rarity, modifiers: computeModifiers(stacks) };
+  }
+
+  /** Auto-pick for an offer that survived to respawn fire. Random card from the stored offer,
+   *  same apply path. Null when there is no pending offer (player already picked / none rolled). */
+  public autoResolveOffer(
+    playerId: string,
+    rand: () => number = Math.random,
+  ): { cardId: string; newLevel: number; rarity: CardRarity; modifiers: PlayerModifiers } | null {
+    const offer = this.#pendingOffers.get(playerId);
+    if (!offer) return null;
+    const cardId = offer.cardIds[Math.floor(rand() * offer.cardIds.length)];
+    // Reuse the validation path but bypass the deadline by applying directly.
+    const card = getCardById(cardId);
+    if (!card) { this.#pendingOffers.delete(playerId); return null; }
+    let stacks = this.#cardStacks.get(playerId);
+    if (!stacks) { stacks = new Map(); this.#cardStacks.set(playerId, stacks); }
+    const current = stacks.get(cardId) ?? 0;
+    if (current >= card.maxLevel) { this.#pendingOffers.delete(playerId); return null; }
+    const newLevel = current + 1;
+    stacks.set(cardId, newLevel);
+    this.#pendingOffers.delete(playerId);
+    return { cardId, newLevel, rarity: card.rarity, modifiers: computeModifiers(stacks) };
   }
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -455,5 +629,9 @@ export class GameRoom {
     // Special-spell pickups: cancel pending spawns + clear state so a rematch starts fresh.
     this.clearPickupTimers();
     this.#pendingPickups.clear();
+    // Death-card upgrades: all stacks/offers/sequence die with the match (rematch starts clean).
+    this.#cardStacks.clear();
+    this.#pendingOffers.clear();
+    this.#raritySequence = [];
   }
 }

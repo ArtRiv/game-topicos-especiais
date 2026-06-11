@@ -30,12 +30,12 @@ export class EarthWallPillar extends Phaser.Physics.Arcade.Sprite {
     return this.#isBeingDestroyed;
   }
 
-  constructor(scene: Phaser.Scene, x: number, y: number) {
+  constructor(scene: Phaser.Scene, x: number, y: number, hpBonus: number = 0, durationMult: number = 1) {
     super(scene, x, y, ASSET_KEYS.EARTH_WALL, 1);
     scene.add.existing(this);
     scene.physics.add.existing(this);
 
-    this.#currentHp = EARTH_WALL_PILLAR_HP;
+    this.#currentHp = EARTH_WALL_PILLAR_HP + hpBonus;
     this.setDepth(4);
 
     const body = this.body as Phaser.Physics.Arcade.Body;
@@ -57,7 +57,7 @@ export class EarthWallPillar extends Phaser.Physics.Arcade.Sprite {
     // Auto-collapse after EARTH_WALL_DURATION ms so abandoned walls don't litter the map.
     // shatter() (combo path) and takeDamage() (HP-driven) skip the auto timer naturally
     // since both call #crumble() which guards on isBeingDestroyed.
-    scene.time.delayedCall(EARTH_WALL_DURATION, () => {
+    scene.time.delayedCall(EARTH_WALL_DURATION * durationMult, () => {
       if (this.active && !this.#isBeingDestroyed) {
         this.#crumble();
       }

@@ -134,6 +134,11 @@ export class LobbyManager {
       return { ok: false, reason: 'Invalid win target' };
     }
 
+    // Validate upgradesEnabled if provided (any boolean is valid; reject non-booleans).
+    if (partial.upgradesEnabled !== undefined && typeof partial.upgradesEnabled !== 'boolean') {
+      return { ok: false, reason: 'Invalid upgrades setting' };
+    }
+
     // Compute new config (partial merge; maxPlayers always derived from format, never trusted from client)
     const nextFormat: LobbyFormat = partial.format ?? lobby.config.format;
     const nextMapId: string = partial.mapId ?? lobby.config.mapId;
@@ -151,6 +156,8 @@ export class LobbyManager {
       // Preserve winTarget when the host changes OTHER settings (without the `?? lobby.config.winTarget`,
       // cycling format/map would silently reset the kill target to 30).
       winTarget: partial.winTarget ?? lobby.config.winTarget ?? 30,
+      // Same preservation pattern for the death-card upgrades toggle (default ON).
+      upgradesEnabled: partial.upgradesEnabled ?? lobby.config.upgradesEnabled ?? true,
     };
     return { ok: true, lobby };
   }

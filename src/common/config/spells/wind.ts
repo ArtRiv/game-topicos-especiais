@@ -1,7 +1,9 @@
 // WIND element — Wind Bolt (projectile) and Air Burst (super-dash spell).
 
 // ─── Wind Bolt (projectile) ───────────────────────────────────────────────────
-export const WIND_BOLT_DAMAGE = 2;
+// Fast projectile with near-fireball speed; matched to fireball's 1 half-heart
+// so its speed isn't also rewarded with extra damage. (event balance pass: was 2)
+export const WIND_BOLT_DAMAGE = 1;
 export const WIND_BOLT_MANA_COST = 2;
 export const WIND_BOLT_COOLDOWN = 700; // ms
 export const WIND_BOLT_SPEED = 900;
@@ -62,9 +64,9 @@ export const WIND_TORNADO_CONE_PUDDLE_AMOUNT = 2;
 // On overlap, displace the puddle along the bolt's velocity. Water moves the
 // most, mud less, lava barely at all (heavy molten rock). One-shot per
 // (bolt, puddle) pairing — tracked via a per-bolt Set on the bolt itself.
-export const WIND_PUDDLE_PUSH_PX_WATER = 18;
-export const WIND_PUDDLE_PUSH_PX_MUD = 6;
-export const WIND_PUDDLE_PUSH_PX_LAVA = 2;
+export const WIND_PUDDLE_PUSH_PX_WATER = 56;
+export const WIND_PUDDLE_PUSH_PX_MUD = 20;
+export const WIND_PUDDLE_PUSH_PX_LAVA = 6;
 // Push glides over this many ms instead of snapping instantly. Water glides
 // fastest, lava is sluggish.
 export const WIND_PUDDLE_PUSH_DURATION_MS_WATER = 220;

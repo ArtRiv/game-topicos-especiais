@@ -3,7 +3,6 @@ import { GameObject } from '../../common/types';
 import { DIRECTION } from '../../common/common';
 import { CUSTOM_EVENTS, EVENT_BUS } from '../../common/event-bus';
 import { BaseGameObjectComponent } from './base-game-object-component';
-import { ManaComponent } from './mana-component';
 import { ActiveSpell } from '../../game-objects/spells/base-spell';
 import { ElementManager } from '../../common/element-manager';
 import { SPELL_ID } from '../../common/common';
@@ -13,16 +12,14 @@ import { RUNTIME_CONFIG } from '../../common/runtime-config';
 import { NetworkManager } from '../../networking/network-manager';
 
 export class SpellCastingComponent extends BaseGameObjectComponent {
-  #manaComponent: ManaComponent;
   #activeSpells: ActiveSpell[];
   // [slot0LastCast, slot1LastCast, slot2LastCast] timestamps in scene.time.now ms
   #lastCastTime: [number, number, number] = [0, 0, 0];
   #scene: Phaser.Scene;
   #spellGroup: Phaser.GameObjects.Group;
 
-  constructor(gameObject: GameObject, manaComponent: ManaComponent) {
+  constructor(gameObject: GameObject) {
     super(gameObject);
-    this.#manaComponent = manaComponent;
     this.#activeSpells = [];
     this.#scene = gameObject.scene;
     this.#spellGroup = this.#scene.add.group();
@@ -34,6 +31,20 @@ export class SpellCastingComponent extends BaseGameObjectComponent {
 
   get activeSpells(): ActiveSpell[] {
     return this.#activeSpells;
+  }
+
+  /** TDM death-card upgrades: per-spell cooldown multiplier read off the carrier's server-synced
+   *  modifiers at check time. Only FIRE_BOLT has a cooldown card in V1; everything else stays 1. */
+  #cooldownMultFor(spellId: string): number {
+    const mods = (this.gameObject as unknown as { spellModifiers?: Record<string, number> }).spellModifiers;
+    if (!mods) return 1;
+    if (spellId === SPELL_ID.FIRE_BOLT)  return mods['fireballCooldownMult'] ?? 1;
+    if (spellId === SPELL_ID.FIRE_AREA)  return mods['fireAreaCooldownMult'] ?? 1;
+    if (spellId === SPELL_ID.WIND_BOLT)  return mods['windBoltCooldownMult'] ?? 1;
+    if (spellId === SPELL_ID.EARTH_BUMP) return mods['earthBumpCooldownMult'] ?? 1;
+    if (spellId === SPELL_ID.WATER_SPIKE) return mods['waterSpikeCooldownMult'] ?? 1;
+    if (spellId === SPELL_ID.WATER_TORNADO) return mods['tornadoCooldownMult'] ?? 1;
+    return 1;
   }
 
   public canCast(slotIndex: number): boolean {
@@ -52,10 +63,9 @@ export class SpellCastingComponent extends BaseGameObjectComponent {
     ) {
       return false;
     }
-    const { manaCost, cooldown } = SPELL_CONFIG[spellId];
+    const { cooldown } = SPELL_CONFIG[spellId];
     const now = this.#scene.time.now;
-    if (now - this.#lastCastTime[slotIndex] < cooldown) return false;
-    if (this.#manaComponent.mana < manaCost) return false;
+    if (now - this.#lastCastTime[slotIndex] < cooldown * this.#cooldownMultFor(spellId)) return false;
     return true;
   }
 
@@ -70,9 +80,7 @@ export class SpellCastingComponent extends BaseGameObjectComponent {
 
     const element = ElementManager.instance.activeElement;
     const spellId = SPELL_SLOT_REGISTRY[element]![slotIndex]!;
-    const { manaCost } = SPELL_CONFIG[spellId];
 
-    this.#manaComponent.consume(manaCost);
     this.#lastCastTime[slotIndex] = this.#scene.time.now;
 
     // Cardinal-axis snap: when the cursor is within a few pixels of the caster's centre
@@ -181,7 +189,7 @@ export class SpellCastingComponent extends BaseGameObjectComponent {
     const element = ElementManager.instance.activeElement;
     const spellId = SPELL_SLOT_REGISTRY[element]?.[slotIndex];
     if (!spellId) return 1;
-    const { cooldown } = SPELL_CONFIG[spellId];
+    const cooldown = SPELL_CONFIG[spellId].cooldown * this.#cooldownMultFor(spellId);
     const elapsed = this.#scene.time.now - this.#lastCastTime[slotIndex];
     return elapsed >= cooldown ? 1 : elapsed / cooldown;
   }

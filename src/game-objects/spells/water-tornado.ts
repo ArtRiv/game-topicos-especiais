@@ -48,6 +48,8 @@ export class WaterTornado extends Phaser.Physics.Arcade.Sprite implements Active
   // destroyed mid-combo (it calls back into clearVoidPortalMask).
   #darkPortalMask: Phaser.Display.Masks.BitmapMask | undefined;
   #voidPortalSourceOrb: VoidOrb | undefined;
+  #pullMult: number = 1;
+  #durationMult: number = 1;
 
   get baseDamage(): number {
     return RUNTIME_CONFIG.WATER_TORNADO_DAMAGE_PER_TICK;
@@ -57,10 +59,15 @@ export class WaterTornado extends Phaser.Physics.Arcade.Sprite implements Active
     return this.#phase === 'loop' && !this.#isDying;
   }
 
-  constructor(scene: Phaser.Scene, x: number, y: number) {
+  constructor(scene: Phaser.Scene, x: number, y: number, caster?: { spellModifiers?: { tornadoPullMult?: number; tornadoSizeMult?: number; tornadoDurationMult?: number } }) {
     // Offset y slightly if needed so it sits on the ground.
     // The frames are 128x128. Let's offset by half height (64px).
     super(scene, x, y - 48, ASSET_KEYS.WATER_TORNADO_STARTUP_LOOP);
+    const mods = caster?.spellModifiers;
+    this.#pullMult = mods?.tornadoPullMult ?? 1;
+    this.#durationMult = mods?.tornadoDurationMult ?? 1;
+    const sizeMult = mods?.tornadoSizeMult ?? 1;
+    if (sizeMult !== 1) this.setScale(sizeMult);
     scene.add.existing(this);
     scene.physics.add.existing(this);
 
@@ -127,7 +134,7 @@ export class WaterTornado extends Phaser.Physics.Arcade.Sprite implements Active
         // Pull the orbit radius toward the target each frame instead of
         // using the player's entry distance as their orbit. Frame-rate
         // independent exponential lerp: k = 1 - e^(-rate*dt).
-        const k = 1 - Math.exp(-WATER_TORNADO_SPIN_PULL_RATE * dt);
+        const k = 1 - Math.exp(-WATER_TORNADO_SPIN_PULL_RATE * this.#pullMult * dt);
         const orbit = dist + (WATER_TORNADO_SPIN_TARGET_ORBIT - dist) * k;
         const angle = (dist > 0.001 ? Math.atan2(dy, dx) : 0) + WATER_TORNADO_SPIN_OMEGA * dt;
         localPlayer.x = centerX + Math.cos(angle) * orbit;
@@ -205,8 +212,14 @@ export class WaterTornado extends Phaser.Physics.Arcade.Sprite implements Active
     this.#enemiesInArea.delete(enemy);
   }
 
+  // ── PvP tick damage (see TickAoeSpell) ──────────────────────────────────────
+  #pvpTickSeq = 0;
+  get pvpTickSeq(): number { return this.#pvpTickSeq; }
+  get isPvpDamageActive(): boolean { return this.isDamageActive; }
+
   #applyTickDamage(): void {
     if (!this.isDamageActive) return;
+    this.#pvpTickSeq += 1;
     for (const enemy of this.#enemiesInArea) {
       if (enemy.active && !enemy.isDefeated) {
         enemy.hit(DIRECTION.DOWN, this.baseDamage);
@@ -266,7 +279,7 @@ export class WaterTornado extends Phaser.Physics.Arcade.Sprite implements Active
     });
 
     // Handle duration
-    this.#durationTimer = this.scene.time.delayedCall(WATER_TORNADO_DURATION, () => {
+    this.#durationTimer = this.scene.time.delayedCall(WATER_TORNADO_DURATION * this.#durationMult, () => {
       if (this.active) this.#startFade();
     });
   }
@@ -311,4 +324,5 @@ export class WaterTornado extends Phaser.Physics.Arcade.Sprite implements Active
 }
 
 import { registerSpell } from './spell-registry';
-registerSpell(SPELL_ID.WATER_TORNADO, (scene, _x, _y, tx, ty) => new WaterTornado(scene, tx, ty));
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+registerSpell(SPELL_ID.WATER_TORNADO, (scene, _x, _y, tx, ty, _el, caster) => new WaterTornado(scene, tx, ty, caster as any));

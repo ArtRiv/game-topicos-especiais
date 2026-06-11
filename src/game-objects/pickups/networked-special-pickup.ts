@@ -3,6 +3,7 @@ import { ASSET_KEYS } from '../../common/assets';
 import { SPELL_ID } from '../../common/common';
 import { DARK_BOLT_PICKUP_CHARGES } from '../../common/config/spells/dark-bolt';
 import { VOID_ORB_PICKUP_CHARGES } from '../../common/config/spells/void-orb';
+import { STAR_SHIELD_PICKUP_CHARGES } from '../spells/star-shield';
 import { SpecialSpellInventory } from '../../common/special-spell-inventory';
 
 /**
@@ -17,20 +18,24 @@ import { SpecialSpellInventory } from '../../common/special-spell-inventory';
  * Each pickup grants exactly its spell's pickup-charge count (1-use in practice for
  * the event: the inventory holds one special at a time and a charge is spent per cast).
  */
-const SPELL_VISUALS: Record<string, { asset: string; scale: number; charges: number; spellId: string }> = {
+type PickupSpec = { asset: string; scale: number; charges: number; spellId: string; frame?: number };
+const SPELL_VISUALS: Record<string, PickupSpec> = {
   DARK_BOLT: { asset: ASSET_KEYS.DARK_BOLT_BM_VFX3, scale: 0.4, charges: DARK_BOLT_PICKUP_CHARGES, spellId: SPELL_ID.DARK_BOLT },
   VOID_ORB: { asset: ASSET_KEYS.VOID_ORB_BM_LOOP, scale: 0.35, charges: VOID_ORB_PICKUP_CHARGES, spellId: SPELL_ID.VOID_ORB },
+  // Frame 12 of the 15-frame Star Shield sheet is the fully-formed bubble (the
+  // LOOP frame), which reads best as a static pickup icon.
+  STAR_SHIELD: { asset: ASSET_KEYS.STAR_SHIELD, scale: 0.3, charges: STAR_SHIELD_PICKUP_CHARGES, spellId: SPELL_ID.STAR_SHIELD, frame: 12 },
 };
 
 export class NetworkedSpecialPickup extends Phaser.Physics.Arcade.Sprite {
   readonly pickupId: string;
-  #spec: { asset: string; scale: number; charges: number; spellId: string };
+  #spec: PickupSpec;
   #bobTween?: Phaser.Tweens.Tween;
   #pulseTween?: Phaser.Tweens.Tween;
 
   constructor(scene: Phaser.Scene, pickupId: string, spellType: string, x: number, y: number) {
     const spec = SPELL_VISUALS[spellType] ?? SPELL_VISUALS.DARK_BOLT;
-    super(scene, x, y, spec.asset, 0);
+    super(scene, x, y, spec.asset, spec.frame ?? 0);
     this.pickupId = pickupId;
     this.#spec = spec;
 
