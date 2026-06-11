@@ -106,6 +106,10 @@
   </head>
   <body>
     <div id="game-container"></div>
+    <!-- Google Identity Services — required by the Feira de Jogos tijolinhos credit flow
+         (src/networking/award-tijolinhos.ts). Same tag the platform docs and the Expelled
+         game use. async: the game must not block on it; the award module no-ops if absent. -->
+    <script src="https://accounts.google.com/gsi/client" async></script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

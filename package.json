@@ -24,7 +24,7 @@
 		"@devshareacademy/tsconfig": "0.0.3",
 		"@typescript-eslint/eslint-plugin": "8.20.0",
 		"@typescript-eslint/parser": "8.20.0",
-		"concurrently": "^9.2.1",
+		"concurrently": "^10.0.3",
 		"eslint": "^9.39.4",
 		"eslint-config-prettier": "10.0.1",
 		"eslint-plugin-prettier": "5.2.3",

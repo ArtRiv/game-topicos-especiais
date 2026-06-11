@@ -71,7 +71,11 @@ import '../game-objects/spells/dash-vfx';
 // Star Shield — side-effect import registers SPELL_ID.STAR_SHIELD factory.
 import { STAR_SHIELD_REFLECT_SPEED_MULT } from '../game-objects/spells/star-shield';
 import { VoidOrb } from '../game-objects/spells/void-orb';
-import { DarkBolt, DARK_BOLT_ENV_LIGHT_TEXTURE_KEY, ensureDarkBoltEnvLightTexture } from '../game-objects/spells/dark-bolt';
+import {
+  DarkBolt,
+  DARK_BOLT_ENV_LIGHT_TEXTURE_KEY,
+  ensureDarkBoltEnvLightTexture,
+} from '../game-objects/spells/dark-bolt';
 import { LightningBurstCombo, LightningStrikeCombo } from '../game-objects/spells/lightning-combo';
 import { SteamBurst } from '../game-objects/spells/steam-burst';
 import { Puddle } from '../game-objects/spells/puddle';
@@ -101,7 +105,31 @@ import {
 import { NetworkManager } from '../networking/network-manager';
 import { RemoteInputComponent } from '../components/input/remote-input-component';
 import { MusicManager } from '../common/music-manager';
-import type { PlayerUpdateBroadcast, RoomTransitionPayload, PlayerDisconnectedPayload, PlayerUpdatePayload, SpellCastBroadcast, PlayerInfo, BreathStartBroadcast, BreathUpdateBroadcast, BreathEndBroadcast, EarthWallPillarBroadcast, EarthWallPillarDestroyBroadcast, MatchStateChangedPayload, MatchCountdownTickPayload, DamageConfirmedPayload, SpellDestroyedPayload, EliminationPayload, RespawnPayload, MatchConfig, MatchEndedPayload, MatchSpawnsPayload, PickupSpawnedPayload, PickupCollectedPayload, UpgradeOfferPayload, UpgradeAppliedPayload } from '../networking/types';
+import type {
+  PlayerUpdateBroadcast,
+  RoomTransitionPayload,
+  PlayerDisconnectedPayload,
+  PlayerUpdatePayload,
+  SpellCastBroadcast,
+  PlayerInfo,
+  BreathStartBroadcast,
+  BreathUpdateBroadcast,
+  BreathEndBroadcast,
+  EarthWallPillarBroadcast,
+  EarthWallPillarDestroyBroadcast,
+  MatchStateChangedPayload,
+  MatchCountdownTickPayload,
+  DamageConfirmedPayload,
+  SpellDestroyedPayload,
+  EliminationPayload,
+  RespawnPayload,
+  MatchConfig,
+  MatchEndedPayload,
+  TdmPlayerStat,
+  MatchSpawnsPayload,
+  PickupSpawnedPayload,
+  PickupCollectedPayload,
+} from '../networking/types';
 import { RUNTIME_CONFIG } from '../common/runtime-config';
 import { pickStartSpawn } from '../common/spawn-assignment';
 import type { Direction, CharacterAnimation } from '../common/types';
@@ -120,8 +148,12 @@ function spawnEarthBlockSplash(scene: Phaser.Scene, x: number, y: number): void 
   for (let i = 0; i < particleCount; i++) {
     const isWater = i % 2 === 0;
     const color = isWater
-      ? (Math.random() < 0.5 ? 0x88c4ff : 0xaaddff) // cyan / light blue
-      : (Math.random() < 0.5 ? 0x6b4c2a : 0x4a3520); // light/dark mud brown
+      ? Math.random() < 0.5
+        ? 0x88c4ff
+        : 0xaaddff // cyan / light blue
+      : Math.random() < 0.5
+        ? 0x6b4c2a
+        : 0x4a3520; // light/dark mud brown
     const size = isWater ? 2 : 2; // same size, color tells them apart
 
     const g = scene.add.graphics({ x, y });
@@ -183,9 +215,9 @@ export class GameScene extends Phaser.Scene {
   #fireBreathDamageTimer: Phaser.Time.TimerEvent | undefined;
   #activeFireBreathAreaCombos: Set<FireArea> = new Set();
   // ── Charged Lightning Ray (THUNDER slot-1 hold) state ──────────────────────
-  #chargingRay = false;            // true while the player holds to charge
-  #chargeRayStartMs = 0;           // scene.time.now when the hold began
-  #chargeRayAngle = 0;             // aim angle LOCKED at charge start (radians)
+  #chargingRay = false; // true while the player holds to charge
+  #chargeRayStartMs = 0; // scene.time.now when the hold began
+  #chargeRayAngle = 0; // aim angle LOCKED at charge start (radians)
   #chargeRayGlowFX: { outerStrength: number } | undefined; // pulsing caster glow during charge
   #lastChargeRayCastMs = -Infinity; // cooldown clock (release time of the last ray)
   #earthWallGroup!: Phaser.GameObjects.Group;
@@ -223,6 +255,11 @@ export class GameScene extends Phaser.Scene {
   // is in this set, the interpolation loop skips its state/animation updates so DIE_DOWN stays on screen.
   // Set on #onElimination, cleared on #onRespawn.
   #deadPlayerIds: Set<string> = new Set();
+  // Players that left the match. Guards #onRemotePlayerUpdate's lazy-spawn fallback —
+  // position packets travel over WebRTC (star: relayed via host) while the disconnect
+  // notice comes over the server socket, so a stale pos packet can arrive AFTER
+  // game:player-disconnected and would otherwise resurrect a frozen ghost avatar.
+  #disconnectedPlayerIds: Set<string> = new Set();
   // Special-spell pickups: pickupId → sprite. Spawned from server pickup:spawned broadcasts, removed
   // on pickup:collected (so all clients agree). Cleared on shutdown.
   #pickups: Map<string, NetworkedSpecialPickup> = new Map();
@@ -288,7 +325,10 @@ export class GameScene extends Phaser.Scene {
   // lets a destroyed tornado's state be GC'd automatically; the inner Map
   // entries for destroyed pillars are stale-but-harmless (we re-check
   // pillar.active each frame before damaging).
-  #tornadoGrindState: WeakMap<WaterTornado, Map<EarthWallPillar, { lastErosion: number; lastSplash: number; lastMud: number }>> = new WeakMap();
+  #tornadoGrindState: WeakMap<
+    WaterTornado,
+    Map<EarthWallPillar, { lastErosion: number; lastSplash: number; lastMud: number }>
+  > = new WeakMap();
   // Lava-puddle damage cadence per (puddle, character). Both keys are
   // WeakMap so GC reclaims state for destroyed puddles / characters
   // automatically — no explicit cleanup needed.
@@ -343,6 +383,9 @@ export class GameScene extends Phaser.Scene {
     this.#setupNetworking();
 
     this.scene.launch(SCENE_KEYS.UI_SCENE);
+
+    // DEV: on-screen "WIN" button that fakes the victory screen (CONFIG.DEV_VICTORY_BUTTON).
+    if (CONFIG.DEV_VICTORY_BUTTON) this.#createDevVictoryButton();
 
     // Phase 14 bugfix (#1/#2): run the match-start intro locally on boot (the server's
     // COUNTDOWN→ACTIVE window already elapsed during the LoadingScene cinematic, so the
@@ -452,8 +495,7 @@ export class GameScene extends Phaser.Scene {
       ...(this.#remoteSpellGroup?.getChildren() ?? []),
     ];
     const bolts = spellChildren.filter(
-      (s): s is WindBolt =>
-        s instanceof WindBolt && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+      (s): s is WindBolt => s instanceof WindBolt && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
     );
     if (bolts.length === 0) return;
 
@@ -491,15 +533,11 @@ export class GameScene extends Phaser.Scene {
     ];
     const bolts = spellChildren.filter(
       (s): s is WindBolt =>
-        s instanceof WindBolt &&
-        s.active &&
-        !s.isFlameSlash &&
-        !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+        s instanceof WindBolt && s.active && !s.isFlameSlash && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
     );
     if (bolts.length === 0) return;
     const fireAreas = spellChildren.filter(
-      (s): s is FireArea =>
-        s instanceof FireArea && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+      (s): s is FireArea => s instanceof FireArea && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
     );
     if (fireAreas.length === 0) return;
 
@@ -531,18 +569,13 @@ export class GameScene extends Phaser.Scene {
   #updateWindBoltFireBoltSplitCombo(): void {
     if (!this.#player?.spellCastingComponent?.spellGroup) return;
     const localGroup = this.#player.spellCastingComponent.spellGroup;
-    const spellChildren = [
-      ...localGroup.getChildren(),
-      ...(this.#remoteSpellGroup?.getChildren() ?? []),
-    ];
+    const spellChildren = [...localGroup.getChildren(), ...(this.#remoteSpellGroup?.getChildren() ?? [])];
     const winds = spellChildren.filter(
-      (s): s is WindBolt =>
-        s instanceof WindBolt && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+      (s): s is WindBolt => s instanceof WindBolt && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
     );
     if (winds.length === 0) return;
     const fires = spellChildren.filter(
-      (s): s is FireBolt =>
-        s instanceof FireBolt && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+      (s): s is FireBolt => s instanceof FireBolt && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
     );
     if (fires.length === 0) return;
 
@@ -610,8 +643,7 @@ export class GameScene extends Phaser.Scene {
       ...(this.#remoteSpellGroup?.getChildren() ?? []),
     ];
     const winds = spellChildren.filter(
-      (s): s is WindBolt =>
-        s instanceof WindBolt && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+      (s): s is WindBolt => s instanceof WindBolt && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
     );
     if (winds.length === 0) return;
     const tornadoes = spellChildren.filter(
@@ -674,8 +706,7 @@ export class GameScene extends Phaser.Scene {
       ...(this.#remoteSpellGroup?.getChildren() ?? []),
     ];
     const winds = spellChildren.filter(
-      (s): s is WindBolt =>
-        s instanceof WindBolt && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+      (s): s is WindBolt => s instanceof WindBolt && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
     );
     if (winds.length === 0) return;
 
@@ -696,13 +727,17 @@ export class GameScene extends Phaser.Scene {
 
         const windPushMult = (wind as WindBolt).pushMult ?? 1;
         const pushPx =
-          (puddle.kind === 'water' ? WIND_PUDDLE_PUSH_PX_WATER :
-          puddle.kind === 'mud' ? WIND_PUDDLE_PUSH_PX_MUD :
-          WIND_PUDDLE_PUSH_PX_LAVA) * windPushMult;
+          (puddle.kind === 'water'
+            ? WIND_PUDDLE_PUSH_PX_WATER
+            : puddle.kind === 'mud'
+              ? WIND_PUDDLE_PUSH_PX_MUD
+              : WIND_PUDDLE_PUSH_PX_LAVA) * windPushMult;
         const pushMs =
-          puddle.kind === 'water' ? WIND_PUDDLE_PUSH_DURATION_MS_WATER :
-          puddle.kind === 'mud' ? WIND_PUDDLE_PUSH_DURATION_MS_MUD :
-          WIND_PUDDLE_PUSH_DURATION_MS_LAVA;
+          puddle.kind === 'water'
+            ? WIND_PUDDLE_PUSH_DURATION_MS_WATER
+            : puddle.kind === 'mud'
+              ? WIND_PUDDLE_PUSH_DURATION_MS_MUD
+              : WIND_PUDDLE_PUSH_DURATION_MS_LAVA;
         puddle.nudgeBy(dirX * pushPx, dirY * pushPx, pushMs);
         pushedSet.add(puddle);
       }
@@ -797,8 +832,8 @@ export class GameScene extends Phaser.Scene {
 
     const now = this.time.now;
     const EROSION_INTERVAL_MS = 500; // 1 HP per pillar per 500ms (≈2.5s to break a 5-HP pillar)
-    const SPLASH_INTERVAL_MS = 180;  // visual particle cadence at the contact
-    const MUD_INTERVAL_MS = 600;     // periodic mud-drip cadence at the contact
+    const SPLASH_INTERVAL_MS = 180; // visual particle cadence at the contact
+    const MUD_INTERVAL_MS = 600; // periodic mud-drip cadence at the contact
 
     for (const tornado of tornadoes) {
       let perPillarState = this.#tornadoGrindState.get(tornado);
@@ -888,10 +923,7 @@ export class GameScene extends Phaser.Scene {
     if (lavas.length === 0) return;
 
     const localGroup = this.#player?.spellCastingComponent?.spellGroup;
-    const all = [
-      ...(localGroup?.getChildren() ?? []),
-      ...(this.#remoteSpellGroup?.getChildren() ?? []),
-    ];
+    const all = [...(localGroup?.getChildren() ?? []), ...(this.#remoteSpellGroup?.getChildren() ?? [])];
     const tornadoes = all.filter(
       (s): s is WaterTornado =>
         s instanceof WaterTornado && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
@@ -909,8 +941,7 @@ export class GameScene extends Phaser.Scene {
     const spawnSteamAroundLava = (lava: Puddle, count: number): void => {
       for (let i = 0; i < count; i++) {
         // sqrt(random) for area-uniform offset within the lava's visual disc.
-        const dist =
-          Math.sqrt(Math.random()) * lava.radius * CONFIG.LAVA_STEAM_SPAWN_RADIUS_FRAC;
+        const dist = Math.sqrt(Math.random()) * lava.radius * CONFIG.LAVA_STEAM_SPAWN_RADIUS_FRAC;
         const angle = Math.random() * Math.PI * 2;
         spawnSteam(lava.x + Math.cos(angle) * dist, lava.y + Math.sin(angle) * dist);
       }
@@ -982,13 +1013,9 @@ export class GameScene extends Phaser.Scene {
     if (evapPuddles.length === 0) return;
 
     const localGroup = this.#player?.spellCastingComponent?.spellGroup;
-    const all = [
-      ...(localGroup?.getChildren() ?? []),
-      ...(this.#remoteSpellGroup?.getChildren() ?? []),
-    ];
+    const all = [...(localGroup?.getChildren() ?? []), ...(this.#remoteSpellGroup?.getChildren() ?? [])];
     const areas = all.filter(
-      (s): s is FireArea =>
-        s instanceof FireArea && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+      (s): s is FireArea => s instanceof FireArea && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
     );
     if (areas.length === 0) return;
 
@@ -999,21 +1026,15 @@ export class GameScene extends Phaser.Scene {
     };
     const spawnSteamAround = (puddle: Puddle, count: number): void => {
       for (let i = 0; i < count; i++) {
-        const dist =
-          Math.sqrt(Math.random()) * puddle.radius * CONFIG.FIRE_AREA_STEAM_SPAWN_RADIUS_FRAC;
+        const dist = Math.sqrt(Math.random()) * puddle.radius * CONFIG.FIRE_AREA_STEAM_SPAWN_RADIUS_FRAC;
         const angle = Math.random() * Math.PI * 2;
-        spawnSteamAt(
-          puddle.x + Math.cos(angle) * dist,
-          puddle.y + Math.sin(angle) * dist,
-        );
+        spawnSteamAt(puddle.x + Math.cos(angle) * dist, puddle.y + Math.sin(angle) * dist);
       }
     };
 
     for (const puddle of evapPuddles) {
       if (!puddle.active) continue;
-      const fullMs = puddle.kind === 'water'
-        ? CONFIG.FIRE_AREA_WATER_EVAPORATE_MS
-        : CONFIG.FIRE_AREA_MUD_EVAPORATE_MS;
+      const fullMs = puddle.kind === 'water' ? CONFIG.FIRE_AREA_WATER_EVAPORATE_MS : CONFIG.FIRE_AREA_MUD_EVAPORATE_MS;
       let isBeingEvaporated = false;
       let evaporatedThisFrame = false;
       for (const area of areas) {
@@ -1147,7 +1168,8 @@ export class GameScene extends Phaser.Scene {
       (s): s is FireBolt => s instanceof FireBolt && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
     );
     const strikes = all.filter(
-      (s): s is ThunderStrike => s instanceof ThunderStrike && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+      (s): s is ThunderStrike =>
+        s instanceof ThunderStrike && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
     );
     if (fireBolts.length === 0 || strikes.length === 0) return;
     for (const bolt of fireBolts) {
@@ -1229,7 +1251,8 @@ export class GameScene extends Phaser.Scene {
     // lower toward 0 to bury more of the funnel into the portal.
     const DARK_COMBO_TORNADO_LIFT = 12;
     const tornadoes = all.filter(
-      (s): s is WaterTornado => s instanceof WaterTornado && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+      (s): s is WaterTornado =>
+        s instanceof WaterTornado && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
     );
     for (const orb of orbs) {
       const orbBody = orb.body as Phaser.Physics.Arcade.Body;
@@ -1319,9 +1342,7 @@ export class GameScene extends Phaser.Scene {
       // active spike and check overlap via display bounds (works whether
       // the body is enabled or not).
       // -----------------------------------------------------------------
-      const waterSpikes = all.filter(
-        (s): s is WaterSpike => s instanceof WaterSpike && s.active,
-      );
+      const waterSpikes = all.filter((s): s is WaterSpike => s instanceof WaterSpike && s.active);
       let maskAppliedToSpike: WaterSpike | undefined;
       for (const spike of waterSpikes) {
         // Body-tolerant overlap: use the spike's display bounds (which
@@ -1358,9 +1379,7 @@ export class GameScene extends Phaser.Scene {
         // toggle the mask off mid-effect.
         const orbBody2 = orb.body as Phaser.Physics.Arcade.Body | null;
         const bounds = previousSpike.getBounds();
-        const stillNearby = orbBody2
-          ? bounds.contains(orbBody2.center.x, orbBody2.center.y)
-          : false;
+        const stillNearby = orbBody2 ? bounds.contains(orbBody2.center.x, orbBody2.center.y) : false;
         if (!stillNearby) {
           previousSpike.clearVoidPortalMask();
         } else {
@@ -1754,9 +1773,7 @@ export class GameScene extends Phaser.Scene {
     // after the bolt animation + REACTION_BUFFER_MS, but the combo fires on
     // *visual* impact (the moment the strike sprite lands). Same pattern as
     // the ThunderStrike + Puddle combo below.
-    const strikes = all.filter(
-      (s): s is ThunderStrike => s instanceof ThunderStrike && s.active,
-    );
+    const strikes = all.filter((s): s is ThunderStrike => s instanceof ThunderStrike && s.active);
     const areas = all.filter(
       (s): s is FireArea => s instanceof FireArea && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
     );
@@ -1803,17 +1820,12 @@ export class GameScene extends Phaser.Scene {
   #updateThunderStrikePuddleCombo(): void {
     if (Puddle.all.size === 0) return;
     const localGroup = this.#player?.spellCastingComponent?.spellGroup;
-    const all = [
-      ...(localGroup?.getChildren() ?? []),
-      ...(this.#remoteSpellGroup?.getChildren() ?? []),
-    ];
+    const all = [...(localGroup?.getChildren() ?? []), ...(this.#remoteSpellGroup?.getChildren() ?? [])];
     // Splash + electrify trigger as soon as the strike spawns, independent of when its
     // damage body activates (REACTION_BUFFER_MS). Decoupled so splash VFX timing can be
     // tuned separately from damage timing — overlap is now a geometric check, not a
     // physics-enabled check.
-    const strikes = all.filter(
-      (s): s is ThunderStrike => s instanceof ThunderStrike && s.active,
-    );
+    const strikes = all.filter((s): s is ThunderStrike => s instanceof ThunderStrike && s.active);
     if (strikes.length === 0) return;
 
     for (const strike of strikes) {
@@ -1855,7 +1867,8 @@ export class GameScene extends Phaser.Scene {
       // fires below; restore the splash sprite/anim if you re-add the source PNG.
       const splashX = strike.x + RUNTIME_CONFIG.THUNDER_PUDDLE_SPLASH_X_OFFSET_PX;
       const splashY = strike.y + RUNTIME_CONFIG.THUNDER_PUDDLE_SPLASH_Y_OFFSET_PX;
-      void splashX; void splashY;
+      void splashX;
+      void splashY;
       if (this.textures.exists(ASSET_KEYS.PIXELART_SPLASH)) {
         const splash = this.add.sprite(splashX, splashY, ASSET_KEYS.PIXELART_SPLASH, 0);
         splash.setDepth(2.5);
@@ -1872,11 +1885,7 @@ export class GameScene extends Phaser.Scene {
       const isLocalCast = strikeCasterId === undefined || strikeCasterId === localId;
       const targetGroup = isLocalCast ? localGroup : this.#remoteSpellGroup;
       for (const p of hit) {
-        p.electrify(
-          RUNTIME_CONFIG.ELEC_PUDDLE_CHARGE_MAX,
-          targetGroup,
-          strikeCasterId ?? localId,
-        );
+        p.electrify(RUNTIME_CONFIG.ELEC_PUDDLE_CHARGE_MAX, targetGroup, strikeCasterId ?? localId);
         // MUD puddle ⇒ snare every character currently standing in it. Water
         // puddles still get the full damage treatment but no snare; mud trades
         // raw damage for control. Movement-only — snared characters can still
@@ -2074,11 +2083,18 @@ export class GameScene extends Phaser.Scene {
     if (this.#controls.isDownDown) dy += 1;
     if (dx === 0 && dy === 0) {
       switch (this.#player.direction) {
-        case DIRECTION.LEFT:  dx = -1; break;
-        case DIRECTION.RIGHT: dx = 1;  break;
-        case DIRECTION.UP:    dy = -1; break;
+        case DIRECTION.LEFT:
+          dx = -1;
+          break;
+        case DIRECTION.RIGHT:
+          dx = 1;
+          break;
+        case DIRECTION.UP:
+          dy = -1;
+          break;
         case DIRECTION.DOWN:
-        default:              dy = 1;
+        default:
+          dy = 1;
       }
     }
     const len = Math.hypot(dx, dy) || 1;
@@ -2126,9 +2142,14 @@ export class GameScene extends Phaser.Scene {
       targetX = this.#player.x + (dx * range) / d;
       targetY = this.#player.y + (dy * range) / d;
     }
-    const direction = Math.abs(dx) >= Math.abs(dy)
-      ? (dx >= 0 ? DIRECTION.RIGHT : DIRECTION.LEFT)
-      : (dy >= 0 ? DIRECTION.DOWN : DIRECTION.UP);
+    const direction =
+      Math.abs(dx) >= Math.abs(dy)
+        ? dx >= 0
+          ? DIRECTION.RIGHT
+          : DIRECTION.LEFT
+        : dy >= 0
+          ? DIRECTION.DOWN
+          : DIRECTION.UP;
 
     // DarkBolt gets a windup — the player locks in place and glows red/black
     // for ~380ms before the bolt actually fires. Telegraphs the spell so it
@@ -2160,7 +2181,12 @@ export class GameScene extends Phaser.Scene {
     // handle + tween so #endDarkBoltWindup can tear them down cleanly.
     type PreFXCapable = Phaser.GameObjects.Sprite & {
       preFX?: {
-        addGlow: (color?: number, outerStrength?: number, innerStrength?: number, knockout?: boolean) => { color: number };
+        addGlow: (
+          color?: number,
+          outerStrength?: number,
+          innerStrength?: number,
+          knockout?: boolean,
+        ) => { color: number };
         remove: (fx: unknown) => void;
       };
     };
@@ -2191,8 +2217,12 @@ export class GameScene extends Phaser.Scene {
           const t = (target as { t: number }).t;
           const a = CONFIG.DARK_BOLT_CASTER_GLOW_COLOR_A;
           const b = CONFIG.DARK_BOLT_CASTER_GLOW_COLOR_B;
-          const ar = (a >> 16) & 0xff, ag = (a >> 8) & 0xff, ab = a & 0xff;
-          const br = (b >> 16) & 0xff, bg = (b >> 8) & 0xff, bb = b & 0xff;
+          const ar = (a >> 16) & 0xff,
+            ag = (a >> 8) & 0xff,
+            ab = a & 0xff;
+          const br = (b >> 16) & 0xff,
+            bg = (b >> 8) & 0xff,
+            bb = b & 0xff;
           const r = Math.round(ar + (br - ar) * t);
           const g = Math.round(ag + (bg - ag) * t);
           const bl = Math.round(ab + (bb - ab) * t);
@@ -2272,7 +2302,9 @@ export class GameScene extends Phaser.Scene {
     try {
       const localId = NetworkManager.getInstance().localPlayerId;
       if (localId) spell.gameObject.setData('casterId', localId);
-    } catch { /* offline */ }
+    } catch {
+      /* offline */
+    }
     EVENT_BUS.emit(CUSTOM_EVENTS.SPELL_CAST, {
       spellInstanceId,
       spellId: activeSpellId,
@@ -2338,16 +2370,16 @@ export class GameScene extends Phaser.Scene {
     const x = Math.round(this.#player.x);
     const y = Math.round(this.#player.y);
     this.#capturedPickupSpawns.push({ x, y });
-    const body = this.#capturedPickupSpawns
-      .map((p) => `  { x: ${p.x}, y: ${p.y} },`)
-      .join('\n');
+    const body = this.#capturedPickupSpawns.map((p) => `  { x: ${p.x}, y: ${p.y} },`).join('\n');
     const snippet = `const PICKUP_SPAWNS = [\n${body}\n] as const;`;
     console.log(`[PICKUP-SPAWN] captured #${this.#capturedPickupSpawns.length} at { x: ${x}, y: ${y} }`);
     console.log(snippet);
     // Best-effort clipboard copy (ignored if the page lacks clipboard permission).
     try {
       void navigator.clipboard?.writeText(snippet);
-    } catch { /* clipboard unavailable — console output is the fallback */ }
+    } catch {
+      /* clipboard unavailable — console output is the fallback */
+    }
   }
 
   #updateFireBreathChanneling(): void {
@@ -2371,7 +2403,11 @@ export class GameScene extends Phaser.Scene {
         this.#activeFireBreath.beginEnding();
         this.#fireBreathDamageTimer?.destroy();
         this.#controls.isMovementLocked = false;
-        try { NetworkManager.getInstance().sendBreathEnd(); } catch { /* offline */ }
+        try {
+          NetworkManager.getInstance().sendBreathEnd();
+        } catch {
+          /* offline */
+        }
       }
       return;
     }
@@ -2415,7 +2451,9 @@ export class GameScene extends Phaser.Scene {
           targetX: controls.mouseWorldX,
           targetY: controls.mouseWorldY,
         });
-      } catch { /* offline */ }
+      } catch {
+        /* offline */
+      }
 
       return;
     }
@@ -2438,7 +2476,9 @@ export class GameScene extends Phaser.Scene {
         targetX: controls.mouseWorldX,
         targetY: controls.mouseWorldY,
       });
-    } catch { /* offline */ }
+    } catch {
+      /* offline */
+    }
   }
 
   #updateFireBreathAreaCombo(): void {
@@ -2536,10 +2576,7 @@ export class GameScene extends Phaser.Scene {
       if (now - this.#lastChargeRayCastMs < RUNTIME_CONFIG.CHARGED_RAY_COOLDOWN_MS * rayCdMult) return;
 
       // Lock the aim direction at the cursor NOW — it never changes again.
-      this.#chargeRayAngle = Math.atan2(
-        controls.mouseWorldY - this.#player.y,
-        controls.mouseWorldX - this.#player.x,
-      );
+      this.#chargeRayAngle = Math.atan2(controls.mouseWorldY - this.#player.y, controls.mouseWorldX - this.#player.x);
       this.#chargingRay = true;
       this.#chargeRayStartMs = now;
       this.#controls.isMovementLocked = true;
@@ -2559,8 +2596,8 @@ export class GameScene extends Phaser.Scene {
         this.#chargeRayGlowFX.outerStrength =
           RUNTIME_CONFIG.CHARGED_RAY_CHARGE_MAX_MS === 0
             ? CONFIG.CHARGED_RAY_CHARGE_GLOW_MAX
-            : CONFIG.CHARGED_RAY_CHARGE_GLOW_START
-              + (CONFIG.CHARGED_RAY_CHARGE_GLOW_MAX - CONFIG.CHARGED_RAY_CHARGE_GLOW_START) * frac;
+            : CONFIG.CHARGED_RAY_CHARGE_GLOW_START +
+              (CONFIG.CHARGED_RAY_CHARGE_GLOW_MAX - CONFIG.CHARGED_RAY_CHARGE_GLOW_START) * frac;
       }
       return;
     }
@@ -2595,11 +2632,18 @@ export class GameScene extends Phaser.Scene {
   /** Start the pulsing charge glow on the caster sprite (preFX glow). */
   #startChargeRayGlow(): void {
     type PreFXCapable = Phaser.GameObjects.Sprite & {
-      preFX?: { addGlow: (color?: number, outer?: number, inner?: number, knockout?: boolean) => { outerStrength: number } };
+      preFX?: {
+        addGlow: (color?: number, outer?: number, inner?: number, knockout?: boolean) => { outerStrength: number };
+      };
     };
     const ps = this.#player as unknown as PreFXCapable;
     if (ps.preFX) {
-      this.#chargeRayGlowFX = ps.preFX.addGlow(CONFIG.CHARGED_RAY_CHARGE_TINT, CONFIG.CHARGED_RAY_CHARGE_GLOW_START, 0, false);
+      this.#chargeRayGlowFX = ps.preFX.addGlow(
+        CONFIG.CHARGED_RAY_CHARGE_TINT,
+        CONFIG.CHARGED_RAY_CHARGE_GLOW_START,
+        0,
+        false,
+      );
     }
   }
 
@@ -2622,21 +2666,25 @@ export class GameScene extends Phaser.Scene {
   /** Resolve the charge → spawn the ray locally, apply mana + cooldown, and
    *  broadcast a single SPELL_CAST so all clients replicate the identical ray. */
   #fireChargedRay(now: number): void {
-    if (!this.#player?.active) { this.#cancelChargeRay(); return; }
+    if (!this.#player?.active) {
+      this.#cancelChargeRay();
+      return;
+    }
     const frac = this.#chargeRayFraction(now);
     const mods = this.#player.spellModifiers;
 
     const damage = Math.max(
       1,
       Math.round(
-        (RUNTIME_CONFIG.CHARGED_RAY_DAMAGE_MIN
-          + (RUNTIME_CONFIG.CHARGED_RAY_DAMAGE_MAX - RUNTIME_CONFIG.CHARGED_RAY_DAMAGE_MIN) * frac)
-        * mods.lightningDamageMult,
+        (RUNTIME_CONFIG.CHARGED_RAY_DAMAGE_MIN +
+          (RUNTIME_CONFIG.CHARGED_RAY_DAMAGE_MAX - RUNTIME_CONFIG.CHARGED_RAY_DAMAGE_MIN) * frac) *
+          mods.lightningDamageMult,
       ),
     );
-    const length = (RUNTIME_CONFIG.CHARGED_RAY_LENGTH_MIN_PX
-      + (RUNTIME_CONFIG.CHARGED_RAY_LENGTH_MAX_PX - RUNTIME_CONFIG.CHARGED_RAY_LENGTH_MIN_PX) * frac)
-      * mods.lightningRangeMult;
+    const length =
+      (RUNTIME_CONFIG.CHARGED_RAY_LENGTH_MIN_PX +
+        (RUNTIME_CONFIG.CHARGED_RAY_LENGTH_MAX_PX - RUNTIME_CONFIG.CHARGED_RAY_LENGTH_MIN_PX) * frac) *
+      mods.lightningRangeMult;
 
     const angle = this.#chargeRayAngle;
     const cx = this.#player.x;
@@ -2769,10 +2817,7 @@ export class GameScene extends Phaser.Scene {
    *  #updateAoePvpDamage (per-tick ids). The generic cross-player overlaps must
    *  skip these so they don't ALSO emit a static-id hit. */
   #isTickAoeSpell(obj: Phaser.GameObjects.GameObject): boolean {
-    return obj instanceof FireArea
-      || obj instanceof VoidOrb
-      || obj instanceof LavaPool
-      || obj instanceof WaterTornado;
+    return obj instanceof FireArea || obj instanceof VoidOrb || obj instanceof LavaPool || obj instanceof WaterTornado;
   }
 
   /**
@@ -2800,10 +2845,11 @@ export class GameScene extends Phaser.Scene {
     if (!localGroup) return;
 
     for (const child of localGroup.getChildren()) {
-      const isAoe = child instanceof FireArea
-        || child instanceof VoidOrb
-        || child instanceof LavaPool
-        || child instanceof WaterTornado;
+      const isAoe =
+        child instanceof FireArea ||
+        child instanceof VoidOrb ||
+        child instanceof LavaPool ||
+        child instanceof WaterTornado;
       if (!isAoe) continue;
       const spell = child as (FireArea | VoidOrb | LavaPool | WaterTornado) & Phaser.GameObjects.GameObject;
       if (!spell.active || !spell.isPvpDamageActive) continue;
@@ -2821,9 +2867,9 @@ export class GameScene extends Phaser.Scene {
       this.#aoeLastPvpTickSeq.set(spell, seq);
       if (seq === 0) continue; // no tick has fired yet
 
-      const baseSpellId = (spell.getData('spellId') as string | undefined);
-      const spellType = (spell.getData('spellType') as string | undefined)
-        ?? (spell.constructor as { name: string }).name;
+      const baseSpellId = spell.getData('spellId') as string | undefined;
+      const spellType =
+        (spell.getData('spellType') as string | undefined) ?? (spell.constructor as { name: string }).name;
 
       for (const remote of this.#remotePlayers.values()) {
         if (!remote.active || remote.isDefeated) continue;
@@ -2857,10 +2903,12 @@ export class GameScene extends Phaser.Scene {
     const remoteChildren = this.#remoteSpellGroup?.getChildren() ?? [];
     const allSpells = [...spellChildren, ...remoteChildren];
     const fireBolts = allSpells.filter(
-      (spell): spell is FireBolt => spell instanceof FireBolt && spell.active && !!(spell.body as Phaser.Physics.Arcade.Body)?.enable,
+      (spell): spell is FireBolt =>
+        spell instanceof FireBolt && spell.active && !!(spell.body as Phaser.Physics.Arcade.Body)?.enable,
     );
     const fireAreas = allSpells.filter(
-      (spell): spell is FireArea => spell instanceof FireArea && spell.active && !!(spell.body as Phaser.Physics.Arcade.Body)?.enable,
+      (spell): spell is FireArea =>
+        spell instanceof FireArea && spell.active && !!(spell.body as Phaser.Physics.Arcade.Body)?.enable,
     );
 
     const activeBolts = new Set(fireBolts);
@@ -2963,7 +3011,8 @@ export class GameScene extends Phaser.Scene {
     const remoteChildren = this.#remoteSpellGroup?.getChildren() ?? [];
     const allSpells = [...spellChildren, ...remoteChildren];
     const earthBolts = allSpells.filter(
-      (s): s is EarthBolt => s instanceof EarthBolt && s.active && !s.isMolten && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
+      (s): s is EarthBolt =>
+        s instanceof EarthBolt && s.active && !s.isMolten && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
     );
     const fireAreas = allSpells.filter(
       (s): s is FireArea => s instanceof FireArea && s.active && !!(s.body as Phaser.Physics.Arcade.Body)?.enable,
@@ -3069,7 +3118,9 @@ export class GameScene extends Phaser.Scene {
 
     try {
       NetworkManager.getInstance().sendEarthWallPillar({ x: tx, y: ty });
-    } catch { /* offline */ }
+    } catch {
+      /* offline */
+    }
 
     if (this.#earthWallDrawingPillarCount >= EARTH_WALL_PILLAR_COUNT) {
       this.#earthWallDrawingMode = false;
@@ -3081,19 +3132,14 @@ export class GameScene extends Phaser.Scene {
   // instead of being blocked by them. Non-Player colliders (enemies) fall
   // through (don't have the flag) so they remain solid.
   #registerEarthWallSolidCollider(collidable: Phaser.Types.Physics.Arcade.ArcadeColliderType): void {
-    this.physics.add.collider(
-      collidable,
-      this.#earthWallGroup,
-      undefined,
-      (a, b) => {
-        const maybePlayer = (a as unknown as { isStarShieldActive?: boolean });
-        const maybePlayer2 = (b as unknown as { isStarShieldActive?: boolean });
-        if (maybePlayer.isStarShieldActive || maybePlayer2.isStarShieldActive) {
-          return false;
-        }
-        return true;
-      },
-    );
+    this.physics.add.collider(collidable, this.#earthWallGroup, undefined, (a, b) => {
+      const maybePlayer = a as unknown as { isStarShieldActive?: boolean };
+      const maybePlayer2 = b as unknown as { isStarShieldActive?: boolean };
+      if (maybePlayer.isStarShieldActive || maybePlayer2.isStarShieldActive) {
+        return false;
+      }
+      return true;
+    });
   }
 
   #registerColliders(): void {
@@ -3446,32 +3492,67 @@ export class GameScene extends Phaser.Scene {
     // The dispatch function dedupes via .setData('darkBoltConsumed') so
     // continuous overlap doesn't keep retriggering the destroy.
     const localSG = this.#player.spellCastingComponent.spellGroup;
-    this.physics.add.overlap(localSG, localSG, (a, b) => this.#tryConsumeWithDarkBolt(a as Phaser.GameObjects.GameObject, b as Phaser.GameObjects.GameObject));
-    this.physics.add.overlap(localSG, this.#remoteSpellGroup, (a, b) => this.#tryConsumeWithDarkBolt(a as Phaser.GameObjects.GameObject, b as Phaser.GameObjects.GameObject));
-    this.physics.add.overlap(localSG, this.#earthWallGroup, (a, b) => this.#tryConsumeWithDarkBolt(a as Phaser.GameObjects.GameObject, b as Phaser.GameObjects.GameObject));
-    this.physics.add.overlap(this.#remoteSpellGroup, this.#remoteSpellGroup, (a, b) => this.#tryConsumeWithDarkBolt(a as Phaser.GameObjects.GameObject, b as Phaser.GameObjects.GameObject));
-    this.physics.add.overlap(this.#remoteSpellGroup, this.#earthWallGroup, (a, b) => this.#tryConsumeWithDarkBolt(a as Phaser.GameObjects.GameObject, b as Phaser.GameObjects.GameObject));
+    this.physics.add.overlap(localSG, localSG, (a, b) =>
+      this.#tryConsumeWithDarkBolt(a as Phaser.GameObjects.GameObject, b as Phaser.GameObjects.GameObject),
+    );
+    this.physics.add.overlap(localSG, this.#remoteSpellGroup, (a, b) =>
+      this.#tryConsumeWithDarkBolt(a as Phaser.GameObjects.GameObject, b as Phaser.GameObjects.GameObject),
+    );
+    this.physics.add.overlap(localSG, this.#earthWallGroup, (a, b) =>
+      this.#tryConsumeWithDarkBolt(a as Phaser.GameObjects.GameObject, b as Phaser.GameObjects.GameObject),
+    );
+    this.physics.add.overlap(this.#remoteSpellGroup, this.#remoteSpellGroup, (a, b) =>
+      this.#tryConsumeWithDarkBolt(a as Phaser.GameObjects.GameObject, b as Phaser.GameObjects.GameObject),
+    );
+    this.physics.add.overlap(this.#remoteSpellGroup, this.#earthWallGroup, (a, b) =>
+      this.#tryConsumeWithDarkBolt(a as Phaser.GameObjects.GameObject, b as Phaser.GameObjects.GameObject),
+    );
 
     // Remote spells vs enemies (per room, same behavior as local spells)
     Object.keys(this.#objectsByRoomId).forEach((key) => {
       const roomId = parseInt(key, 10);
       if (!this.#objectsByRoomId[roomId]?.enemyGroup) return;
-      this.physics.add.overlap(
-        this.#remoteSpellGroup,
-        this.#objectsByRoomId[roomId].enemyGroup,
-        (spellObj, enemy) => {
-          const enemyGameObject = enemy as CharacterGameObject;
-          if (enemyGameObject.isDefeated) return;
-          if (spellObj instanceof IceShard) { enemyGameObject.hit(DIRECTION.DOWN, spellObj.baseDamage); spellObj.explode(); return; }
-          if (spellObj instanceof WindBolt) { enemyGameObject.hit(DIRECTION.DOWN, spellObj.baseDamage); spellObj.explode(); return; }
-          if (spellObj instanceof FireBolt) { enemyGameObject.hit(DIRECTION.DOWN, spellObj.baseDamage); spellObj.explode(); return; }
-          if (spellObj instanceof EarthBolt) { enemyGameObject.hit(DIRECTION.DOWN, spellObj.baseDamage); spellObj.explode(); return; }
-          if (spellObj instanceof WaterBall) { enemyGameObject.hit(DIRECTION.DOWN, spellObj.baseDamage); spellObj.explode(); return; }
-          if (spellObj instanceof ThunderStrike) { spellObj.hitEnemy(enemyGameObject); return; }
-          if (spellObj instanceof ThunderSplash) { spellObj.hitEnemy(enemyGameObject); return; }
-          if (spellObj instanceof WaterSpike) { spellObj.hitEnemy(enemyGameObject); return; }
-        },
-      );
+      this.physics.add.overlap(this.#remoteSpellGroup, this.#objectsByRoomId[roomId].enemyGroup, (spellObj, enemy) => {
+        const enemyGameObject = enemy as CharacterGameObject;
+        if (enemyGameObject.isDefeated) return;
+        if (spellObj instanceof IceShard) {
+          enemyGameObject.hit(DIRECTION.DOWN, spellObj.baseDamage);
+          spellObj.explode();
+          return;
+        }
+        if (spellObj instanceof WindBolt) {
+          enemyGameObject.hit(DIRECTION.DOWN, spellObj.baseDamage);
+          spellObj.explode();
+          return;
+        }
+        if (spellObj instanceof FireBolt) {
+          enemyGameObject.hit(DIRECTION.DOWN, spellObj.baseDamage);
+          spellObj.explode();
+          return;
+        }
+        if (spellObj instanceof EarthBolt) {
+          enemyGameObject.hit(DIRECTION.DOWN, spellObj.baseDamage);
+          spellObj.explode();
+          return;
+        }
+        if (spellObj instanceof WaterBall) {
+          enemyGameObject.hit(DIRECTION.DOWN, spellObj.baseDamage);
+          spellObj.explode();
+          return;
+        }
+        if (spellObj instanceof ThunderStrike) {
+          spellObj.hitEnemy(enemyGameObject);
+          return;
+        }
+        if (spellObj instanceof ThunderSplash) {
+          spellObj.hitEnemy(enemyGameObject);
+          return;
+        }
+        if (spellObj instanceof WaterSpike) {
+          spellObj.hitEnemy(enemyGameObject);
+          return;
+        }
+      });
     });
 
     // Player spell projectiles can crack Earth Wall pillars
@@ -3487,7 +3568,8 @@ export class GameScene extends Phaser.Scene {
           // Phase 9.3 (Plan 03) D-04 hardening: broadcast environment-hit so observers
           // remove the same spell from #remoteSpellGroup via NETWORK_SPELL_DESTROYED.
           const sid = spellObj.getData('spellId') as string | undefined;
-          if (sid) this.#safeNetworkManager()?.sendSpellHitEnvironment({ spellId: sid, hitX: spellObj.x, hitY: spellObj.y });
+          if (sid)
+            this.#safeNetworkManager()?.sendSpellHitEnvironment({ spellId: sid, hitX: spellObj.x, hitY: spellObj.y });
           // Splash: also damage adjacent pillars within EARTH_WALL_FIREBOLT_SPLASH_RADIUS
           const splashRadiusSq = EARTH_WALL_FIREBOLT_SPLASH_RADIUS * EARTH_WALL_FIREBOLT_SPLASH_RADIUS;
           this.#earthWallGroup.getChildren().forEach((child) => {
@@ -3504,7 +3586,8 @@ export class GameScene extends Phaser.Scene {
           pillar.takeDamage(spellObj.baseDamage);
           spellObj.explode();
           const sid = spellObj.getData('spellId') as string | undefined;
-          if (sid) this.#safeNetworkManager()?.sendSpellHitEnvironment({ spellId: sid, hitX: spellObj.x, hitY: spellObj.y });
+          if (sid)
+            this.#safeNetworkManager()?.sendSpellHitEnvironment({ spellId: sid, hitX: spellObj.x, hitY: spellObj.y });
         }
       },
     );
@@ -3513,32 +3596,28 @@ export class GameScene extends Phaser.Scene {
     // above; closes D-21 — earth-wall blocked fireball for caster only because remote-spell
     // group had no overlap registered with #earthWallGroup).
     // NOTE: pillar damage is client-local for v1; if pillar desync becomes observable, route through host validator like player damage (Plan 02).
-    this.physics.add.overlap(
-      this.#remoteSpellGroup,
-      this.#earthWallGroup,
-      (spellObj, wallObj) => {
-        const pillar = wallObj as EarthWallPillar;
-        if (!pillar.active || pillar.isBeingDestroyed) return;
-        if (spellObj instanceof FireBolt) {
-          pillar.takeDamage(spellObj.baseDamage);
-          spellObj.explode();
-          const splashRadiusSq = EARTH_WALL_FIREBOLT_SPLASH_RADIUS * EARTH_WALL_FIREBOLT_SPLASH_RADIUS;
-          this.#earthWallGroup.getChildren().forEach((child) => {
-            if (child === wallObj || !child.active) return;
-            const adjacent = child as EarthWallPillar;
-            if (adjacent.isBeingDestroyed) return;
-            const adx = adjacent.x - pillar.x;
-            const ady = adjacent.y - pillar.y;
-            if (adx * adx + ady * ady <= splashRadiusSq) {
-              adjacent.takeDamage(spellObj.baseDamage);
-            }
-          });
-        } else if (spellObj instanceof EarthBolt) {
-          pillar.takeDamage(spellObj.baseDamage);
-          spellObj.explode();
-        }
-      },
-    );
+    this.physics.add.overlap(this.#remoteSpellGroup, this.#earthWallGroup, (spellObj, wallObj) => {
+      const pillar = wallObj as EarthWallPillar;
+      if (!pillar.active || pillar.isBeingDestroyed) return;
+      if (spellObj instanceof FireBolt) {
+        pillar.takeDamage(spellObj.baseDamage);
+        spellObj.explode();
+        const splashRadiusSq = EARTH_WALL_FIREBOLT_SPLASH_RADIUS * EARTH_WALL_FIREBOLT_SPLASH_RADIUS;
+        this.#earthWallGroup.getChildren().forEach((child) => {
+          if (child === wallObj || !child.active) return;
+          const adjacent = child as EarthWallPillar;
+          if (adjacent.isBeingDestroyed) return;
+          const adx = adjacent.x - pillar.x;
+          const ady = adjacent.y - pillar.y;
+          if (adx * adx + ady * ady <= splashRadiusSq) {
+            adjacent.takeDamage(spellObj.baseDamage);
+          }
+        });
+      } else if (spellObj instanceof EarthBolt) {
+        pillar.takeDamage(spellObj.baseDamage);
+        spellObj.explode();
+      }
+    });
 
     // ────────────────────────────────────────────────────────────────
     // Phase 9.3 (Plan 03): cross-player damage overlaps (PVP-02, D-01..D-05).
@@ -3565,7 +3644,8 @@ export class GameScene extends Phaser.Scene {
       if (!nm) return;
       const spellId = spell.getData('spellId') as string | undefined;
       const casterId = spell.getData('casterId') as string | undefined;
-      const spellType = (spell.getData('spellType') as string | undefined) ?? (spell.constructor as { name: string }).name;
+      const spellType =
+        (spell.getData('spellType') as string | undefined) ?? (spell.constructor as { name: string }).name;
       if (!spellId || !casterId) return;
       // FF pre-check (D-05) — server re-checks, this just saves a round-trip + visual.
       if (this.#areSameTeam(casterId, nm.localPlayerId)) return;
@@ -3637,7 +3717,8 @@ export class GameScene extends Phaser.Scene {
         if (!nm) return;
         const spellId = spell.getData('spellId') as string | undefined;
         const targetId = remote.getData('playerId') as string | undefined;
-        const spellType = (spell.getData('spellType') as string | undefined) ?? (spell.constructor as { name: string }).name;
+        const spellType =
+          (spell.getData('spellType') as string | undefined) ?? (spell.constructor as { name: string }).name;
         if (!spellId || !targetId) return;
         if (this.#areSameTeam(nm.localPlayerId, targetId)) return;
         // Remote player has Star Shield up — absorb the hit. No spell:hit sent
@@ -3671,7 +3752,11 @@ export class GameScene extends Phaser.Scene {
   // ============================================================
 
   #safeNetworkManager(): NetworkManager | null {
-    try { return NetworkManager.getInstance(); } catch { return null; }
+    try {
+      return NetworkManager.getInstance();
+    } catch {
+      return null;
+    }
   }
 
   /** Phase 14 bugfix: true when the active match is team-deathmatch. In TDM, death + respawn
@@ -3715,9 +3800,7 @@ export class GameScene extends Phaser.Scene {
     ]);
     const constructorName = (spell.constructor as { name: string }).name;
     const wireType =
-      spellType === constructorName
-        ? this.#constructorNameToSpellId(constructorName) ?? spellType
-        : spellType;
+      spellType === constructorName ? (this.#constructorNameToSpellId(constructorName) ?? spellType) : spellType;
 
     if (!REFLECTABLE.has(wireType)) {
       // Absorb-only path — no reflection, no damage.
@@ -3767,8 +3850,8 @@ export class GameScene extends Phaser.Scene {
           ? DIRECTION.RIGHT
           : DIRECTION.LEFT
         : -ny >= 0
-        ? DIRECTION.DOWN
-        : DIRECTION.UP;
+          ? DIRECTION.DOWN
+          : DIRECTION.UP;
 
     // Spawn a fresh LOCAL projectile via the registry — it lands in our local
     // spell group, gets tagged as ours, and the SPELL_CAST broadcast below
@@ -3785,7 +3868,9 @@ export class GameScene extends Phaser.Scene {
     try {
       const localId = NetworkManager.getInstance().localPlayerId;
       if (localId) reflected.gameObject.setData('casterId', localId);
-    } catch { /* offline */ }
+    } catch {
+      /* offline */
+    }
 
     EVENT_BUS.emit(CUSTOM_EVENTS.SPELL_CAST, {
       spellInstanceId,
@@ -3803,13 +3888,20 @@ export class GameScene extends Phaser.Scene {
    *  setData('spellType') is missing (older casts or local-spawned overlap). */
   #constructorNameToSpellId(name: string): string | undefined {
     switch (name) {
-      case 'FireBolt':   return SPELL_ID.FIRE_BOLT;
-      case 'EarthBolt':  return SPELL_ID.EARTH_BOLT;
-      case 'WindBolt':   return SPELL_ID.WIND_BOLT;
-      case 'IceShard':   return SPELL_ID.ICE_SHARD;
-      case 'WaterBall':  return SPELL_ID.WATER_BALL;
-      case 'DarkBolt':   return SPELL_ID.DARK_BOLT;
-      default:           return undefined;
+      case 'FireBolt':
+        return SPELL_ID.FIRE_BOLT;
+      case 'EarthBolt':
+        return SPELL_ID.EARTH_BOLT;
+      case 'WindBolt':
+        return SPELL_ID.WIND_BOLT;
+      case 'IceShard':
+        return SPELL_ID.ICE_SHARD;
+      case 'WaterBall':
+        return SPELL_ID.WATER_BALL;
+      case 'DarkBolt':
+        return SPELL_ID.DARK_BOLT;
+      default:
+        return undefined;
     }
   }
 
@@ -3934,7 +4026,9 @@ export class GameScene extends Phaser.Scene {
     // force:true overrides the config's ignoreIfPlaying:true so the DIE animation can't silently no-op
     // off a looping idle/hurt (the intermittent "death anim doesn't play"). Tint AFTER the frame-swap.
     this.#player.anims?.stop();
-    this.#player.animationComponent?.playAnimation(`DIE_${this.#player.direction}` as CharacterAnimation, { force: true });
+    this.#player.animationComponent?.playAnimation(`DIE_${this.#player.direction}` as CharacterAnimation, {
+      force: true,
+    });
     const nmDeath = this.#safeNetworkManager();
     if (nmDeath?.localPlayerId) this.#reapplyStoredTint(this.#player, nmDeath.localPlayerId);
     // Defensive velocity zero (mirrors #enterCountdownMode).
@@ -3953,13 +4047,7 @@ export class GameScene extends Phaser.Scene {
     // same key used by lobby/main-menu/splash scenes).
     this.#deathCountdownRemaining = Math.ceil(RUNTIME_CONFIG.RESPAWN_DELAY_MS / 1000);
     this.#deathCountdownText = this.add
-      .bitmapText(
-        this.scale.width / 2,
-        this.scale.height / 2,
-        'press_start_2p',
-        this.#countdownLabel(),
-        32,
-      )
+      .bitmapText(this.scale.width / 2, this.scale.height / 2, 'press_start_2p', this.#countdownLabel(), 32)
       .setOrigin(0.5, 0.5)
       .setScrollFactor(0)
       .setDepth(10000);
@@ -4076,17 +4164,17 @@ export class GameScene extends Phaser.Scene {
   // local player overlapping it, we optimistically grant the special + tell the server (pickup:claimed).
   // The server resolves first-touch-wins and broadcasts pickup:collected → everyone destroys the sprite.
   #onPickupSpawned = (payload: PickupSpawnedPayload): void => {
-    if (this.#pickups.has(payload.pickupId)) return;   // dedupe (e.g. late-boot replay)
+    if (this.#pickups.has(payload.pickupId)) return; // dedupe (e.g. late-boot replay)
     if (!this.#player) return;
     const pickup = new NetworkedSpecialPickup(this, payload.pickupId, payload.spellType, payload.x, payload.y);
     this.#pickups.set(payload.pickupId, pickup);
-    let claimSent = false;   // one-shot guard so the overlap can't fire a second claim across frames
+    let claimSent = false; // one-shot guard so the overlap can't fire a second claim across frames
     this.physics.add.overlap(this.#player, pickup, () => {
       if (claimSent || !pickup.active) return;
       claimSent = true;
       // Stop the overlap from re-firing every frame before the server broadcast lands (would spam claims).
       (pickup.body as Phaser.Physics.Arcade.Body | null)?.setEnable(false);
-      pickup.collect();   // optimistic local inventory grant
+      pickup.collect(); // optimistic local inventory grant
       this.#safeNetworkManager()?.sendPickupClaim({ pickupId: payload.pickupId });
     });
   };
@@ -4200,6 +4288,63 @@ export class GameScene extends Phaser.Scene {
     this.scene.pause();
     this.scene.pause(SCENE_KEYS.UI_SCENE);
   };
+
+  /**
+   * DEV (CONFIG.DEV_VICTORY_BUTTON): a small viewport-anchored "WIN" button in the
+   * bottom-right corner that synthesizes a winning MatchEndedPayload and routes it
+   * through #onMatchEnded — the exact same path the server's match:ended takes — so the
+   * TdmResultsScene renders without needing a second browser or real kills.
+   */
+  #createDevVictoryButton(): void {
+    const btn = this.add
+      .bitmapText(this.scale.width - 6, this.scale.height - 6, 'press_start_2p', 'WIN', 10)
+      .setOrigin(1, 1)
+      .setScrollFactor(0)
+      .setDepth(10000)
+      .setTint(0xffdd55)
+      .setInteractive({ useHandCursor: true });
+    btn.on('pointerover', () => btn.setTint(0xffffff));
+    btn.on('pointerout', () => btn.setTint(0xffdd55));
+    btn.on('pointerup', () => this.#onMatchEnded(this.#buildFakeMatchEndedPayload()));
+  }
+
+  /**
+   * DEV helper: build a winning MatchEndedPayload for the victory-screen test button.
+   * Reuses the real roster (NetworkManager.matchPlayers) when present so the results
+   * table looks realistic — the local player is forced to MVP on the winning team with
+   * TDM_WIN_TARGET kills. Falls back to a minimal solo payload offline (DEV_SKIP_TO_GAMEPLAY).
+   */
+  #buildFakeMatchEndedPayload(): MatchEndedPayload {
+    const nm = this.#safeNetworkManager();
+    const localId = nm?.localPlayerId ?? 'dev-local';
+    const roster = nm?.matchPlayers ?? [];
+
+    // Local player's team wins; default to team 0 when team is unknown/offline.
+    const localTeam = roster.find((p) => p.id === localId)?.team ?? 0;
+    const winningTeam = localTeam === 1 ? 1 : 0;
+
+    const stats: TdmPlayerStat[] =
+      roster.length > 0
+        ? roster.map((p) => {
+            const team = p.team === 1 ? 1 : 0;
+            const isLocal = p.id === localId;
+            const onWinningTeam = team === winningTeam;
+            return {
+              playerId: p.id,
+              name: p.name,
+              team,
+              // Local player gets the full target (MVP); others get plausible filler.
+              kills: isLocal ? CONFIG.TDM_WIN_TARGET : onWinningTeam ? Math.floor(CONFIG.TDM_WIN_TARGET / 3) : 2,
+              deaths: isLocal ? 1 : 3,
+            };
+          })
+        : [{ playerId: localId, name: 'YOU', team: winningTeam, kills: CONFIG.TDM_WIN_TARGET, deaths: 1 }];
+
+    const teamScores: [number, number] = [0, 0];
+    for (const s of stats) teamScores[s.team] += s.kills;
+
+    return { winningTeam, teamScores, mvpPlayerId: localId, stats };
+  }
 
   #clearLocalDeath(): void {
     this.#deathLockActive = false;
@@ -4476,8 +4621,8 @@ export class GameScene extends Phaser.Scene {
   #playIntroCameraSequence(): void {
     const OUT_ZOOM = 0.6; // wide establishing (reuse the existing snap-out value)
     const PLAY_ZOOM = 1.0;
-    const CENTER_HOLD_MS = 400;   // wide-shot hold before the move
-    const MOVE_MS = 1100;         // pan + zoom run TOGETHER over this duration
+    const CENTER_HOLD_MS = 400; // wide-shot hold before the move
+    const MOVE_MS = 1100; // pan + zoom run TOGETHER over this duration
 
     const cam = this.cameras.main;
     cam.stopFollow();
@@ -4679,6 +4824,7 @@ export class GameScene extends Phaser.Scene {
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_UPGRADE_APPLIED, this.#onUpgradeApplied, this);
       this.#appliedDamageSpellIds.clear();
       this.#deadPlayerIds.clear();
+      this.#disconnectedPlayerIds.clear();
       this.#pickups.forEach((p) => p.destroy());
       this.#pickups.clear();
       this.#clearLocalDeath();
@@ -4712,10 +4858,16 @@ export class GameScene extends Phaser.Scene {
       // one player walks through a door, breaking multiplayer entirely.
       // The mesh should only be torn down on actual match end / return-to-lobby, which
       // is owned by GameOverScene / LobbyScene, not this scene's lifecycle.
-      try { NetworkManager.getInstance().stopGameTick(); } catch { /* offline */ }
+      try {
+        NetworkManager.getInstance().stopGameTick();
+      } catch {
+        /* offline */
+      }
       this.#remotePlayers.forEach((p) => p.destroy());
       this.#remotePlayers.clear();
-      this.#remoteFireBreaths.forEach((b) => { if (b.active) b.destroy(); });
+      this.#remoteFireBreaths.forEach((b) => {
+        if (b.active) b.destroy();
+      });
       this.#remoteFireBreaths.clear();
       // Note: #earthWallGroup is a Phaser.GameObjects.Group that registers its own
       // SHUTDOWN listener (before ours) and calls destroy() on itself, setting
@@ -4830,12 +4982,12 @@ export class GameScene extends Phaser.Scene {
         if (ts !== null) stagesTilesets.push(ts);
         else console.warn(`STAGES: failed to add tileset ${tiledName}`);
       };
-      addStagesTileset('TX Plant',         ASSET_KEYS.STAGES_TX_PLANT);
+      addStagesTileset('TX Plant', ASSET_KEYS.STAGES_TX_PLANT);
       addStagesTileset('TX Tileset Grass', ASSET_KEYS.STAGES_TX_TILESET_GRASS);
-      addStagesTileset('TX Shadow Plant',  ASSET_KEYS.STAGES_TX_SHADOW_PLANT);
-      addStagesTileset('TX Tileset Wall',  ASSET_KEYS.STAGES_TX_TILESET_WALL);
-      addStagesTileset('TX Struct',        ASSET_KEYS.STAGES_TX_STRUCT);
-      addStagesTileset('TX Props',         ASSET_KEYS.STAGES_TX_PROPS);
+      addStagesTileset('TX Shadow Plant', ASSET_KEYS.STAGES_TX_SHADOW_PLANT);
+      addStagesTileset('TX Tileset Wall', ASSET_KEYS.STAGES_TX_TILESET_WALL);
+      addStagesTileset('TX Struct', ASSET_KEYS.STAGES_TX_STRUCT);
+      addStagesTileset('TX Props', ASSET_KEYS.STAGES_TX_PROPS);
 
       // Render the visible tile layers in TMX paint order. Tree canopies and the
       // foreground layer use a very high depth so they always render above the
@@ -4844,11 +4996,11 @@ export class GameScene extends Phaser.Scene {
       // the player and spells "walk over" tree leaves like rugs.
       const CANOPY_DEPTH = 10000;
       const STAGES_VISIBLE_LAYERS: { name: string; depth: number }[] = [
-        { name: 'Base',       depth: 0 },
-        { name: 'Shadows',    depth: 0 },
-        { name: 'Props',      depth: 0 },
-        { name: 'Structure',  depth: 0 },
-        { name: 'Trees',      depth: CANOPY_DEPTH },
+        { name: 'Base', depth: 0 },
+        { name: 'Shadows', depth: 0 },
+        { name: 'Props', depth: 0 },
+        { name: 'Structure', depth: 0 },
+        { name: 'Trees', depth: CANOPY_DEPTH },
         { name: 'Foreground', depth: CANOPY_DEPTH + 1 },
       ];
       for (const { name, depth } of STAGES_VISIBLE_LAYERS) {
@@ -4983,7 +5135,9 @@ export class GameScene extends Phaser.Scene {
           playerStartPosition.y = spawn.y;
         }
       }
-    } catch { /* offline / no NetworkManager — keep the door position */ }
+    } catch {
+      /* offline / no NetworkManager — keep the door position */
+    }
 
     this.#player = new Player({
       scene: this,
@@ -5039,16 +5193,15 @@ export class GameScene extends Phaser.Scene {
    *  doesn't retrigger the destroy each overlap frame while continuing to
    *  touch the (still-active) spell during its linger / centre approach.
    */
-  #tryConsumeWithDarkBolt(
-    a: Phaser.GameObjects.GameObject,
-    b: Phaser.GameObjects.GameObject,
-  ): void {
+  #tryConsumeWithDarkBolt(a: Phaser.GameObjects.GameObject, b: Phaser.GameObjects.GameObject): void {
     let bolt: DarkBolt;
     let target: Phaser.GameObjects.GameObject;
     if (a instanceof DarkBolt && !(b instanceof DarkBolt)) {
-      bolt = a; target = b;
+      bolt = a;
+      target = b;
     } else if (b instanceof DarkBolt && !(a instanceof DarkBolt)) {
-      bolt = b; target = a;
+      bolt = b;
+      target = a;
     } else {
       return; // both DarkBolts, or neither — nothing to consume
     }
@@ -5059,11 +5212,7 @@ export class GameScene extends Phaser.Scene {
     // the middle of the target before erasing it. Without this, the bolt
     // pops a tornado the moment it grazes the perimeter, which reads as the
     // tornado randomly vanishing.
-    if (
-      target instanceof FireArea ||
-      target instanceof WaterTornado ||
-      target instanceof WaterSpike
-    ) {
+    if (target instanceof FireArea || target instanceof WaterTornado || target instanceof WaterSpike) {
       const ts = target as Phaser.GameObjects.Sprite;
       const dist = Math.hypot(bolt.x - ts.x, bolt.y - ts.y);
       if (dist > CONFIG.DARK_BOLT_CONSUME_CENTER_RADIUS_PX) return;
@@ -5310,9 +5459,17 @@ export class GameScene extends Phaser.Scene {
 
       // Online mode: request server to broadcast transition to all clients
       let nm: NetworkManager | null = null;
-      try { nm = NetworkManager.getInstance(); } catch { /* offline */ }
+      try {
+        nm = NetworkManager.getInstance();
+      } catch {
+        /* offline */
+      }
       if (nm && nm.isConnected) {
-        nm.sendRoomTransitionRequest({ levelName: modifiedLevelName, roomId: door.targetRoomId, doorId: door.targetDoorId });
+        nm.sendRoomTransitionRequest({
+          levelName: modifiedLevelName,
+          roomId: door.targetRoomId,
+          doorId: door.targetDoorId,
+        });
         // Do NOT start scene locally — wait for NETWORK_ROOM_TRANSITION echo from server
       } else {
         this.scene.start(SCENE_KEYS.GAME_SCENE, sceneData);
@@ -5552,7 +5709,11 @@ export class GameScene extends Phaser.Scene {
 
   #setupNetworking(): void {
     let nm: NetworkManager | null = null;
-    try { nm = NetworkManager.getInstance(); } catch { /* offline — skip */ }
+    try {
+      nm = NetworkManager.getInstance();
+    } catch {
+      /* offline — skip */
+    }
     if (!nm || !nm.isConnected) return;
 
     nm.startGameTick(() => this.#buildLocalPlayerSnapshot());
@@ -5583,7 +5744,11 @@ export class GameScene extends Phaser.Scene {
    */
   #preSpawnRemotePlayersFromMatchConfig(): void {
     let nm: NetworkManager | null = null;
-    try { nm = NetworkManager.getInstance(); } catch { return; }
+    try {
+      nm = NetworkManager.getInstance();
+    } catch {
+      return;
+    }
     if (!nm) return;
     const fallbackX = this.#player?.x ?? 0;
     const fallbackY = this.#player?.y ?? 0;
@@ -5626,7 +5791,9 @@ export class GameScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(9999)
       .setTint(0xffaa00);
-    this.time.delayedCall(6000, () => { if (msg.active) msg.destroy(); });
+    this.time.delayedCall(6000, () => {
+      if (msg.active) msg.destroy();
+    });
     if (CONFIG.NETWORK_DEBUG) {
       console.warn('[GameScene] NETWORK_MESH_PARTIAL', data);
     }
@@ -5660,8 +5827,15 @@ export class GameScene extends Phaser.Scene {
 
   #onRemotePlayerUpdate = (payload: PlayerUpdateBroadcast): void => {
     let nm: NetworkManager | null = null;
-    try { nm = NetworkManager.getInstance(); } catch { /* offline */ }
+    try {
+      nm = NetworkManager.getInstance();
+    } catch {
+      /* offline */
+    }
     if (nm && payload.playerId === nm.localPlayerId) return;
+    // Stale packet from a player that already disconnected — don't let the
+    // lazy-spawn fallback below resurrect a ghost avatar for them.
+    if (this.#disconnectedPlayerIds.has(payload.playerId)) return;
 
     let remote = this.#remotePlayers.get(payload.playerId);
     if (!remote) {
@@ -5675,7 +5849,14 @@ export class GameScene extends Phaser.Scene {
     // Store network target — per-frame interpolation in #interpolateRemotePlayers handles rendering
     const ric = remote.controls as RemoteInputComponent;
     if (typeof ric.applySnapshot === 'function') {
-      ric.applySnapshot({ x: payload.x, y: payload.y, direction: payload.direction, state: payload.state, element: payload.element, flipX: payload.flipX ?? false });
+      ric.applySnapshot({
+        x: payload.x,
+        y: payload.y,
+        direction: payload.direction,
+        state: payload.state,
+        element: payload.element,
+        flipX: payload.flipX ?? false,
+      });
     }
   };
 
@@ -5789,7 +5970,11 @@ export class GameScene extends Phaser.Scene {
   #resolvePlayerTint(playerId: string): number {
     const len = GameScene.#PLAYER_TINT_PALETTE.length;
     let nm: NetworkManager | null = null;
-    try { nm = NetworkManager.getInstance(); } catch { /* offline */ }
+    try {
+      nm = NetworkManager.getInstance();
+    } catch {
+      /* offline */
+    }
 
     if (nm) {
       const matchPlayers = nm.matchPlayers;
@@ -5811,7 +5996,16 @@ export class GameScene extends Phaser.Scene {
   // spellId (SPELL_ID type constant). The UUID is what rides the wire as SpellCastPayload.spellId.
   // The legacy `element` field carries the active element; receivers re-derive the spell type
   // from element + slot (or from a future broadcasted SPELL_ID — out of scope for this plan).
-  #onLocalSpellCast = (payload: { spellInstanceId?: string; spellId: string; slotIndex: number; casterX: number; casterY: number; targetX: number; targetY: number; damage?: number }): void => {
+  #onLocalSpellCast = (payload: {
+    spellInstanceId?: string;
+    spellId: string;
+    slotIndex: number;
+    casterX: number;
+    casterY: number;
+    targetX: number;
+    targetY: number;
+    damage?: number;
+  }): void => {
     // Phase 14 (D-12): a local cast cancels respawn invuln immediately (also covers dash,
     // which routes through SPELL_CAST). Guard on #invulnUntil > 0 so the common case is a
     // single comparison. This runs before the connectivity early-return so an offline/solo
@@ -5819,14 +6013,18 @@ export class GameScene extends Phaser.Scene {
     if (this.#invulnUntil > 0) this.#stopInvulnBlink();
 
     let nm: NetworkManager | null = null;
-    try { nm = NetworkManager.getInstance(); } catch { return; }
+    try {
+      nm = NetworkManager.getInstance();
+    } catch {
+      return;
+    }
     if (!nm?.isConnected || !this.#player?.active) return;
     // Prefer the new UUID; fall back to the legacy type constant if for some reason
     // the emitter is from an older code path (defensive — should never trigger after Plan 03).
     const wireSpellId = payload.spellInstanceId ?? payload.spellId;
     nm.sendSpellCast({
       spellId: wireSpellId,
-      spellType: payload.spellId,                   // SPELL_ID constant — factory key on receiver side.
+      spellType: payload.spellId, // SPELL_ID constant — factory key on receiver side.
       element: ElementManager.instance.activeElement,
       x: payload.casterX,
       y: payload.casterY,
@@ -5855,7 +6053,11 @@ export class GameScene extends Phaser.Scene {
     // prevents self-echo, but if mesh wiring changes a loopback would otherwise spawn a ghost
     // remote-spell on the caster's own client.
     let nm: NetworkManager | null = null;
-    try { nm = NetworkManager.getInstance(); } catch { /* offline */ }
+    try {
+      nm = NetworkManager.getInstance();
+    } catch {
+      /* offline */
+    }
     if (nm && payload.playerId === nm.localPlayerId) return;
 
     // Strict-drop guard: the wire contract requires targetX/targetY. A nullish receipt is a
@@ -5863,7 +6065,12 @@ export class GameScene extends Phaser.Scene {
     // straight-right fallback (root cause of the phantom-fireball bug; see
     // .planning/debug/phantom-fireball.md D-20).
     if (payload.targetX == null || payload.targetY == null) {
-      console.warn('[GameScene] #onRemoteSpellCast: dropping spell with nullish target', { playerId: payload.playerId, spellId: payload.spellId, x: payload.x, y: payload.y });
+      console.warn('[GameScene] #onRemoteSpellCast: dropping spell with nullish target', {
+        playerId: payload.playerId,
+        spellId: payload.spellId,
+        x: payload.x,
+        y: payload.y,
+      });
       return;
     }
 
@@ -5896,7 +6103,15 @@ export class GameScene extends Phaser.Scene {
       // caster wasn't pre-spawned yet. Spawn the VFX here directly so the
       // dispatch path is the same as for FireBreath / EarthWall remote events.
       if (remoteCaster && (factoryKey === SPELL_ID.AIR_BURST || factoryKey === SPELL_ID.DASH)) {
-        this.#spawnRemoteDashVfx(remoteCaster, payload.x, payload.y, payload.targetX!, payload.targetY!, direction, factoryKey === SPELL_ID.AIR_BURST);
+        this.#spawnRemoteDashVfx(
+          remoteCaster,
+          payload.x,
+          payload.y,
+          payload.targetX!,
+          payload.targetY!,
+          direction,
+          factoryKey === SPELL_ID.AIR_BURST,
+        );
       }
 
       // ChargedLightningRay replica: reconstruct the EXACT ray the caster fired.
@@ -5990,11 +6205,22 @@ export class GameScene extends Phaser.Scene {
       ny /= len;
     } else {
       switch (caster.direction ?? dir) {
-        case DIRECTION.LEFT:  nx = -1; ny = 0; break;
-        case DIRECTION.RIGHT: nx = 1;  ny = 0; break;
-        case DIRECTION.UP:    nx = 0;  ny = -1; break;
+        case DIRECTION.LEFT:
+          nx = -1;
+          ny = 0;
+          break;
+        case DIRECTION.RIGHT:
+          nx = 1;
+          ny = 0;
+          break;
+        case DIRECTION.UP:
+          nx = 0;
+          ny = -1;
+          break;
         case DIRECTION.DOWN:
-        default:              nx = 0;  ny = 1;
+        default:
+          nx = 0;
+          ny = 1;
       }
     }
 
@@ -6046,18 +6272,35 @@ export class GameScene extends Phaser.Scene {
       if (this.#pillarsBeingRemotelyDestroyed.has(pillar)) return;
       try {
         NetworkManager.getInstance().sendEarthWallPillarDestroy({ x, y });
-      } catch { /* offline */ }
+      } catch {
+        /* offline */
+      }
     });
   }
 
   #onRemotePlayerDisconnected = (payload: PlayerDisconnectedPayload): void => {
+    this.#disconnectedPlayerIds.add(payload.playerId);
     const remote = this.#remotePlayers.get(payload.playerId);
     if (remote) {
       remote.destroy();
       this.#remotePlayers.delete(payload.playerId);
     }
+    // The leaver's breath:end / respawn events will never arrive — close out
+    // any per-player state they left behind.
+    const breath = this.#remoteFireBreaths.get(payload.playerId);
+    if (breath?.active && !breath.isEnding) {
+      breath.beginEnding();
+    }
+    this.#remoteFireBreaths.delete(payload.playerId);
+    this.#deadPlayerIds.delete(payload.playerId);
     const msg = this.add
-      .bitmapText(this.cameras.main.centerX, this.cameras.main.centerY - 40, 'press_start_2p', 'A PLAYER DISCONNECTED', 8)
+      .bitmapText(
+        this.cameras.main.centerX,
+        this.cameras.main.centerY - 40,
+        'press_start_2p',
+        'A PLAYER DISCONNECTED',
+        8,
+      )
       .setOrigin(0.5)
       .setScrollFactor(0)
       .setDepth(999)

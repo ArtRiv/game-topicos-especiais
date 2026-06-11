@@ -34,3 +34,32 @@ export const DEV_SKIP_TO_GAMEPLAY = false;
 // connect dialogue so the IP can be corrected. Useful for fast lobby/match iteration.
 // IMPORTANT: leave this false when committing/shipping.
 export const SKIP_TO_LOBBY = false;
+
+// DEV shortcut: render a small "WIN" button in the bottom-right of GameScene that
+// instantly opens the TdmResultsScene (victory screen) with a FAKE MatchEndedPayload —
+// the local player as MVP on the winning team with TDM_WIN_TARGET kills. Lets you iterate
+// on the results screen without a second browser / actually scoring kills. When a real
+// roster is present (matchPlayers) it's reused so the table looks realistic; otherwise a
+// minimal solo payload is synthesized. Purely client-side — does NOT touch the server's
+// score/win logic. IMPORTANT: leave this false when committing/shipping.
+export const DEV_VICTORY_BUTTON = false;
+
+// DEV: simulate the tijolinhos credit STATUS LINE on the results screen without GSI or the
+// platform POST (both no-op on localhost, so the real success/error visuals never show
+// locally). When set to 'success' or 'error', TdmResultsScene drives the status line
+// through the real 'pending' → 'done'/'error' transitions with the computed value, so you
+// can verify the text + tints (gold "+N TIJOLINHOS!" / red "ERRO AO CREDITAR :(") on
+// localhost. Falls back to the first roster row when there's no networked local stat (WIN
+// button under DEV_SKIP_TO_GAMEPLAY). 'off' = real behavior. Leave 'off' when shipping.
+export type TijolinhosMockMode = 'off' | 'success' | 'error';
+export const DEV_TIJOLINHOS_MOCK: TijolinhosMockMode = 'off';
+
+// DEV: test ONLY the Google login (the real GSI One Tap the credit flow uses), bypassing
+// the localhost no-op guard and WITHOUT POSTing to the platform. On the results screen the
+// One Tap prompt fires; on success the status line shows the logged-in account (LOGADO:
+// <email>) and the full ID token is logged to the console. TAKES PRECEDENCE over
+// DEV_TIJOLINHOS_MOCK. Requires this page's origin (e.g. http://localhost:5173) to be an
+// AUTHORIZED JS ORIGIN for the shared client id — that's controlled by the platform, NOT
+// this repo. If it isn't, GSI logs "origin not allowed" and no prompt shows (test on the
+// deployed domain instead). Leave false when shipping.
+export const DEV_TIJOLINHOS_TEST_LOGIN = false;

@@ -145,15 +145,17 @@ export class Player extends CharacterGameObject {
     new HeldGameObjectComponent(this);
     this.#spellCastingComponent = new SpellCastingComponent(this);
 
-    // enable auto update functionality
+    // enable auto update functionality. The listener must come off BOTH on
+    // scene shutdown AND when this object alone is destroyed mid-match (remote
+    // player disconnect) — otherwise the scene keeps invoking update() on a
+    // destroyed object whose `scene` ref is gone, and the per-frame throw
+    // inside the UPDATE emit freezes the whole game loop for everyone.
     config.scene.events.on(Phaser.Scenes.Events.UPDATE, this.update, this);
-    config.scene.events.once(
-      Phaser.Scenes.Events.SHUTDOWN,
-      () => {
-        config.scene.events.off(Phaser.Scenes.Events.UPDATE, this.update, this);
-      },
-      this,
-    );
+    const offUpdate = (): void => {
+      config.scene.events.off(Phaser.Scenes.Events.UPDATE, this.update, this);
+    };
+    config.scene.events.once(Phaser.Scenes.Events.SHUTDOWN, offUpdate);
+    this.once(Phaser.GameObjects.Events.DESTROY, offUpdate);
 
     // update physics body - aligned to bottom of 32x32 virtual frame (16x16 char at bottom)
     this.physicsBody.setSize(12, 14, true).setOffset(this.width / 2 - 6, this.height - 15);
@@ -172,6 +174,10 @@ export class Player extends CharacterGameObject {
   }
 
   public update(): void {
+    // Destroyed mid-frame (e.g. remote disconnect handled during this same
+    // UPDATE emit) — the in-flight emit can still reach us once after
+    // destroy() already nulled `scene`.
+    if (!this.scene) return;
     super.update();
     this.#collidingObjectsComponent.reset();
   }
