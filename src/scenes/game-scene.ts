@@ -314,6 +314,9 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     this.#controls = new KeyboardComponent(this, this.input.keyboard);
+    // ESC opens the pause-menu overlay. Registered on this scene's keyboard
+    // plugin so the listener is removed automatically on scene shutdown.
+    this.input.keyboard.on('keydown-ESC', this.#openPauseMenu, this);
     this.#configureArcadeDebug();
 
     this.#createLevel();
@@ -1959,6 +1962,34 @@ export class GameScene extends Phaser.Scene {
         }
       }
     }
+  }
+
+  /** ESC → launch the PauseMenuScene overlay. The match keeps running underneath
+   *  (online match — the world can't stop for one player), so local input is gated
+   *  instead: keyboard keys are reset+disabled and the pointer plugin is switched
+   *  off until the menu closes. isMovementLocked is deliberately NOT touched here —
+   *  FireBreath channeling and EarthWall draw-mode own that flag. */
+  #openPauseMenu(): void {
+    if (this.scene.isActive(SCENE_KEYS.PAUSE_MENU_SCENE)) return;
+    // The radial menu owns input while open — same exclusivity rule as the carousel.
+    if (this.scene.isActive(SCENE_KEYS.RADIAL_MENU_SCENE)) return;
+    const keyboard = this.input.keyboard;
+    if (keyboard) {
+      keyboard.resetKeys();
+      keyboard.enabled = false;
+    }
+    this.input.enabled = false;
+    this.scene.launch(SCENE_KEYS.PAUSE_MENU_SCENE);
+    this.scene.get(SCENE_KEYS.PAUSE_MENU_SCENE)?.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      // GameScene may have been torn down while the menu was open (match end,
+      // room-transition restart) — never poke a dead scene's input plugins.
+      if (!this.sys.isActive()) return;
+      if (keyboard) {
+        keyboard.enabled = true;
+        keyboard.resetKeys();
+      }
+      this.input.enabled = true;
+    });
   }
 
   #handleRadialMenuInput(): void {
@@ -4370,6 +4401,10 @@ export class GameScene extends Phaser.Scene {
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_MATCH_ENDED, this.#onMatchEnded, this);
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      // The pause-menu overlay must not outlive the match scene it sits on.
+      if (this.scene.isActive(SCENE_KEYS.PAUSE_MENU_SCENE)) {
+        this.scene.stop(SCENE_KEYS.PAUSE_MENU_SCENE);
+      }
       EVENT_BUS.off(CUSTOM_EVENTS.OPENED_CHEST, this.#handleOpenChest, this);
       EVENT_BUS.off(CUSTOM_EVENTS.ENEMY_DESTROYED, this.#checkForAllEnemiesAreDefeated, this);
       EVENT_BUS.off(CUSTOM_EVENTS.PLAYER_DEFEATED, this.#handlePlayerDefeatedEvent, this);

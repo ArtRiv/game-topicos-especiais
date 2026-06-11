@@ -19,10 +19,12 @@ import { UiScene } from './scenes/ui-scene';
 import { GameOverScene } from './scenes/game-over-scene';
 import { TdmResultsScene } from './scenes/tdm-results-scene';
 import { RadialMenuScene } from './scenes/radial-menu-scene';
+import { PauseMenuScene } from './scenes/pause-menu-scene';
 import { DebugPanel } from './debug/debug-panel';
 import { LobbyDebugPanel } from './debug/lobby-debug-panel';
 import { installCustomCursor } from './common/cursor';
 import { DEV_SKIP_TO_GAMEPLAY, SKIP_TO_LOBBY } from './common/config';
+import { loadSoundVolume } from './common/sound-settings';
 import { startMenuVideoPrefetch } from './common/menu-video-prefetch';
 
 // Fire-and-forget HTTP prefetch of the 12 MB landscape.mp4 the moment this
@@ -115,6 +117,14 @@ void (async () => {
   game.scene.add(SCENE_KEYS.GAME_OVER_SCENE, GameOverScene);
   game.scene.add(SCENE_KEYS.TDM_RESULTS_SCENE, TdmResultsScene);
   game.scene.add(SCENE_KEYS.RADIAL_MENU_SCENE, RadialMenuScene);
+  // Registered last so the ESC overlay renders above every gameplay scene.
+  game.scene.add(SCENE_KEYS.PAUSE_MENU_SCENE, PauseMenuScene);
+
+  // Apply the persisted master volume before any scene starts playing audio.
+  // SoundManager exists only after the game finishes booting, hence READY.
+  game.events.once(Phaser.Core.Events.READY, () => {
+    game.sound.volume = loadSoundVolume();
+  });
 
   // Boot flow per D-03: Splash -> MainMenu -> Lobby
   // SplashScene loads music then fades to MainMenuScene on any keypress.

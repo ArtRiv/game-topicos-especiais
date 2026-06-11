@@ -9,6 +9,8 @@ export const SCENE_KEYS = {
   // Phase 14 (D-06/D-08): minimal Team Deathmatch results overlay, launched on match ENDED.
   TDM_RESULTS_SCENE: 'TDM_RESULTS_SCENE',
   RADIAL_MENU_SCENE: 'RADIAL_MENU_SCENE',
+  // ESC in-match options overlay (resume / volume / fullscreen / controls / leave).
+  PAUSE_MENU_SCENE: 'PAUSE_MENU_SCENE',
   LOBBY_SCENE: 'LOBBY_SCENE',
   LOADING_SCENE: 'LOADING_SCENE',
   // --- Menu scenes (Phase 9.2 port + main's create/join lobby scenes) ---

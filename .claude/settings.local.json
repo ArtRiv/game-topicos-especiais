@@ -32,7 +32,9 @@
       "PowerShell(npx vite build 2>&1)",
       "PowerShell(npx vitest run --reporter=basic 2>&1)",
       "Bash(pnpm lint *)",
-      "Bash(grep -A 1 \"text-lightning-effect\\\\.ts$\")"
+      "Bash(grep -A 1 \"text-lightning-effect\\\\.ts$\")",
+      "PowerShell(pnpm test -- --run src/common/sound-settings.test.ts)",
+      "Bash(pnpm test *)"
     ]
   }
 }
