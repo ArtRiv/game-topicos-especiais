@@ -217,6 +217,11 @@ export class GameScene extends Phaser.Scene {
   // is in this set, the interpolation loop skips its state/animation updates so DIE_DOWN stays on screen.
   // Set on #onElimination, cleared on #onRespawn.
   #deadPlayerIds: Set<string> = new Set();
+  // Players that left the match. Guards #onRemotePlayerUpdate's lazy-spawn fallback —
+  // position packets travel over WebRTC (star: relayed via host) while the disconnect
+  // notice comes over the server socket, so a stale pos packet can arrive AFTER
+  // game:player-disconnected and would otherwise resurrect a frozen ghost avatar.
+  #disconnectedPlayerIds: Set<string> = new Set();
   // Special-spell pickups: pickupId → sprite. Spawned from server pickup:spawned broadcasts, removed
   // on pickup:collected (so all clients agree). Cleared on shutdown.
   #pickups: Map<string, NetworkedSpecialPickup> = new Map();
@@ -4389,6 +4394,7 @@ export class GameScene extends Phaser.Scene {
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_MATCH_ENDED, this.#onMatchEnded, this);
       this.#appliedDamageSpellIds.clear();
       this.#deadPlayerIds.clear();
+      this.#disconnectedPlayerIds.clear();
       this.#pickups.forEach((p) => p.destroy());
       this.#pickups.clear();
       this.#clearLocalDeath();
@@ -5379,6 +5385,9 @@ export class GameScene extends Phaser.Scene {
     let nm: NetworkManager | null = null;
     try { nm = NetworkManager.getInstance(); } catch { /* offline */ }
     if (nm && payload.playerId === nm.localPlayerId) return;
+    // Stale packet from a player that already disconnected — don't let the
+    // lazy-spawn fallback below resurrect a ghost avatar for them.
+    if (this.#disconnectedPlayerIds.has(payload.playerId)) return;
 
     let remote = this.#remotePlayers.get(payload.playerId);
     if (!remote) {
@@ -5775,11 +5784,20 @@ export class GameScene extends Phaser.Scene {
   }
 
   #onRemotePlayerDisconnected = (payload: PlayerDisconnectedPayload): void => {
+    this.#disconnectedPlayerIds.add(payload.playerId);
     const remote = this.#remotePlayers.get(payload.playerId);
     if (remote) {
       remote.destroy();
       this.#remotePlayers.delete(payload.playerId);
     }
+    // The leaver's breath:end / respawn events will never arrive — close out
+    // any per-player state they left behind.
+    const breath = this.#remoteFireBreaths.get(payload.playerId);
+    if (breath?.active && !breath.isEnding) {
+      breath.beginEnding();
+    }
+    this.#remoteFireBreaths.delete(payload.playerId);
+    this.#deadPlayerIds.delete(payload.playerId);
     const msg = this.add
       .bitmapText(this.cameras.main.centerX, this.cameras.main.centerY - 40, 'press_start_2p', 'A PLAYER DISCONNECTED', 8)
       .setOrigin(0.5)
