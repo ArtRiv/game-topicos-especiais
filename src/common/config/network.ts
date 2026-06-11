@@ -23,7 +23,7 @@ export const NETWORK_TRANSPORT: NetworkTransport = 'star';
 //
 // EMPTY = current LAN behavior (typed IP + :3000). Set it ONLY for the platform build.
 // ASK PROF: the exact slug + whether the proxy path is `/<slug>/socket.io`.
-export const GAME_SLUG = '';
+export const GAME_SLUG: string = '';
 
 /**
  * Resolve the Socket.io connection for the current environment, returning the (url, options) pair
@@ -37,7 +37,8 @@ export const GAME_SLUG = '';
 export function resolveConnection(typedHost?: string): { url: string | undefined; options: { path?: string } } {
   const isBrowser = typeof window !== 'undefined' && !!window.location;
   const host = (typedHost ?? '').trim();
-  const onRealDomain = isBrowser && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
+  const onRealDomain =
+    isBrowser && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
 
   // Platform: same-origin + slug path. Triggered when we're on a real domain with a slug configured,
   // or when no host was typed (the booth default).
@@ -48,7 +49,9 @@ export function resolveConnection(typedHost?: string): { url: string | undefined
   // LAN/dev: explicit host:port, protocol mirrored from the page.
   const proto = isBrowser && window.location.protocol === 'https:' ? 'https' : 'http';
   const effectiveHost = host || 'localhost';
-  const url = effectiveHost.includes(':') ? `${proto}://${effectiveHost}` : `${proto}://${effectiveHost}:${NETWORK_SERVER_PORT}`;
+  const url = effectiveHost.includes(':')
+    ? `${proto}://${effectiveHost}`
+    : `${proto}://${effectiveHost}:${NETWORK_SERVER_PORT}`;
   return { url, options: {} };
 }
 // Network position-update rate. Spell casts + damage events are independent of this
@@ -77,7 +80,28 @@ export const MAX_UNRELIABLE_BUFFERED_BYTES = 256 * 1024;
 //   - emits per-event debug logs to the browser console (channel-open, ice-state, ice-buffered, mesh-health-check, etc.)
 //   - exposes window.__NM__ so DevTools can call __NM__.debugSnapshot() to inspect mesh state
 //   - logs 1Hz "sent/recv msg/s" metrics
-export const NETWORK_DEBUG = true;
+export const NETWORK_DEBUG = false;
+
+// ── Tijolinhos (Feira de Jogos platform currency) ─────────────────────────────────────────────
+// Credit flow ported from the friend's Expelled game (MOHG-Enterprises/Expelled): on the results
+// screen, Google Identity Services One Tap obtains an ID token, then POST /api/v2/credit with
+// { product, value } and `Authorization: Bearer <token>` credits the player's feira account.
+//
+// ASK PROF: the integer `product` id registered for THIS game (type `games`). 0 = unset → the
+// award module no-ops with a console log instead of firing a guaranteed-403 request.
+export const TIJOLINHOS_PRODUCT_ID = 0;
+// The platform's shared Google OAuth client id — same one in the official tijolinhos docs and in
+// Expelled's constants.ts. Only swap this if the prof says your game needs its own client id.
+export const TIJOLINHOS_GSI_CLIENT_ID = '331191695151-ku8mdhd76pc2k36itas8lm722krn0u64.apps.googleusercontent.com';
+export const TIJOLINHOS_CREDIT_URL = 'https://feira-de-jogos.dev.br/api/v2/credit';
+// Reward economy (cosmetic if the product has a fixed price > 0 — the platform then ignores
+// `value`). Mirrors Expelled's shape: flat participation + outcome bonus + per-kill, capped.
+export const TIJOLINHOS_PARTICIPATION = 15;
+export const TIJOLINHOS_WIN_BONUS = 45;
+export const TIJOLINHOS_LOSS_BONUS = 10;
+export const TIJOLINHOS_DRAW_BONUS = 20;
+export const TIJOLINHOS_PER_KILL = 5;
+export const TIJOLINHOS_MAX = 200;
 
 // Phase 9.3 — host-authoritative damage tunables (mirrored from game-server/src/types.ts).
 // TODO: tune from playtest.

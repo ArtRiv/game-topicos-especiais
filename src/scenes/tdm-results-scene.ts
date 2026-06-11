@@ -3,6 +3,9 @@ import { SCENE_KEYS } from './scene-keys';
 import { TEAM_COLORS } from './ui-scene';
 import { MatchEndedPayload, TdmPlayerStat } from '../networking/types';
 import { MusicManager } from '../common/music-manager';
+import { NetworkManager } from '../networking/network-manager';
+import { awardTijolinhos, calculateTijolinhos, testGoogleLogin, TijolinhosStatus } from '../networking/award-tijolinhos';
+import { DEV_TIJOLINHOS_MOCK, DEV_TIJOLINHOS_TEST_LOGIN } from '../common/config';
 
 /**
  * Phase 14 (Plan 04, surface 4 — D-06/D-07/D-08): the minimal Team Deathmatch results
@@ -28,6 +31,7 @@ const WINNER_Y = 48;
 const TABLE_HEADER_Y = 96;
 const TABLE_FIRST_ROW_Y = 116;
 const ROW_PITCH = 16;
+const TIJOLINHOS_STATUS_Y = 252;
 const BUTTON_Y = 276;
 
 // Column x-anchors (left-origin rows). Name is left-aligned; K / D are fixed columns.
@@ -160,9 +164,88 @@ export class TdmResultsScene extends Phaser.Scene {
     });
     button.on('pointerup', () => this.#returnToLobby());
 
+    this.#creditTijolinhos(payload);
+
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       // No EVENT_BUS listeners here (payload arrives via scene data, not a bus
       // subscription). GameObjects + tweens are torn down by the scene lifecycle.
+    });
+  }
+
+  /**
+   * Feira de Jogos tijolinhos credit (ported from Expelled's PostGameScene._initFeira).
+   * Computes the local player's reward from the match stats and fires the GSI One Tap +
+   * POST /api/v2/credit flow. A status line between the table and the button reports
+   * progress; 'skipped' (dev no-op / GSI absent / not in the roster) renders nothing.
+   */
+  #creditTijolinhos(payload: MatchEndedPayload): void {
+    let localPlayerId = '';
+    try {
+      localPlayerId = NetworkManager.getInstance().localPlayerId;
+    } catch {
+      // DEV_SKIP_TO_GAMEPLAY / tests reach this scene without an initialized network.
+    }
+    const myStat = payload.stats.find((s) => s.playerId === localPlayerId);
+
+    // DEV (CONFIG.DEV_TIJOLINHOS_TEST_LOGIN): fire the REAL Google One Tap (bypassing the
+    // localhost guard, no platform POST) to verify the login works. Precedence over the mock.
+    if (DEV_TIJOLINHOS_TEST_LOGIN) {
+      const statusText = this.#makeTijolinhosStatusText();
+      testGoogleLogin((status, message) => this.#applyTijolinhosStatus(statusText, status, message));
+      return;
+    }
+
+    // DEV (CONFIG.DEV_TIJOLINHOS_MOCK): drive the status line through its real
+    // 'pending' → 'done'/'error' transitions WITHOUT the GSI prompt or platform POST (both
+    // no-op on localhost), so the success/error visuals are testable locally. Falls back to
+    // the first roster row when there's no networked local stat (WIN button + DEV_SKIP_TO_GAMEPLAY).
+    if (DEV_TIJOLINHOS_MOCK !== 'off') {
+      const mockStat = myStat ?? payload.stats[0] ?? { team: 0, kills: 0 };
+      this.#runTijolinhosMock(calculateTijolinhos(mockStat, payload.winningTeam), DEV_TIJOLINHOS_MOCK);
+      return;
+    }
+
+    if (!myStat) {
+      console.log('[tijolinhos] no local stat in payload — skipping credit');
+      return;
+    }
+
+    const value = calculateTijolinhos(myStat, payload.winningTeam);
+    const statusText = this.#makeTijolinhosStatusText();
+    awardTijolinhos(value, (status, message) => this.#applyTijolinhosStatus(statusText, status, message));
+  }
+
+  /** The (initially empty) tijolinhos status line between the table and the RETURN button. */
+  #makeTijolinhosStatusText(): Phaser.GameObjects.BitmapText {
+    return this.add
+      .bitmapText(CENTER_X, TIJOLINHOS_STATUS_Y, 'press_start_2p', '', 8)
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(2)
+      .setTint(DIM);
+  }
+
+  /** Apply one status update to the line. Shared by the real award flow + the dev mock. */
+  #applyTijolinhosStatus(statusText: Phaser.GameObjects.BitmapText, status: TijolinhosStatus, message: string): void {
+    // Scene may have shut down (RETURN TO LOBBY reloads) before the update arrives.
+    if (!statusText.active) return;
+    statusText.setText(message);
+    if (status === 'done') statusText.setTint(GOLD);
+    else if (status === 'error') statusText.setTint(0xff4444);
+    else statusText.setTint(DIM);
+  }
+
+  /**
+   * DEV: simulate the credit lifecycle for visual testing — 'pending' immediately, then
+   * 'done' (gold "+N TIJOLINHOS!") or 'error' (red) after a short beat, mirroring the exact
+   * messages awardTijolinhos emits. No GSI, no network. Timer is auto-cancelled on shutdown.
+   */
+  #runTijolinhosMock(value: number, mode: 'success' | 'error'): void {
+    const statusText = this.#makeTijolinhosStatusText();
+    this.#applyTijolinhosStatus(statusText, 'pending', 'ENVIANDO TIJOLINHOS...');
+    this.time.delayedCall(900, () => {
+      if (mode === 'error') this.#applyTijolinhosStatus(statusText, 'error', 'ERRO AO CREDITAR :(');
+      else this.#applyTijolinhosStatus(statusText, 'done', `+${value} TIJOLINHOS!`);
     });
   }
 
@@ -190,7 +273,7 @@ export class TdmResultsScene extends Phaser.Scene {
    */
   #normalizePayload(data: MatchEndedPayload | undefined): MatchEndedPayload {
     const stats: TdmPlayerStat[] = Array.isArray(data?.stats)
-      ? data!.stats.map((s) => ({
+      ? data.stats.map((s) => ({
           playerId: s?.playerId ?? '',
           name: s?.name ?? '???',
           team: typeof s?.team === 'number' ? s.team : -1,

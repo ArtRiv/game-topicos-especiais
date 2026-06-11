@@ -101,7 +101,7 @@ import {
 import { NetworkManager } from '../networking/network-manager';
 import { RemoteInputComponent } from '../components/input/remote-input-component';
 import { MusicManager } from '../common/music-manager';
-import type { PlayerUpdateBroadcast, RoomTransitionPayload, PlayerDisconnectedPayload, PlayerUpdatePayload, SpellCastBroadcast, PlayerInfo, BreathStartBroadcast, BreathUpdateBroadcast, BreathEndBroadcast, EarthWallPillarBroadcast, EarthWallPillarDestroyBroadcast, MatchStateChangedPayload, MatchCountdownTickPayload, DamageConfirmedPayload, SpellDestroyedPayload, EliminationPayload, RespawnPayload, MatchConfig, MatchEndedPayload, MatchSpawnsPayload, PickupSpawnedPayload, PickupCollectedPayload } from '../networking/types';
+import type { PlayerUpdateBroadcast, RoomTransitionPayload, PlayerDisconnectedPayload, PlayerUpdatePayload, SpellCastBroadcast, PlayerInfo, BreathStartBroadcast, BreathUpdateBroadcast, BreathEndBroadcast, EarthWallPillarBroadcast, EarthWallPillarDestroyBroadcast, MatchStateChangedPayload, MatchCountdownTickPayload, DamageConfirmedPayload, SpellDestroyedPayload, EliminationPayload, RespawnPayload, MatchConfig, MatchEndedPayload, TdmPlayerStat, MatchSpawnsPayload, PickupSpawnedPayload, PickupCollectedPayload } from '../networking/types';
 import { RUNTIME_CONFIG } from '../common/runtime-config';
 import { pickStartSpawn } from '../common/spawn-assignment';
 import type { Direction, CharacterAnimation } from '../common/types';
@@ -332,6 +332,9 @@ export class GameScene extends Phaser.Scene {
     this.#setupNetworking();
 
     this.scene.launch(SCENE_KEYS.UI_SCENE);
+
+    // DEV: on-screen "WIN" button that fakes the victory screen (CONFIG.DEV_VICTORY_BUTTON).
+    if (CONFIG.DEV_VICTORY_BUTTON) this.#createDevVictoryButton();
 
     // Phase 14 bugfix (#1/#2): run the match-start intro locally on boot (the server's
     // COUNTDOWN→ACTIVE window already elapsed during the LoadingScene cinematic, so the
@@ -3895,6 +3898,63 @@ export class GameScene extends Phaser.Scene {
     this.scene.pause();
     this.scene.pause(SCENE_KEYS.UI_SCENE);
   };
+
+  /**
+   * DEV (CONFIG.DEV_VICTORY_BUTTON): a small viewport-anchored "WIN" button in the
+   * bottom-right corner that synthesizes a winning MatchEndedPayload and routes it
+   * through #onMatchEnded — the exact same path the server's match:ended takes — so the
+   * TdmResultsScene renders without needing a second browser or real kills.
+   */
+  #createDevVictoryButton(): void {
+    const btn = this.add
+      .bitmapText(this.scale.width - 6, this.scale.height - 6, 'press_start_2p', 'WIN', 10)
+      .setOrigin(1, 1)
+      .setScrollFactor(0)
+      .setDepth(10000)
+      .setTint(0xffdd55)
+      .setInteractive({ useHandCursor: true });
+    btn.on('pointerover', () => btn.setTint(0xffffff));
+    btn.on('pointerout', () => btn.setTint(0xffdd55));
+    btn.on('pointerup', () => this.#onMatchEnded(this.#buildFakeMatchEndedPayload()));
+  }
+
+  /**
+   * DEV helper: build a winning MatchEndedPayload for the victory-screen test button.
+   * Reuses the real roster (NetworkManager.matchPlayers) when present so the results
+   * table looks realistic — the local player is forced to MVP on the winning team with
+   * TDM_WIN_TARGET kills. Falls back to a minimal solo payload offline (DEV_SKIP_TO_GAMEPLAY).
+   */
+  #buildFakeMatchEndedPayload(): MatchEndedPayload {
+    const nm = this.#safeNetworkManager();
+    const localId = nm?.localPlayerId ?? 'dev-local';
+    const roster = nm?.matchPlayers ?? [];
+
+    // Local player's team wins; default to team 0 when team is unknown/offline.
+    const localTeam = roster.find((p) => p.id === localId)?.team ?? 0;
+    const winningTeam = localTeam === 1 ? 1 : 0;
+
+    const stats: TdmPlayerStat[] =
+      roster.length > 0
+        ? roster.map((p) => {
+            const team = p.team === 1 ? 1 : 0;
+            const isLocal = p.id === localId;
+            const onWinningTeam = team === winningTeam;
+            return {
+              playerId: p.id,
+              name: p.name,
+              team,
+              // Local player gets the full target (MVP); others get plausible filler.
+              kills: isLocal ? CONFIG.TDM_WIN_TARGET : onWinningTeam ? Math.floor(CONFIG.TDM_WIN_TARGET / 3) : 2,
+              deaths: isLocal ? 1 : 3,
+            };
+          })
+        : [{ playerId: localId, name: 'YOU', team: winningTeam, kills: CONFIG.TDM_WIN_TARGET, deaths: 1 }];
+
+    const teamScores: [number, number] = [0, 0];
+    for (const s of stats) teamScores[s.team] += s.kills;
+
+    return { winningTeam, teamScores, mvpPlayerId: localId, stats };
+  }
 
   #clearLocalDeath(): void {
     this.#deathLockActive = false;

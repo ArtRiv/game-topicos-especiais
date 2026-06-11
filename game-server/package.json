@@ -3,7 +3,9 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "prestart": "node scripts/free-port.mjs",
     "start": "tsx src/server.ts",
+    "predev": "node scripts/free-port.mjs",
     "dev": "tsx watch src/server.ts",
     "test": "vitest",
     "stress-test": "node scripts/stress-test.mjs"
