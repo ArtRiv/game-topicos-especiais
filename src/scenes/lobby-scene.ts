@@ -7,6 +7,7 @@ import { MAP_POOL } from '../networking/types.js';
 import { ASSET_KEYS } from '../common/assets.js';
 import { LOBBY_VOLUME, MusicManager } from '../common/music-manager';
 import { SKIP_TO_LOBBY, resolveConnection } from '../common/config';
+import { startScene } from './scene-transition';
 
 // BitmapText replaces Phaser.GameObjects.Text. Press_Start_2P TTF was
 // pre-rasterized via Snowb into Press_Start-2.png + Press_Start-2.fnt
@@ -311,6 +312,12 @@ export class LobbyScene extends Phaser.Scene {
   #statusText!: Phaser.GameObjects.BitmapText;
   #configBlockObjects: Phaser.GameObjects.GameObject[] = [];
   #capacityHeader: Phaser.GameObjects.BitmapText | null = null;
+  // Back-to-menu navigation latches. #leavingToMenu blocks a double ESC/click
+  // from starting two scene transitions; #matchStarting blocks back-nav after
+  // lobby:started arrived (the match handoff owns the scene from that point).
+  // Both reset in create() — scene instances persist across restarts.
+  #leavingToMenu = false;
+  #matchStarting = false;
 
   constructor() {
     super({ key: SCENE_KEYS.LOBBY_SCENE });
@@ -565,6 +572,14 @@ export class LobbyScene extends Phaser.Scene {
   }
 
   public create(): void {
+    this.#leavingToMenu = false;
+    this.#matchStarting = false;
+
+    // ESC backs out to the main menu from any lobby view (connect dialogue,
+    // lobby list, waiting room). The connect dialogue's own keydown handler
+    // deliberately ignores Escape, so this is the single owner of that key.
+    this.input.keyboard?.on('keydown-ESC', this.#onEscKey);
+
     // Dev flag SKIP_TO_LOBBY: bypass the connect dialogue (name + "localhost" rune) and
     // auto-connect with defaults straight to the lobby list. Otherwise show the dialogue.
     if (SKIP_TO_LOBBY) {
@@ -585,6 +600,7 @@ export class LobbyScene extends Phaser.Scene {
     MusicManager.instance.setMenuVolume(LOBBY_VOLUME);
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.input.keyboard?.off('keydown-ESC', this.#onEscKey);
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_CONNECTED, this.#onConnected, this);
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_LOBBY_UPDATED, this.#onLobbyUpdated, this);
       EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_LOBBY_STARTED, this.#onLobbyStarted, this);
@@ -717,6 +733,7 @@ export class LobbyScene extends Phaser.Scene {
       this.#dialoguePrompt,
       this.#dialogueErrorText,
     ];
+    this.#addBackToMenuButton();
 
     this.#dialogueBeatIndex = 0;
     this.#dialogueInputValue = { nick: 'Player', ip: 'localhost' };
@@ -1153,6 +1170,7 @@ export class LobbyScene extends Phaser.Scene {
     this.#lobbyListContainer = [];
 
     this.#viewObjects = [title, hint, createBtn, listLabel];
+    this.#addBackToMenuButton();
 
     EVENT_BUS.on(CUSTOM_EVENTS.NETWORK_LOBBY_UPDATED, this.#onLobbyUpdated, this);
     // Re-fetch list
@@ -1236,6 +1254,11 @@ export class LobbyScene extends Phaser.Scene {
     // overlaps the config block or the player list below.
     this.#statusText = this.#crispText(cx, 70, '', FONT_SMALL).setOrigin(0.5);
     this.#viewObjects.push(this.#statusText);
+
+    // Back-nav anchored inside the title banner (y=24). Leaving here also
+    // leaves the lobby (#backToMainMenu sends lobby:leave when #currentLobby
+    // is set), so remaining players get the lobby:updated / host:changed.
+    this.#addBackToMenuButton(24);
 
     this.#renderConfigBlock(lobby);
     this.#renderPlayerList(lobby.players);
@@ -1429,6 +1452,10 @@ export class LobbyScene extends Phaser.Scene {
   };
 
   #onLobbyStarted = (data: { matchConfig: MatchConfig }): void => {
+    // The match handoff owns the scene from here — block ESC / MENU back-nav
+    // so a stray press during the fade can't race the LoadingScene start.
+    this.#matchStarting = true;
+
     // 1. Unbind EVENT_BUS listeners first (existing behavior).
     EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_LOBBY_UPDATED, this.#onWaitingRoomUpdate, this);
     EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_LOBBY_STARTED, this.#onLobbyStarted, this);
@@ -1616,6 +1643,77 @@ export class LobbyScene extends Phaser.Scene {
     this.events.on(Phaser.Scenes.Events.UPDATE, updateThumb);
     // Cleanup: when this scrollbar is destroyed (next #renderPlayerList run), stop the update.
     track.once('destroy', () => this.events.off(Phaser.Scenes.Events.UPDATE, updateThumb));
+  }
+
+  #onEscKey = (): void => {
+    this.#backToMainMenu();
+  };
+
+  // Back-nav out of ANY lobby view to the main menu (MENU button / ESC).
+  // Teardown order matters:
+  //   1. Unbind every EVENT_BUS listener FIRST — disconnect() below emits
+  //      NETWORK_DISCONNECTED, which would otherwise rebuild a view mid-fade
+  //      (e.g. #onSkipConnectFail re-showing the connect dialogue).
+  //   2. lobby:leave (if in the waiting room) then socket disconnect. The
+  //      disconnect is required: socket.connect() on an already-open socket
+  //      is a no-op, so re-entering LobbyScene with a live socket would hang
+  //      on "Abrindo o portal..." forever. The server also cleans the lobby
+  //      on 'disconnect' (host migration included), so the explicit leave is
+  //      just the polite fast path.
+  #backToMainMenu(): void {
+    if (this.#leavingToMenu || this.#matchStarting) return;
+    this.#leavingToMenu = true;
+
+    // Connect-dialogue input handlers go first so a click on the MENU button
+    // can't also advance a beat, and keys during the fade do nothing.
+    if (this.#dialogueKeyHandler) {
+      this.input.keyboard?.off('keydown', this.#dialogueKeyHandler);
+      this.#dialogueKeyHandler = null;
+    }
+    if (this.#dialoguePointerHandler) {
+      this.input.off('pointerdown', this.#dialoguePointerHandler);
+      this.#dialoguePointerHandler = null;
+    }
+
+    EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_CONNECTED, this.#onConnected, this);
+    EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_LOBBY_UPDATED, this.#onLobbyUpdated, this);
+    EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_LOBBY_STARTED, this.#onLobbyStarted, this);
+    EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_DISCONNECTED, this.#onDisconnected, this);
+    EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_DISCONNECTED, this.#onDialogueConnectFail, this);
+    EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_DISCONNECTED, this.#onSkipConnectFail, this);
+    EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_LOBBY_UPDATED, this.#onWaitingRoomUpdate, this);
+    EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_HOST_CHANGED, this.#onHostChanged, this);
+    EVENT_BUS.off(CUSTOM_EVENTS.NETWORK_LOBBY_ERROR, this.#onLobbyError, this);
+
+    try {
+      const nm = NetworkManager.getInstance();
+      if (this.#currentLobby) nm.sendLobbyLeave();
+      nm.disconnect();
+    } catch {
+      // NetworkManager never initialised — backed out of the connect dialogue
+      // before the connect beat fired. Nothing to tear down.
+    }
+    this.#currentLobby = null;
+
+    startScene(this, SCENE_KEYS.MAIN_MENU_SCENE);
+  }
+
+  // Compact "MENU" back button pinned to the top-left corner of every lobby
+  // view. Sized 44×14 so it clears the connect view's centered title (which
+  // starts at x=56). Wired on pointerdown (not pointerup) because object
+  // handlers fire before the scene-level pointerdown that advances dialogue
+  // beats — #backToMainMenu then unbinds that handler within the same event.
+  #addBackToMenuButton(yCenter = 11): Phaser.GameObjects.Container {
+    const bg = this.add.rectangle(0, 0, 44, 14, BTN_COLOR).setInteractive();
+    const text = this.#crispText(0, 0, 'MENU', FONT_SMALL_WHITE).setOrigin(0.5);
+    const container = this.add.container(26, yCenter, [bg, text]);
+
+    bg.on('pointerover', () => bg.setFillStyle(BTN_HOVER));
+    bg.on('pointerout', () => bg.setFillStyle(BTN_COLOR));
+    bg.on('pointerdown', () => this.#backToMainMenu());
+
+    this.#viewObjects.push(container);
+    return container;
   }
 
   // BitmapText draws each glyph as a sprite from the pre-rasterized atlas
