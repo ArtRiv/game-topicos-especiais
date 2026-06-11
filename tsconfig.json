@@ -2,6 +2,9 @@
 	"extends": "@devshareacademy/tsconfig/tsconfig.json",
 	"compilerOptions": {
 		"outDir": "dist",
+		"moduleResolution": "bundler",
+		"skipLibCheck": true,
+		"noEmit": true,
 		"typeRoots": [
       "node_modules/@types"
     ]

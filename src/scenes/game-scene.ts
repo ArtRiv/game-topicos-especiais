@@ -129,6 +129,8 @@ import type {
   MatchSpawnsPayload,
   PickupSpawnedPayload,
   PickupCollectedPayload,
+  UpgradeOfferPayload,
+  UpgradeAppliedPayload,
 } from '../networking/types';
 import { RUNTIME_CONFIG } from '../common/runtime-config';
 import { pickStartSpawn } from '../common/spawn-assignment';

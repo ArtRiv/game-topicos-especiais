@@ -34,7 +34,8 @@
       "Bash(pnpm lint *)",
       "Bash(grep -A 1 \"text-lightning-effect\\\\.ts$\")",
       "PowerShell(pnpm test -- --run src/common/sound-settings.test.ts)",
-      "Bash(pnpm test *)"
+      "Bash(pnpm test *)",
+      "PowerShell(Set-Location game-server; npx tsc -p tsconfig.json --noEmit; \"exit: $LASTEXITCODE\")"
     ]
   }
 }
