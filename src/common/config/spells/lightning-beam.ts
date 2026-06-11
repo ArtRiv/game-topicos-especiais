@@ -21,7 +21,10 @@ export const LIGHTNING_BEAM_HAND_PERP_PX = 2;
 
 // Damage + mana drain — both fire on the same tick. Mana running out ends the channel.
 export const LIGHTNING_BEAM_DAMAGE_PER_TICK = 1;
-export const LIGHTNING_BEAM_TICK_INTERVAL_MS = 180;
+// Tick interval widened to cut the beam's DPS (it was "extremely broken" — ~3.3
+// dmg/s at 180ms). 400ms ≈ 2.5 dmg/s, keeping per-hit feel but far less burst.
+// (event balance pass: was 180)
+export const LIGHTNING_BEAM_TICK_INTERVAL_MS = 400;
 export const LIGHTNING_BEAM_MANA_PER_TICK = 1;
 
 // Chaos / animation variety. The beam re-randomises its visual every JITTER_INTERVAL_MS
@@ -50,3 +53,43 @@ export const LIGHTNING_BEAM_TURN_SPEED_RAD_PER_SEC = Math.PI / 3;
 // held tap is therefore just as punishing as a long sustained beam — both are followed
 // by a fixed downtime window before the next cast is allowed.
 export const LIGHTNING_BEAM_COOLDOWN_MS = 1500;
+
+// ─── Charged Lightning Ray (replaces the continuous beam) ─────────────────────
+// Hold the THUNDER slot-1 button to charge: the aim DIRECTION is locked at the
+// moment you start holding and the caster stands still channelling. Releasing
+// fires ONE straight ray in that locked direction whose DAMAGE and LENGTH scale
+// with how long you held (clamped between MIN and MAX). This is a cast-ONCE spell
+// — origin, angle, damage and length are decided locally and broadcast a single
+// time, so remote clients just replicate it (no real-time aim sync).
+//
+//   CHARGE_MAX_MS:        hold time (ms) at which damage/length hit their max.
+//   CHARGE_MIN_MS:        minimum hold (ms) before a release fires at all. A tap
+//                         shorter than this is cancelled (no ray, no cooldown) so
+//                         a mis-click doesn't waste the spell.
+//   DAMAGE_MIN/MAX:       half-heart damage at min-charge / full-charge (lerped).
+//   LENGTH_MIN/MAX_PX:    ray length (px) at min-charge / full-charge (lerped).
+//   HEIGHT_PX:            hitbox thickness (px) — same role as the old beam HEIGHT.
+//   DISPLAY_HEIGHT_PX:    rendered sprite height (cosmetic).
+//   VISIBLE_MS:           how long the fired ray stays on screen (single hit is
+//                         applied on spawn; this is just the flash duration).
+//   COOLDOWN_MS:          downtime after a ray fires before the next charge.
+//   MANA_COST:            mana spent on release (flat — charging itself is free).
+export const CHARGED_RAY_CHARGE_MAX_MS = 1200;
+export const CHARGED_RAY_CHARGE_MIN_MS = 150;
+export const CHARGED_RAY_DAMAGE_MIN = 1;   // 0.5 heart at a quick release
+export const CHARGED_RAY_DAMAGE_MAX = 4;   // 2 hearts fully charged
+export const CHARGED_RAY_LENGTH_MIN_PX = 90;
+export const CHARGED_RAY_LENGTH_MAX_PX = 200;
+export const CHARGED_RAY_HEIGHT_PX = 18;
+export const CHARGED_RAY_DISPLAY_HEIGHT_PX = 48;
+export const CHARGED_RAY_VISIBLE_MS = 260;
+export const CHARGED_RAY_COOLDOWN_MS = 900;
+export const CHARGED_RAY_MANA_COST = 3;
+// Hand pivot offsets (beam-local space) — same meaning as LIGHTNING_BEAM_HAND_*.
+export const CHARGED_RAY_HAND_FORWARD_PX = 0;
+export const CHARGED_RAY_HAND_PERP_PX = 2;
+// Charge-up VFX on the caster: a small pulsing glow that grows START→END as the
+// charge fills, telegraphing the spell to nearby players.
+export const CHARGED_RAY_CHARGE_TINT = 0xffe680;
+export const CHARGED_RAY_CHARGE_GLOW_START = 1;
+export const CHARGED_RAY_CHARGE_GLOW_MAX = 5;

@@ -15,6 +15,11 @@ import {
 } from '../../common/config';
 import { RUNTIME_CONFIG } from '../../common/runtime-config';
 import type { FireArea } from './fire-area';
+import type { SpellModifiers } from '../../common/spell-modifiers';
+
+/** Duck-typed caster: anything carrying per-player upgrade modifiers (Player — local or remote).
+ *  Duck-typed (not `Player`) to avoid an import cycle through player.ts → game-scene chains. */
+type ModifierCarrier = { spellModifiers?: SpellModifiers };
 
 export class FireBolt extends Phaser.Physics.Arcade.Sprite implements ActiveSpell {
   readonly element: Element = ELEMENT.FIRE;
@@ -27,17 +32,37 @@ export class FireBolt extends Phaser.Physics.Arcade.Sprite implements ActiveSpel
   #damage: number = RUNTIME_CONFIG.FIRE_BOLT_DAMAGE;
   #isEmpowered: boolean = false;
   #overlappingAreas: Set<FireArea> = new Set();
+  /** Upgrade size multiplier captured at cast time — preserved through empower + explode rescales. */
+  #sizeMult: number = 1;
+  /** Upgrade damage multiplier captured at cast time — re-applied when empower recomputes damage. */
+  #damageMult: number = 1;
 
   get baseDamage(): number {
     return this.#damage;
   }
 
-  constructor(scene: Phaser.Scene, x: number, y: number, targetX: number, targetY: number) {
+  constructor(
+    scene: Phaser.Scene,
+    x: number,
+    y: number,
+    targetX: number,
+    targetY: number,
+    caster?: Phaser.GameObjects.GameObject,
+  ) {
     super(scene, x, y, ASSET_KEYS.FIRE_BOLT);
     scene.add.existing(this);
     scene.physics.add.existing(this);
 
     this.setDepth(3);
+
+    // TDM death-card upgrades: read the caster's server-synced modifiers AT CAST TIME. Works for
+    // local casts (caster = local Player) AND remote replicas (caster = remote Player whose
+    // modifiers were overwritten by the last upgrade:applied broadcast) — both render identically.
+    const mods = (caster as ModifierCarrier | undefined)?.spellModifiers;
+    this.#damageMult = mods?.fireballDamageMult ?? 1;
+    this.#damage = Math.max(1, Math.round(RUNTIME_CONFIG.FIRE_BOLT_DAMAGE * this.#damageMult));
+    this.#sizeMult = mods?.fireballSizeMult ?? 1;
+    const speed = RUNTIME_CONFIG.FIRE_BOLT_SPEED * (mods?.fireballSpeedMult ?? 1);
 
     // Origin shift puts the rotation pivot on the flame's visual centre (it sits below
     // the geometric centre of the 48x48 frame), so the rotated sprite stays aligned with
@@ -51,11 +76,15 @@ export class FireBolt extends Phaser.Physics.Arcade.Sprite implements ActiveSpel
     body.setSize(16, 16);
     body.setOffset(this.displayOriginX - 8, this.displayOriginY - 8);
 
+    // Size upgrade: scale sprite AND hitbox together (Arcade body dimensions track game-object
+    // scale). Per design, size does NOT change damage — only the visual + collision footprint.
+    if (this.#sizeMult !== 1) this.setScale(this.#sizeMult);
+
     // calculate velocity towards target
     const angle = Phaser.Math.Angle.Between(x, y, targetX, targetY);
     body.setVelocity(
-      Math.cos(angle) * RUNTIME_CONFIG.FIRE_BOLT_SPEED,
-      Math.sin(angle) * RUNTIME_CONFIG.FIRE_BOLT_SPEED,
+      Math.cos(angle) * speed,
+      Math.sin(angle) * speed,
     );
 
     // rotate sprite to face direction
@@ -116,7 +145,12 @@ export class FireBolt extends Phaser.Physics.Arcade.Sprite implements ActiveSpel
 
   #empowerFromFireArea(): void {
     this.#isEmpowered = true;
-    this.#damage = Math.max(1, Math.round(RUNTIME_CONFIG.FIRE_BOLT_DAMAGE * FIRE_BOLT_FIRE_AREA_DAMAGE_MULTIPLIER));
+    // Recompute damage from base × combo multiplier × the caster's upgrade multiplier (captured
+    // at cast time) — without #damageMult here, entering a FireArea would silently strip upgrades.
+    this.#damage = Math.max(
+      1,
+      Math.round(RUNTIME_CONFIG.FIRE_BOLT_DAMAGE * FIRE_BOLT_FIRE_AREA_DAMAGE_MULTIPLIER * this.#damageMult),
+    );
 
     const body = this.body as Phaser.Physics.Arcade.Body;
     if (body) {
@@ -126,7 +160,8 @@ export class FireBolt extends Phaser.Physics.Arcade.Sprite implements ActiveSpel
       );
     }
 
-    this.setScale(FIRE_BOLT_FIRE_AREA_SCALE_MULTIPLIER);
+    // Compose the combo scale with the upgrade size mult so Big Bolt survives the empower rescale.
+    this.setScale(FIRE_BOLT_FIRE_AREA_SCALE_MULTIPLIER * this.#sizeMult);
   }
 
   public explode(): void {
@@ -153,10 +188,11 @@ export class FireBolt extends Phaser.Physics.Arcade.Sprite implements ActiveSpel
       this.y + Math.sin(impactAngle) * impactForwardOffset,
     );
 
-    // Keep rotation facing the direction the bolt was traveling
+    // Keep rotation facing the direction the bolt was traveling. Impact keeps the upgrade size
+    // mult so Big Bolt's explosion doesn't visibly shrink back to base size on contact.
     this.setRotation(impactAngle);
     this.setVisible(true);
-    this.setScale(this.#isEmpowered ? FIRE_BOLT_FIRE_AREA_IMPACT_SCALE_MULTIPLIER : 1);
+    this.setScale((this.#isEmpowered ? FIRE_BOLT_FIRE_AREA_IMPACT_SCALE_MULTIPLIER : 1) * this.#sizeMult);
     this.play(ASSET_KEYS.FIRE_BOLT_IMPACT);
     this.once(`animationcomplete-${ASSET_KEYS.FIRE_BOLT_IMPACT}`, () => {
       this.destroy();
@@ -165,4 +201,6 @@ export class FireBolt extends Phaser.Physics.Arcade.Sprite implements ActiveSpel
 }
 
 import { registerSpell } from './spell-registry';
-registerSpell(SPELL_ID.FIRE_BOLT, (scene, x, y, tx, ty) => new FireBolt(scene, x, y, tx, ty));
+// caster is forwarded so the bolt reads the caster's upgrade modifiers — present on BOTH paths:
+// local casts (spell-casting-component) and remote replicas (#onRemoteSpellCast passes remoteCaster).
+registerSpell(SPELL_ID.FIRE_BOLT, (scene, x, y, tx, ty, _dir, caster) => new FireBolt(scene, x, y, tx, ty, caster));

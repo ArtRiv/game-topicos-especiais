@@ -28,13 +28,15 @@ export class EarthBump extends Phaser.Physics.Arcade.Sprite implements ActiveSpe
   #hitEnemies: Set<CharacterGameObject> = new Set();
   #isDying: boolean = false;
   #direction: Direction;
+  #damageMult: number = 1;
+  #knockbackMult: number = 1;
 
   get baseDamage(): number {
-    return RUNTIME_CONFIG.EARTH_BUMP_DAMAGE;
+    return Math.max(1, Math.round(RUNTIME_CONFIG.EARTH_BUMP_DAMAGE * this.#damageMult));
   }
 
   get knockbackForce(): number {
-    return RUNTIME_CONFIG.EARTH_BUMP_KNOCKBACK_FORCE;
+    return RUNTIME_CONFIG.EARTH_BUMP_KNOCKBACK_FORCE * this.#knockbackMult;
   }
 
   get knockbackDuration(): number {
@@ -50,8 +52,10 @@ export class EarthBump extends Phaser.Physics.Arcade.Sprite implements ActiveSpe
     return (this.#phase === 'startup' || this.#phase === 'loop') && !this.#isDying;
   }
 
-  constructor(scene: Phaser.Scene, x: number, y: number, direction: Direction) {
+  constructor(scene: Phaser.Scene, x: number, y: number, direction: Direction, caster?: { spellModifiers?: { earthBumpDamageMult?: number; earthBumpKnockbackMult?: number } }) {
     super(scene, x, y - EARTH_BUMP_CURSOR_Y_OFFSET, ASSET_KEYS.EARTH_BUMP);
+    this.#damageMult = caster?.spellModifiers?.earthBumpDamageMult ?? 1;
+    this.#knockbackMult = caster?.spellModifiers?.earthBumpKnockbackMult ?? 1;
     scene.add.existing(this);
     scene.physics.add.existing(this);
 
@@ -86,12 +90,23 @@ export class EarthBump extends Phaser.Physics.Arcade.Sprite implements ActiveSpe
     // Apply basic hit damage
     enemy.hit(this.#direction, this.baseDamage);
 
-    // Apply knockback in the cast direction — pushes the target far away
-    // for a brief window. Order matters: hit() may transition to HurtState,
-    // which sets its own pushback velocity; applying knockback AFTER it
-    // overrides with the larger force so the user sees the bump as a launch
-    // rather than a tap.
-    enemy.applyKnockback(this.#direction, this.knockbackForce, this.knockbackDuration);
+    // Apply knockback along the REAL line from the bump's center to the target,
+    // not the 4-way cast direction. The old cardinal-only push made a target
+    // that was up-and-to-the-right of the bump fly straight up (or sideways),
+    // which read as "the knockback goes the wrong way". Radial-from-bump matches
+    // the visual: the ground heaves and shoves whatever's standing on it outward.
+    // Order matters: hit() may transition to HurtState, which sets its own
+    // pushback velocity; applying knockback AFTER it overrides with the larger
+    // force so the user sees the bump as a launch rather than a tap.
+    const nx = enemy.x - this.x;
+    const ny = enemy.y - this.y;
+    if (Math.hypot(nx, ny) < 1e-4) {
+      // Target is dead-center on the bump — fall back to the cast direction so
+      // there's still a definite launch vector.
+      enemy.applyKnockback(this.#direction, this.knockbackForce, this.knockbackDuration);
+    } else {
+      enemy.applyKnockbackVector(nx, ny, this.knockbackForce, this.knockbackDuration);
+    }
   }
 
   #startStartup(): void {
@@ -138,4 +153,5 @@ export class EarthBump extends Phaser.Physics.Arcade.Sprite implements ActiveSpe
 }
 
 import { registerSpell } from './spell-registry';
-registerSpell(SPELL_ID.EARTH_BUMP, (scene, _x, _y, tx, ty, dir) => new EarthBump(scene, tx, ty, dir));
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+registerSpell(SPELL_ID.EARTH_BUMP, (scene, _x, _y, tx, ty, dir, caster) => new EarthBump(scene, tx, ty, dir, caster as any));

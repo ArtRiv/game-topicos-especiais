@@ -8,8 +8,6 @@ import {
   PLAYER_HURT_PUSH_BACK_SPEED,
   PLAYER_INVULNERABLE_AFTER_HIT_DURATION,
   PLAYER_SPEED,
-  PLAYER_MAX_MANA,
-  PLAYER_MANA_REGEN_RATE,
   AIR_BURST_DISTANCE_TILES,
   AIR_BURST_DURATION_MS,
   AIR_BURST_VFX_OFFSET_PX,
@@ -17,7 +15,6 @@ import {
   AIR_BURST_ARC_LIFT_PX,
   AIR_BURST_SCALE_BOOST,
   AIR_BURST_IFRAME_MS,
-  AIR_BURST_MANA_COST,
   AIR_BURST_COOLDOWN,
   AIR_BURST_VFX_TILT_RAD,
 } from '../../common/config';
@@ -37,8 +34,8 @@ import { MoveHoldingState } from '../../components/state-machine/states/characte
 import { HeldGameObjectComponent } from '../../components/game-object/held-game-object-component';
 import { ThrowState } from '../../components/state-machine/states/character/throw-state';
 import { CastingState } from '../../components/state-machine/states/character/casting-state';
-import { ManaComponent } from '../../components/game-object/mana-component';
 import { SpellCastingComponent } from '../../components/game-object/spell-casting-component';
+import { SpellModifiers, makeDefaultSpellModifiers } from '../../common/spell-modifiers';
 
 export type PlayerConfig = {
   scene: Phaser.Scene;
@@ -52,7 +49,6 @@ export type PlayerConfig = {
 
 export class Player extends CharacterGameObject {
   #collidingObjectsComponent: CollidingObjectsComponent;
-  #manaComponent: ManaComponent;
   #spellCastingComponent: SpellCastingComponent;
 
   // Phase 9.3 — Dash state (D-13/14, RESEARCH.md §3)
@@ -63,6 +59,11 @@ export class Player extends CharacterGameObject {
   // loops (skip pulls/slows), and the cross-player overlap handlers (reflect
   // projectiles back at sender instead of registering a hit).
   public isStarShieldActive: boolean = false;
+  // Per-player spell stat multipliers (future TDM upgrade system). Default = all
+  // 1.0 (no change). Read at cast time by spells / the charge machine. The local
+  // player's are mutated by the upgrade flow; remote players' are set from the
+  // server's broadcast so every client computes the same final spell values.
+  public spellModifiers: SpellModifiers = makeDefaultSpellModifiers();
   #lastDashTime: number = -Infinity;
   // Independent cooldown for the wind super-dash. Tracked here instead of in
   // SpellCastingComponent because AirBurst isn't bound to any spell slot — it
@@ -142,8 +143,7 @@ export class Player extends CharacterGameObject {
     // add components
     this.#collidingObjectsComponent = new CollidingObjectsComponent(this);
     new HeldGameObjectComponent(this);
-    this.#manaComponent = new ManaComponent(this, PLAYER_MAX_MANA, PLAYER_MANA_REGEN_RATE);
-    this.#spellCastingComponent = new SpellCastingComponent(this, this.#manaComponent);
+    this.#spellCastingComponent = new SpellCastingComponent(this);
 
     // enable auto update functionality. The listener must come off BOTH on
     // scene shutdown AND when this object alone is destroyed mid-match (remote
@@ -165,10 +165,6 @@ export class Player extends CharacterGameObject {
     return this.body as Phaser.Physics.Arcade.Body;
   }
 
-  get manaComponent(): ManaComponent {
-    return this.#manaComponent;
-  }
-
   get spellCastingComponent(): SpellCastingComponent {
     return this.#spellCastingComponent;
   }
@@ -184,9 +180,6 @@ export class Player extends CharacterGameObject {
     if (!this.scene) return;
     super.update();
     this.#collidingObjectsComponent.reset();
-    // update mana regen
-    const delta = this.scene.game.loop.delta;
-    this.#manaComponent.update(delta);
   }
 
   /**
@@ -210,7 +203,6 @@ export class Player extends CharacterGameObject {
   public dashSuper(): boolean {
     const now = this.scene.time.now;
     if (now - this.#lastAirBurstTime < AIR_BURST_COOLDOWN) return false;
-    if (!this.#manaComponent.consume(AIR_BURST_MANA_COST)) return false;
     this.#lastAirBurstTime = now;
     // Mark airborne for the dash window — GameScene's hazard scanner skips
     // mud/lava slow + damage while this is true (mage is jumping over them).
@@ -246,7 +238,8 @@ export class Player extends CharacterGameObject {
   }): void {
     const cfg = RUNTIME_CONFIG;
     const now = this.scene.time.now;
-    if (!opts.ignoreCooldown && now - this.#lastDashTime < cfg.DASH_COOLDOWN_MS) return;
+    // Light Feet card (TDM death-card upgrades) shrinks the dash cooldown window.
+    if (!opts.ignoreCooldown && now - this.#lastDashTime < cfg.DASH_COOLDOWN_MS * this.spellModifiers.dashCooldownMult) return;
 
     // Direction vector (D-14): WASD first, fallback to last-faced direction.
     let dx = 0;

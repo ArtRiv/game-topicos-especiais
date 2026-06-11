@@ -26,12 +26,6 @@ import type {
   EarthWallPillarBroadcast,
   EarthWallPillarDestroyPayload,
   EarthWallPillarDestroyBroadcast,
-  BeamStartPayload,
-  BeamStartBroadcast,
-  BeamUpdatePayload,
-  BeamUpdateBroadcast,
-  BeamEndPayload,
-  BeamEndBroadcast,
   Lobby,
   LobbyConfig,
   MatchConfig,
@@ -52,6 +46,9 @@ import type {
   PickupSpawnedPayload,
   PickupClaimPayload,
   PickupCollectedPayload,
+  UpgradeOfferPayload,
+  UpgradeSelectPayload,
+  UpgradeAppliedPayload,
 } from './types.js';
 
 // Messages exchanged over WebRTC data channels
@@ -64,9 +61,6 @@ type DcMessage =
   | ({ type: 'breath-end' })
   | ({ type: 'earth-wall-pillar' } & EarthWallPillarPayload)
   | ({ type: 'earth-wall-pillar-destroy' } & EarthWallPillarDestroyPayload)
-  | ({ type: 'beam-start' } & BeamStartPayload)
-  | ({ type: 'beam-update' } & BeamUpdatePayload)
-  | ({ type: 'beam-end' } & BeamEndPayload)
   // Star topology (Phase 4): server-batched position snapshot — an array of per-player pos payloads,
   // each carrying its own server-tagged playerId. Unpacked client-side into N NETWORK_PLAYER_UPDATE.
   | ({ type: 'snapshot'; players: Array<PlayerUpdatePayload & { playerId: string }> });
@@ -334,6 +328,12 @@ export class NetworkManager {
     this.#socket.emit('spell:hit-environment', payload);
   }
 
+  /** TDM death-card upgrades: echo my pick back to the server (offerId + cardId only — the server
+   *  derives the player from the socket and validates against its stored offer). */
+  sendUpgradeSelect(payload: UpgradeSelectPayload): void {
+    this.#socket.emit('upgrade:select', payload);
+  }
+
   /** Claim that the local player touched a special-spell pickup. Server resolves first-touch-wins
    *  (by socket identity) and broadcasts pickup:collected. Carries only pickupId (anti-spoof). */
   sendPickupClaim(payload: PickupClaimPayload): void {
@@ -380,18 +380,6 @@ export class NetworkManager {
 
   sendEarthWallPillarDestroy(payload: EarthWallPillarDestroyPayload): void {
     this.#broadcastReliable({ type: 'earth-wall-pillar-destroy', ...payload });
-  }
-
-  sendBeamStart(payload: BeamStartPayload): void {
-    this.#broadcastReliable({ type: 'beam-start', ...payload });
-  }
-
-  sendBeamUpdate(payload: BeamUpdatePayload): void {
-    this.#broadcastUnreliable({ type: 'beam-update', ...payload });
-  }
-
-  sendBeamEnd(payload: BeamEndPayload): void {
-    this.#broadcastReliable({ type: 'beam-end', ...payload });
   }
 
   sendRoomTransitionRequest(payload: RoomTransitionPayload): void {
@@ -686,6 +674,14 @@ export class NetworkManager {
     this.#socket.on('pickup:collected', (payload: PickupCollectedPayload) => {
       EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_PICKUP_COLLECTED, payload);
     });
+    // TDM death-card upgrades. OFFER is server→this-socket-only (the dying player); APPLIED is a
+    // lobby-wide broadcast carrying the player's complete modifier snapshot.
+    this.#socket.on('upgrade:offer', (payload: UpgradeOfferPayload) => {
+      EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_UPGRADE_OFFER, payload);
+    });
+    this.#socket.on('upgrade:applied', (payload: UpgradeAppliedPayload) => {
+      EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_UPGRADE_APPLIED, payload);
+    });
   }
 
   // ---- WebRTC N-to-N mesh ----
@@ -974,15 +970,6 @@ export class NetworkManager {
           break;
         case 'earth-wall-pillar-destroy':
           EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_EARTH_WALL_PILLAR_DESTROY, { ...msg, playerId } as EarthWallPillarDestroyBroadcast);
-          break;
-        case 'beam-start':
-          EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_BEAM_START, { ...msg, playerId } as BeamStartBroadcast);
-          break;
-        case 'beam-update':
-          EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_BEAM_UPDATE, { ...msg, playerId } as BeamUpdateBroadcast);
-          break;
-        case 'beam-end':
-          EVENT_BUS.emit(CUSTOM_EVENTS.NETWORK_BEAM_END, { ...msg, playerId } as BeamEndBroadcast);
           break;
       }
     };

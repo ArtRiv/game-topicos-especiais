@@ -11,13 +11,16 @@ export const LIGHTNING_SPRITE_VARIANT: 'CURRENT' | 'MAGIC_PACK_9' = 'CURRENT';
 export const LIGHTNING_BURST_VARIANT: '002' | '003' = '003';
 
 // ─── Lightning combos (cross-element) ─────────────────────────────────────────
-export const LIGHTNING_BURST_COMBO_DAMAGE = 5;     // FireBolt + ThunderStrike (event nerf: was 8 = 80% of 10 HP)
-export const LIGHTNING_STRIKE_COMBO_DAMAGE = 4;    // ThunderStrike + FireArea (event nerf: was 6)
+export const LIGHTNING_BURST_COMBO_DAMAGE = 3;     // FireBolt + ThunderStrike — "choque" (event balance: was 5; 1.5 hearts)
+export const LIGHTNING_STRIKE_COMBO_DAMAGE = 5;    // ThunderStrike + FireArea — hard combo, rewards more (event balance: was 4; 2.5 hearts)
 export const LIGHTNING_BURST_COMBO_BODY_RADIUS = 28;
 export const LIGHTNING_STRIKE_COMBO_BODY_RADIUS = 26;
 
 // ─── Thunder Strike (area) ────────────────────────────────────────────────────
-export const THUNDER_STRIKE_DAMAGE = 3;
+// Hard-to-dodge AoE that requires closing distance on the target; capped at 1
+// full heart so it doesn't out-trade the infinite-range fireball. (event
+// balance pass: was 3)
+export const THUNDER_STRIKE_DAMAGE = 2;
 export const THUNDER_STRIKE_MANA_COST = 3;
 export const THUNDER_STRIKE_COOLDOWN = 1200; // ms
 export const THUNDER_STRIKE_LOOP_DURATION = 400; // ms body stays active

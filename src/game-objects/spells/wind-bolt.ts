@@ -40,9 +40,11 @@ export class WindBolt extends Phaser.Physics.Arcade.Sprite implements ActiveSpel
   #isFlameSlash: boolean = false;
   #flameEmberTimer: Phaser.Time.TimerEvent | undefined;
   #flameGlow: Phaser.GameObjects.Graphics | undefined;
+  #damageMult: number = 1;
+  pushMult: number = 1;
 
   get baseDamage(): number {
-    const base = RUNTIME_CONFIG.WIND_BOLT_DAMAGE;
+    const base = Math.max(1, Math.round(RUNTIME_CONFIG.WIND_BOLT_DAMAGE * this.#damageMult));
     return this.#isFlameSlash ? Math.round(base * FLAME_SLASH_DAMAGE_MULT) : base;
   }
 
@@ -131,19 +133,30 @@ export class WindBolt extends Phaser.Physics.Arcade.Sprite implements ActiveSpel
     return this;
   }
 
-  constructor(scene: Phaser.Scene, x: number, y: number, targetX: number, targetY: number) {
+  constructor(scene: Phaser.Scene, x: number, y: number, targetX: number, targetY: number, caster?: { spellModifiers?: { windBoltDamageMult?: number; windBoltSizeMult?: number; windBoltSpeedMult?: number; windBoltPushMult?: number } }) {
     super(scene, x, y, ASSET_KEYS.WIND_BOLT);
+    const mods = caster?.spellModifiers;
+    this.#damageMult = mods?.windBoltDamageMult ?? 1;
+    this.pushMult = mods?.windBoltPushMult ?? 1;
     scene.add.existing(this);
     scene.physics.add.existing(this);
     this.setDepth(3);
 
+    const sizeMult = mods?.windBoltSizeMult ?? 1;
+    const speedMult = mods?.windBoltSpeedMult ?? 1;
     const body = this.body as Phaser.Physics.Arcade.Body;
-    body.setSize(4, 4, true);
+    if (sizeMult !== 1) {
+      this.setScale(sizeMult);
+      const bodySize = Math.max(2, Math.round(4 * sizeMult));
+      body.setSize(bodySize, bodySize, true);
+    } else {
+      body.setSize(4, 4, true);
+    }
 
     const angle = Phaser.Math.Angle.Between(x, y, targetX, targetY);
     body.setVelocity(
-      Math.cos(angle) * RUNTIME_CONFIG.WIND_BOLT_SPEED,
-      Math.sin(angle) * RUNTIME_CONFIG.WIND_BOLT_SPEED,
+      Math.cos(angle) * RUNTIME_CONFIG.WIND_BOLT_SPEED * speedMult,
+      Math.sin(angle) * RUNTIME_CONFIG.WIND_BOLT_SPEED * speedMult,
     );
     this.setRotation(angle);
     this.play(ASSET_KEYS.WIND_BOLT);
@@ -188,4 +201,5 @@ export class WindBolt extends Phaser.Physics.Arcade.Sprite implements ActiveSpel
 }
 
 // Side-effect: register factory
-registerSpell(SPELL_ID.WIND_BOLT, (scene, x, y, tx, ty) => new WindBolt(scene, x, y, tx, ty));
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+registerSpell(SPELL_ID.WIND_BOLT, (scene, x, y, tx, ty, _el, caster) => new WindBolt(scene, x, y, tx, ty, caster as any));

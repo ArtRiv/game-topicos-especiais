@@ -22,6 +22,9 @@ import { Player } from '../player/player';
  */
 export const STAR_SHIELD_DURATION_MS = 5000;
 export const STAR_SHIELD_REFLECT_SPEED_MULT = 1.25;
+// Charges granted when a STAR_SHIELD pickup is collected. 1 = single-use, same
+// model as VoidOrb / DarkBolt — the shield is no longer an always-on special.
+export const STAR_SHIELD_PICKUP_CHARGES = 1;
 // Tuning knobs. Display scale shrinks the 128×128 source frame; Y offset moves
 // the bubble down relative to the player center (positive = down).
 export const STAR_SHIELD_DISPLAY_SCALE = 0.45;

@@ -3,14 +3,21 @@
 // ray particles + camera-level screen-space displacement + per-layer glow.
 
 // ─── Core orb ────────────────────────────────────────────────────────────────
-export const VOID_ORB_DAMAGE_PER_TICK = 1;
+// Special spell — should be a real threat. High per-tick so a player caught in
+// the orb dies fast unless they escape (e.g. wind dash). 7 half-hearts = 3.5
+// hearts per tick. NOTE: cross-player tick damage is wired in Plan 2 (the orb
+// currently only damages enemies/bots, not remote players). (event balance
+// pass: was 1)
+export const VOID_ORB_DAMAGE_PER_TICK = 7;
 export const VOID_ORB_TICK_INTERVAL = 600;
 export const VOID_ORB_MANA_COST = 6;
 export const VOID_ORB_COOLDOWN = 4000;
 export const VOID_ORB_ORB_HOLD_MS = 20000;
 
 // ─── Pickup ──────────────────────────────────────────────────────────────────
-export const VOID_ORB_PICKUP_CHARGES = 3;
+// One pickup = one cast. (event balance pass: was 3 — a single special charge
+// per pickup, matching DarkBolt / StarShield.)
+export const VOID_ORB_PICKUP_CHARGES = 1;
 export const VOID_ORB_PICKUP_OFFSET_X = 40;
 export const VOID_ORB_PICKUP_OFFSET_Y = 0;
 export const VOID_ORB_BM_DISPLAY_SCALE = 0.6;

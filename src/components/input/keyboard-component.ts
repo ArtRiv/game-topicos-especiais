@@ -19,6 +19,7 @@ export class KeyboardComponent extends InputComponent {
   #carouselRightKey: Phaser.Input.Keyboard.Key; // E — next element
   #specialCastKey: Phaser.Input.Keyboard.Key;   // R — cast pickup-granted special spell
   #printCoordsKey: Phaser.Input.Keyboard.Key;   // M — print player world coords to console
+  #capturePickupSpawnKey: Phaser.Input.Keyboard.Key; // K — capture current pos as a pickup spawnpoint
 
   // Mouse-button state. Latched to "just down" on pointerdown and consumed at end of frame.
   #leftMouseJustDown = false;
@@ -44,6 +45,7 @@ export class KeyboardComponent extends InputComponent {
     this.#carouselRightKey = keyboardPlugin.addKey(Phaser.Input.Keyboard.KeyCodes.E);
     this.#specialCastKey = keyboardPlugin.addKey(Phaser.Input.Keyboard.KeyCodes.R);
     this.#printCoordsKey = keyboardPlugin.addKey(Phaser.Input.Keyboard.KeyCodes.M);
+    this.#capturePickupSpawnKey = keyboardPlugin.addKey(Phaser.Input.Keyboard.KeyCodes.K);
 
     // Prevent Chrome's default page-scroll on SPACE and any browser shortcuts on SHIFT
     // while the game canvas has focus. CTRL is intentionally NOT captured (D-19, Phase 9.3)
@@ -73,7 +75,8 @@ export class KeyboardComponent extends InputComponent {
     // Q          = element carousel: previous
     // E          = element carousel: next
     // F          = interact / action (rebound from E)
-    // M          = print player world coords to console (spawnpoint tool)
+    // M          = print player world coords to console (TDM spawnpoint tool)
+    // K          = capture current pos as a special-pickup spawnpoint (accumulates + prints paste-ready array)
     // P          = toggle arcade physics hitboxes
     // mouse move = aim target position
     // CTRL       = no longer bound (D-19) — Ctrl+W/T/R passes through to browser
@@ -147,6 +150,14 @@ export class KeyboardComponent extends InputComponent {
     return Phaser.Input.Keyboard.JustDown(this.#specialCastKey);
   }
 
+  // isSpell2KeyDown returns true while slot-1 (right mouse OR `2`) is HELD — used
+  // by the charged lightning ray to detect press-hold-release. Mirrors the
+  // isSpell3KeyDown pattern (FireBreath). The right mouse button's held state
+  // comes straight from the active pointer; `2` from the key's isDown.
+  get isSpell2KeyDown(): boolean {
+    return this.#spell2Key.isDown || (this.#scene.input.activePointer?.rightButtonDown() ?? false);
+  }
+
   // isSpell3KeyDown returns true while THREE is held (not just-down)
   get isSpell3KeyDown(): boolean {
     return this.#spell3Key.isDown;
@@ -163,6 +174,10 @@ export class KeyboardComponent extends InputComponent {
 
   get isPrintCoordsKeyJustDown(): boolean {
     return Phaser.Input.Keyboard.JustDown(this.#printCoordsKey);
+  }
+
+  get isCapturePickupSpawnKeyJustDown(): boolean {
+    return Phaser.Input.Keyboard.JustDown(this.#capturePickupSpawnKey);
   }
 
   get isRadialMenuKeyJustDown(): boolean {

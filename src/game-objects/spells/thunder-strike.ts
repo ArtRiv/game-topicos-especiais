@@ -83,8 +83,11 @@ export class ThunderStrike extends Phaser.Physics.Arcade.Sprite implements Activ
       this.setOrigin(0.5, 1);
     }
 
-    // Empowered cast deals more damage per the user's spec.
-    this.#damageMultiplier = voidEmpowered ? 1.75 : 1;
+    // Empowered cast (Lightning + VoidOrb combo) deals more damage per the
+    // user's spec. 2.5× on top of THUNDER_STRIKE_DAMAGE (2) = 5 half-hearts =
+    // 2.5 full hearts — hard combo to land, so it's rewarded. (event balance
+    // pass: was 1.75, which assumed the old base damage of 3.)
+    this.#damageMultiplier = voidEmpowered ? 2.5 : 1;
     // Reaction buffer is now a single tunable (RUNTIME_CONFIG.THUNDER_STRIKE_REACTION_BUFFER_MS).
     // The void-empowered variant used to bake in a separate 50ms (its anim was shorter),
     // but we now share one knob — tune via debug panel.

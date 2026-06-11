@@ -48,7 +48,12 @@ export const SPELL_SLOT_REGISTRY: Record<Element, readonly [SpellId | null, Spel
   // Chrome Shift+RMB context-menu chord that would otherwise interfere when
   // chaining a regular dash into a super-dash.
   [ELEMENT.WIND]:     [SPELL_ID.WIND_BOLT,      null,                     null],
-  [ELEMENT.THUNDER]:  [SPELL_ID.THUNDER_STRIKE, SPELL_ID.LIGHTNING_BEAM,  null],
+  // THUNDER slot 1 (right click) is null because the ChargedLightningRay is a
+  // press-HOLD-release spell handled by GameScene.#updateChargedLightningRay
+  // (same pattern as FireBreath on key 3) — the standard just-down slot-cast
+  // can't express charge semantics. The HUD still shows the LIGHTNING_BEAM icon
+  // via its own special handling; the slot stays null so nothing double-fires.
+  [ELEMENT.THUNDER]:  [SPELL_ID.THUNDER_STRIKE, null,  null],
   [ELEMENT.DARKNESS]: [SPELL_ID.VOID_ORB,      null,                     null],
 };
 
@@ -76,9 +81,10 @@ export const SPELL_CONFIG: Record<SpellId, { manaCost: number; cooldown: number 
   // STAR_SHIELD — special-slot spell, always-available. No mana/cooldown; the
   // SpecialSpellInventory auto-refills the slot after each cast.
   [SPELL_ID.STAR_SHIELD]:    { manaCost: 0, cooldown: 0 },
-  // LightningBeam is channeled — mana drains per tick from the spell itself. Cooldown
-  // is enforced post-channel (the beam calls SpellCastingComponent.refreshCooldown on
-  // destroy), so this is the cooldown window AFTER the beam ends, not from cast time.
+  // LIGHTNING_BEAM is now the ChargedLightningRay (press-hold-release), handled by
+  // GameScene.#updateChargedLightningRay which owns its own mana + cooldown via the
+  // CHARGED_RAY_* config. This entry only satisfies Record exhaustiveness + any HUD
+  // lookup keyed by SPELL_ID; the slot-cast path never reads it (THUNDER slot 1 is null).
   [SPELL_ID.LIGHTNING_BEAM]: { manaCost: LIGHTNING_BEAM_MANA_PER_TICK, cooldown: LIGHTNING_BEAM_COOLDOWN_MS },
 };
 

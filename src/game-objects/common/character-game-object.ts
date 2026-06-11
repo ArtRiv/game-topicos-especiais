@@ -118,6 +118,12 @@ export abstract class CharacterGameObject extends Phaser.Physics.Arcade.Sprite i
     return this._speedComponent.speed;
   }
 
+  /** TDM death-card upgrades (Sprint / Gale Stride): apply the server-synced move-speed
+   *  multiplier. Idempotent — pass the snapshot's absolute multiplier, never a delta. */
+  public setMoveSpeedMultiplier(value: number): void {
+    this._speedComponent.multiplier = value;
+  }
+
   get direction(): Direction {
     return this._directionComponent.direction;
   }
@@ -222,18 +228,34 @@ export abstract class CharacterGameObject extends Phaser.Physics.Arcade.Sprite i
    * a longer-running knockback overrides a shorter one mid-flight.
    */
   public applyKnockback(direction: Direction, force: number, durationMs: number): void {
+    let nx = 0;
+    let ny = 0;
+    switch (direction) {
+      case 'LEFT':  nx = -1; break;
+      case 'RIGHT': nx = 1;  break;
+      case 'UP':    ny = -1; break;
+      case 'DOWN':
+      default:      ny = 1;
+    }
+    this.applyKnockbackVector(nx, ny, force, durationMs);
+  }
+
+  /**
+   * Vector form of {@link applyKnockback}. Pushes along an arbitrary (nx, ny)
+   * direction instead of snapping to one of 4 cardinals — so a spell can launch
+   * the target along the TRUE line between them (e.g. EarthBump pushing the
+   * victim radially away from the bump center). The vector is normalised here;
+   * passing a zero vector is a no-op. Same stack-longest + velocity-pinning
+   * semantics as the cardinal version.
+   */
+  public applyKnockbackVector(nx: number, ny: number, force: number, durationMs: number): void {
     if (this._isDefeated) return;
     const body = this.body as Phaser.Physics.Arcade.Body | null;
     if (!body) return;
-    let vx = 0;
-    let vy = 0;
-    switch (direction) {
-      case 'LEFT':  vx = -force; break;
-      case 'RIGHT': vx = force;  break;
-      case 'UP':    vy = -force; break;
-      case 'DOWN':
-      default:      vy = force;
-    }
+    const len = Math.hypot(nx, ny);
+    if (len < 1e-4) return; // degenerate direction — nothing to push along
+    const vx = (nx / len) * force;
+    const vy = (ny / len) * force;
     const newUntil = this.scene.time.now + durationMs;
     // Stack-longest: keep the later deadline if a longer knockback fires mid-flight.
     if (newUntil > this.#knockbackUntilMs) {

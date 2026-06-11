@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { DataManager } from './data-manager.js';
-import { PLAYER_START_MAX_HEALTH, PLAYER_MAX_MANA } from './config';
+import { PLAYER_START_MAX_HEALTH } from './config';
 import { LEVEL_NAME } from './common.js';
 
 describe('DataManager', () => {
@@ -11,14 +11,6 @@ describe('DataManager', () => {
       dm.reset();
       expect(dm.data.currentHealth).toBe(PLAYER_START_MAX_HEALTH);
       expect(dm.data.maxHealth).toBe(PLAYER_START_MAX_HEALTH);
-    });
-
-    it('restores mana to starting values', () => {
-      const dm = DataManager.instance;
-      dm.data = { ...dm.data, currentMana: 0, maxMana: 0 };
-      dm.reset();
-      expect(dm.data.currentMana).toBe(PLAYER_MAX_MANA);
-      expect(dm.data.maxMana).toBe(PLAYER_MAX_MANA);
     });
 
     it('restores currentArea to DUNGEON_1 room 3 door 3', () => {

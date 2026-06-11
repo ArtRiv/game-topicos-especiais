@@ -1,5 +1,7 @@
 // WATER SPIKE VARIABLES
-export const WATER_SPIKE_DAMAGE = 2;
+// Hard to land (usually only connects on a trapped player), so it hits hard:
+// 4 half-hearts = 2 full hearts. (event balance pass: was 2)
+export const WATER_SPIKE_DAMAGE = 4;
 export const WATER_SPIKE_MANA_COST = 2;
 export const WATER_SPIKE_COOLDOWN = 800;
 export const WATER_SPIKE_LOOP_DURATION = 300;
@@ -16,11 +18,11 @@ export const WATER_BALL_IMPACT_ROTATION_OFFSET = Math.PI / 2; // Higher rotates 
 
 // WATER TORNADO VARIABLES
 export const WATER_TORNADO_DAMAGE = 3;
-export const WATER_TORNADO_DAMAGE_PER_TICK = 1;
+export const WATER_TORNADO_DAMAGE_PER_TICK = 0.5;
 export const WATER_TORNADO_MANA_COST = 3;
 export const WATER_TORNADO_COOLDOWN = 1500;
 export const WATER_TORNADO_DURATION = 6000;
-export const WATER_TORNADO_TICK_INTERVAL = 300;
+export const WATER_TORNADO_TICK_INTERVAL = 500;
 export const WATER_TORNADO_BODY_RADIUS = 20;
 export const WATER_TORNADO_SPIN_CENTER_Y_OFFSET = 32;
 export const WATER_TORNADO_SPIN_RADIUS_PADDING = 0; // Higher affects players a bit farther from the funnel edge.

@@ -26,7 +26,8 @@ export type LobbyConfig = {
   mapId: string;          // value from MAP_POOL[i].id
   maxPlayers: number;     // derived: parseInt(format) * 2
   winTarget?: number;     // TDM kill target (8 | 15 | 30); default 30 when absent
-  // Future optional fields (LBC-07): timeLimit?, friendlyFire?, spellModifiers? — add as optional top-level keys, no nesting.
+  upgradesEnabled?: boolean; // TDM death-card upgrades; default true when absent
+  // Future optional fields (LBC-07): timeLimit?, friendlyFire? — add as optional top-level keys, no nesting.
 };
 
 export type MapPoolEntry = {
@@ -226,6 +227,104 @@ export type PickupClaimPayload = {
 export type PickupCollectedPayload = {
   pickupId: string;
   playerId: string;
+};
+
+// ── TDM death-card upgrades (server-authoritative) ─────────────────────────────────────────────
+
+export type CardRarity = 'BRONZE' | 'SILVER' | 'GOLD' | 'PRISMATIC';
+
+/** Complete per-player modifier snapshot, computed ONLY on the server from card stacks and
+ *  broadcast whole in every upgrade:applied. Clients overwrite, never accumulate.
+ *  Field shapes mirror the client's SpellModifiers (src/common/spell-modifiers.ts). */
+export type PlayerModifiers = {
+  // FireBolt
+  fireballDamageMult: number;
+  fireballSpeedMult: number;
+  fireballSizeMult: number;
+  fireballCooldownMult: number;
+  // FireArea
+  fireAreaDamageMult: number;
+  fireAreaSizeMult: number;
+  fireAreaCooldownMult: number;
+  fireAreaDurationMult: number;
+  // Lightning
+  lightningDamageMult: number;
+  lightningRangeMult: number;
+  lightningChargeSpeedMult: number;
+  lightningCooldownMult: number;
+  // Water Tornado
+  tornadoPullMult: number;
+  tornadoSizeMult: number;
+  tornadoCooldownMult: number;
+  tornadoDurationMult: number;
+  // Water Spike
+  waterSpikeDamageMult: number;
+  waterSpikeCooldownMult: number;
+  // Earth Wall
+  earthWallDurationMult: number;
+  earthWallPillarHpBonus: number;   // flat bonus added to EARTH_WALL_PILLAR_HP
+  // Earth Bump
+  earthBumpKnockbackMult: number;
+  earthBumpDamageMult: number;
+  earthBumpCooldownMult: number;
+  // Wind Bolt
+  windBoltDamageMult: number;
+  windBoltSizeMult: number;
+  windBoltSpeedMult: number;
+  windBoltCooldownMult: number;
+  windBoltPushMult: number;
+  // Player stats
+  dashCooldownMult: number;
+  moveSpeedMult: number;
+  maxHealthBonus: number;   // flat, half-heart units (HUD heart = 2 units)
+};
+
+export type UpgradeCardCategory = 'FIREBALL' | 'FIRE_AREA' | 'LIGHTNING' | 'WATER_TORNADO' | 'WATER_SPIKE' | 'EARTH_WALL' | 'EARTH_BUMP' | 'WIND' | 'DASH' | 'PLAYER';
+
+/** One card inside an upgrade:offer — full display data so the client needs no catalog copy. */
+export type OfferedCard = {
+  cardId: string;
+  name: string;
+  description: string;
+  rarity: CardRarity;       // card's own rarity (≠ offer rarity only on thin-pool top-up)
+  category: UpgradeCardCategory;
+  currentLevel: number;     // player's stack BEFORE this pick
+  maxLevel: number;
+};
+
+/** Server → the dying player's socket ONLY: pick 1 of these before deadlineTs. */
+export type UpgradeOfferPayload = {
+  offerId: string;
+  rarity: CardRarity;
+  deathNumber: number;      // 1-based personal death count
+  cards: OfferedCard[];     // 1..3 (thin pool can yield fewer)
+  deadlineTs: number;       // server epoch ms = respawn fire time (auto-pick after)
+};
+
+/** Client → server: my pick. playerId is derived from the socket, never trusted from payload. */
+export type UpgradeSelectPayload = {
+  offerId: string;
+  cardId: string;
+};
+
+/** Server → ALL clients in lobby: a player's upgrade resolved (picked or auto-picked). */
+export type UpgradeAppliedPayload = {
+  playerId: string;
+  cardId: string;
+  newLevel: number;
+  rarity: CardRarity;
+  autoPicked: boolean;
+  modifiers: PlayerModifiers;   // complete snapshot — clients overwrite, never accumulate
+};
+
+/** Per-spellType MAX base damage for the upgrade-aware damage clamp: a claim is capped at
+ *  ceil(maxBase × caster's damage mult). KEEP IN SYNC with the client spell configs:
+ *  FIRE_BOLT max = FIRE_BOLT_DAMAGE × FIRE_BOLT_FIRE_AREA_DAMAGE_MULTIPLIER (src/common/config/spells/fire.ts),
+ *  LIGHTNING_BEAM max = CHARGED_RAY_DAMAGE_MAX (src/common/config/spells/lightning-beam.ts).
+ *  spellTypes NOT in this table keep only the flat MAX_SPELL_DAMAGE cap. */
+export const SPELL_MAX_BASE_DAMAGE: Record<string, number> = {
+  FIRE_BOLT: 2,
+  LIGHTNING_BEAM: 4,
 };
 
 /** Outbound from any client: my spell hit an environment object (D-04 wall desync fix). */

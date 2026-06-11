@@ -1367,6 +1367,24 @@ export class LobbyScene extends Phaser.Scene {
 
       this.#configBlockObjects.push(wtLabel, wtBgPrev, wtLabelPrev, wtValueText, wtBgNext, wtLabelNext);
 
+      // Death-card upgrades toggle (host-only) — single ON/OFF button in the free space to the
+      // right of the Match row. Server validates + broadcasts lobby:updated, which re-renders
+      // this whole block, so the button label always reflects the authoritative value.
+      let upgradesOn = cfg.upgradesEnabled ?? true;
+      const upLabel = this.#crispText(cx + 132, 114, 'Upgrades:', FONT_SMALL_WHITE).setOrigin(1, 0.5);
+      const upBg = this.add.rectangle(cx + 158, 114, 36, 14, BTN_COLOR).setInteractive();
+      const upValueText = this.#crispText(cx + 158, 114, upgradesOn ? 'ON' : 'OFF', FONT_SMALL_WHITE)
+        .setOrigin(0.5)
+        .setTint(upgradesOn ? 0x66ff88 : 0xff6666);
+      upBg.on('pointerover', () => upBg.setFillStyle(BTN_HOVER));
+      upBg.on('pointerout', () => upBg.setFillStyle(BTN_COLOR));
+      upBg.on('pointerdown', () => {
+        upgradesOn = !upgradesOn;
+        upValueText.setText(upgradesOn ? 'ON' : 'OFF').setTint(upgradesOn ? 0x66ff88 : 0xff6666);
+        NetworkManager.getInstance().sendLobbySetConfig({ upgradesEnabled: upgradesOn });
+      });
+      this.#configBlockObjects.push(upLabel, upBg, upValueText);
+
       // Map label — centered above the cards row.
       const mapLabel = this.#crispText(cx, 124, 'Map:', FONT_SMALL_WHITE).setOrigin(0.5, 0);
       this.#configBlockObjects.push(mapLabel);
@@ -1396,7 +1414,12 @@ export class LobbyScene extends Phaser.Scene {
     } else {
       // Non-host: read-only labels mirroring the host control positions.
       const fmtLabel = this.#crispText(cx, 100, `Format: ${cfg.format}`, FONT_SMALL_WHITE).setOrigin(0.5, 0.5);
-      const wtReadLabel = this.#crispText(cx, 114, `Match: ${cfg.winTarget ?? 30} kills`, FONT_SMALL_WHITE).setOrigin(0.5, 0.5);
+      const wtReadLabel = this.#crispText(
+        cx,
+        114,
+        `Match: ${cfg.winTarget ?? 30} kills   Upgrades: ${(cfg.upgradesEnabled ?? true) ? 'ON' : 'OFF'}`,
+        FONT_SMALL_WHITE,
+      ).setOrigin(0.5, 0.5);
       const mapReadLabel = this.#crispText(cx, 124, `Map: ${mapDisplay}`, FONT_SMALL_WHITE).setOrigin(0.5, 0);
       this.#configBlockObjects.push(fmtLabel, wtReadLabel, mapReadLabel);
 

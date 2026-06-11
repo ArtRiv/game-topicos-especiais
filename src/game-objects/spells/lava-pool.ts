@@ -87,7 +87,13 @@ export class LavaPool extends Phaser.Physics.Arcade.Sprite {
     this.#enemiesInArea.delete(enemy);
   }
 
+  // ── PvP tick damage (see TickAoeSpell) ──────────────────────────────────────
+  #pvpTickSeq = 0;
+  get pvpTickSeq(): number { return this.#pvpTickSeq; }
+  get isPvpDamageActive(): boolean { return !this.#isDying; }
+
   #applyTickDamage(): void {
+    this.#pvpTickSeq += 1;
     for (const enemy of this.#enemiesInArea) {
       if (enemy.active && !enemy.isDefeated) {
         enemy.hit(DIRECTION.DOWN, this.baseDamage);

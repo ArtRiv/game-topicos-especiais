@@ -8,6 +8,8 @@ export const SCENE_KEYS = {
   GAME_OVER_SCENE: 'GAME_OVER_SCENE',
   // Phase 14 (D-06/D-08): minimal Team Deathmatch results overlay, launched on match ENDED.
   TDM_RESULTS_SCENE: 'TDM_RESULTS_SCENE',
+  // TDM death-card upgrades: pick-1-of-3 overlay shown during the death countdown.
+  CARD_PICKER_SCENE: 'CARD_PICKER_SCENE',
   RADIAL_MENU_SCENE: 'RADIAL_MENU_SCENE',
   // ESC in-match options overlay (resume / volume / fullscreen / controls / leave).
   PAUSE_MENU_SCENE: 'PAUSE_MENU_SCENE',

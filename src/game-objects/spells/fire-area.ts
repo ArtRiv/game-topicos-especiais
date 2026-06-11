@@ -34,10 +34,17 @@ export class FireArea extends Phaser.Physics.Arcade.Sprite implements ActiveSpel
   // so the user can still see roughly where they are. Each client renders its own.
   #playerGhost: Phaser.GameObjects.Sprite | undefined;
 
-  constructor(scene: Phaser.Scene, x: number, y: number) {
+  constructor(scene: Phaser.Scene, x: number, y: number, caster?: { spellModifiers?: { fireAreaDamageMult?: number; fireAreaSizeMult?: number; fireAreaCooldownMult?: number; fireAreaDurationMult?: number } }) {
     super(scene, x, y, ASSET_KEYS.FIRE_AREA_EXPLOSION);
     scene.add.existing(this);
     scene.physics.add.existing(this);
+    const mods = caster?.spellModifiers;
+    const damageMult = mods?.fireAreaDamageMult ?? 1;
+    const sizeMult = mods?.fireAreaSizeMult ?? 1;
+    const durationMult = mods?.fireAreaDurationMult ?? 1;
+    (this as { baseDamage: number }).baseDamage = Math.max(1, Math.round(FIRE_AREA_DAMAGE_PER_TICK * damageMult));
+    (this as { cooldown: number }).cooldown = FIRE_AREA_COOLDOWN * (mods?.fireAreaCooldownMult ?? 1);
+    if (sizeMult !== 1) this.setScale(sizeMult);
 
     // Y-based depth: characters use `depth = this.y` (see CharacterGameObject.update),
     // so any character whose center Y is less than the spell's depth renders BEHIND.
@@ -71,7 +78,7 @@ export class FireArea extends Phaser.Physics.Arcade.Sprite implements ActiveSpel
     });
 
     // Play end animation before destruction
-    this.#durationTimer = scene.time.delayedCall(FIRE_AREA_DURATION, () => {
+    this.#durationTimer = scene.time.delayedCall(FIRE_AREA_DURATION * durationMult, () => {
       this.#playEndAnimation();
     });
   }
@@ -194,7 +201,18 @@ export class FireArea extends Phaser.Physics.Arcade.Sprite implements ActiveSpel
     g.setVisible(true);
   }
 
+  // ── PvP tick damage (see TickAoeSpell) ──────────────────────────────────────
+  // Bumped once per damage tick so GameScene#updateAoePvpDamage can emit a fresh
+  // caster-authoritative spell:hit per tick (the server dedupes by id, and our
+  // fixed spellId would otherwise let only the first tick land on a player).
+  #pvpTickSeq = 0;
+  get pvpTickSeq(): number { return this.#pvpTickSeq; }
+  get isPvpDamageActive(): boolean { return !this.#isEnding; }
+
   #applyTickDamage(): void {
+    // Drive the PvP tick clock even when no bot is present — players are damaged
+    // by GameScene watching this counter, not from inside this loop.
+    this.#pvpTickSeq += 1;
     for (const enemy of this.#enemiesInArea) {
       if (enemy.active && !enemy.isDefeated) {
         enemy.hit(DIRECTION.DOWN, this.baseDamage);
@@ -256,4 +274,5 @@ export class FireArea extends Phaser.Physics.Arcade.Sprite implements ActiveSpel
 }
 
 import { registerSpell } from './spell-registry';
-registerSpell(SPELL_ID.FIRE_AREA, (scene, _x, _y, tx, ty) => new FireArea(scene, tx, ty));
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+registerSpell(SPELL_ID.FIRE_AREA, (scene, _x, _y, tx, ty, _el, caster) => new FireArea(scene, tx, ty, caster as any));
