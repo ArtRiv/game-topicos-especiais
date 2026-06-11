@@ -46,8 +46,14 @@ const PICKUP_TIMES_MS = [45_000, 105_000, 165_000, 225_000];
 
 const app = express();
 const httpServer = createServer(app);
+// Feira de Jogos deployment: the platform reverse-proxies websockets under a SLUG-prefixed socket.io
+// path (e.g. /<slug>/socket.io). Set GAME_SLUG in the server's env to enable it; the CLIENT must use
+// the SAME slug (src/common/config/network.ts GAME_SLUG → resolveConnection()). Unset = default
+// '/socket.io' path = current LAN/dev behavior, unchanged.
+const GAME_SLUG = process.env.GAME_SLUG ?? '';
 const io = new Server(httpServer, {
   cors: { origin: '*' },
+  ...(GAME_SLUG ? { path: `/${GAME_SLUG}/socket.io` } : {}),
 });
 
 const lobbyManager = new LobbyManager();

@@ -22,5 +22,6 @@ export * from './enemies';
 export * from './combat-misc';
 export * from './network';
 export * from './tdm';
+export * from './rewards';
 export * from './dash';
 export * from './spells';

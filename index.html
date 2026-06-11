@@ -106,6 +106,10 @@
   </head>
   <body>
     <div id="game-container"></div>
+    <!-- Feira de Jogos: Google Identity Services (One Tap) SDK. Used by the TDM results screen to
+         authenticate the player before crediting tijolinhos. Harmless on LAN/dev builds — nothing
+         touches it unless FEIRA_REWARDS_ENABLED (src/common/config/rewards.ts) is true. -->
+    <script src="https://accounts.google.com/gsi/client" async></script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

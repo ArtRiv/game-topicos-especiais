@@ -3,6 +3,10 @@ import { SCENE_KEYS } from './scene-keys';
 import { TEAM_COLORS } from './ui-scene';
 import { MatchEndedPayload, TdmPlayerStat } from '../networking/types';
 import { MusicManager } from '../common/music-manager';
+import { NetworkManager } from '../networking/network-manager';
+import { calculateReward, RewardBreakdown } from '../common/rewards';
+import { claimFeiraReward, feiraUnavailableReason } from '../networking/feira';
+import { FEIRA_REWARDS_ENABLED } from '../common/config/rewards';
 
 /**
  * Phase 14 (Plan 04, surface 4 — D-06/D-07/D-08): the minimal Team Deathmatch results
@@ -28,7 +32,10 @@ const WINNER_Y = 48;
 const TABLE_HEADER_Y = 96;
 const TABLE_FIRST_ROW_Y = 116;
 const ROW_PITCH = 16;
+const REWARD_Y = 244;   // tijolinhos total + claim, between the table and the button
+const STATUS_Y = 260;   // claim status line (Enviando… / ✓ / erro)
 const BUTTON_Y = 276;
+const BRICK = 0x66cc66; // green-ish accent for the tijolinhos total
 
 // Column x-anchors (left-origin rows). Name is left-aligned; K / D are fixed columns.
 const COL_NAME_X = 96;
@@ -36,6 +43,11 @@ const COL_K_X = 300;
 const COL_D_X = 360;
 
 export class TdmResultsScene extends Phaser.Scene {
+  // Reward (Feira) UI state — only created when FEIRA_REWARDS_ENABLED.
+  #rewardStatusText: Phaser.GameObjects.BitmapText | null = null;
+  #claimButton: Phaser.GameObjects.BitmapText | null = null;
+  #rewardClaimed = false;
+
   constructor() {
     super({ key: SCENE_KEYS.TDM_RESULTS_SCENE });
   }
@@ -141,6 +153,11 @@ export class TdmResultsScene extends Phaser.Scene {
         .setTint(tint);
     });
 
+    // ── Feira de Jogos reward (tijolinhos) — total + claim, only on the platform build. ──
+    if (FEIRA_REWARDS_ENABLED) {
+      this.#renderReward(payload);
+    }
+
     // ── RETURN TO LOBBY button — copy the main-menu hover pattern verbatim (D-06). ──
     const button = this.add
       .bitmapText(CENTER_X, BUTTON_Y, 'press_start_2p', 'RETURN TO LOBBY', 16)
@@ -164,6 +181,97 @@ export class TdmResultsScene extends Phaser.Scene {
       // No EVENT_BUS listeners here (payload arrives via scene data, not a bus
       // subscription). GameObjects + tweens are torn down by the scene lifecycle.
     });
+  }
+
+  /**
+   * Feira de Jogos reward block: compute the LOCAL player's tijolinhos from the payload, show the
+   * total, and (if the One Tap flow is available) a CLAIM button that authenticates + credits.
+   * Renders nothing if the local player has no stat row (spectator / missing payload).
+   */
+  #renderReward(payload: MatchEndedPayload): void {
+    const breakdown = this.#localReward(payload);
+    if (breakdown === null) return; // no local stat → no reward to show
+
+    // The total line, e.g. "+91 tijolinhos".
+    this.add
+      .bitmapText(CENTER_X, REWARD_Y, 'press_start_2p', `+${breakdown.total} tijolinhos`, 8)
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(2)
+      .setTint(BRICK);
+
+    // The status line under it — drives the claim feedback (empty until the user acts).
+    this.#rewardStatusText = this.add
+      .bitmapText(CENTER_X, STATUS_Y, 'press_start_2p', '', 8)
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(2)
+      .setTint(DIM);
+
+    // If the claim flow can't run (disabled / unconfigured / SDK blocked), say why instead of a
+    // dead button. The player still keeps their RETURN TO LOBBY action.
+    const reason = feiraUnavailableReason();
+    if (reason !== null) {
+      this.#rewardStatusText.setText(this.#reasonLabel(reason));
+      return;
+    }
+
+    // CLAIM button — same hover pattern as RETURN TO LOBBY, placed just left of the status line area.
+    this.#claimButton = this.add
+      .bitmapText(CENTER_X, STATUS_Y, 'press_start_2p', 'RESGATAR', 8)
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(2)
+      .setTint(GOLD)
+      .setInteractive({ useHandCursor: true });
+    this.#claimButton.on('pointerover', () => this.#claimButton?.setScale(1.1));
+    this.#claimButton.on('pointerout', () => this.#claimButton?.setScale(1));
+    this.#claimButton.on('pointerup', () => this.#onClaim(breakdown.total));
+  }
+
+  /** One-shot claim: trigger One Tap + credit POST, driving the status line through pending→done/error. */
+  #onClaim(amount: number): void {
+    if (this.#rewardClaimed) return;
+    this.#rewardClaimed = true;
+    this.#claimButton?.disableInteractive().setVisible(false);
+    claimFeiraReward(amount, {
+      onPending: () => this.#rewardStatusText?.setText('Enviando credito...').setTint(DIM),
+      onSuccess: () => this.#rewardStatusText?.setText(`+${amount} tijolinhos!`).setTint(BRICK),
+      onError: (message) => {
+        // Allow a retry on failure (auth refusal also lands here only if the POST itself fails).
+        this.#rewardClaimed = false;
+        this.#claimButton?.setInteractive({ useHandCursor: true }).setVisible(true);
+        this.#rewardStatusText?.setText(message).setTint(0xff5555);
+      },
+    });
+  }
+
+  /** Compute the local player's reward, or null if they aren't in the payload (spectator/missing). */
+  #localReward(payload: MatchEndedPayload): RewardBreakdown | null {
+    let localId: string | null = null;
+    try {
+      localId = NetworkManager.getInstance().localPlayerId || null;
+    } catch {
+      localId = null; // offline / no NetworkManager
+    }
+    if (localId === null) return null;
+    const me = payload.stats.find((s) => s.playerId === localId);
+    if (me === undefined) return null;
+    return calculateReward({
+      didWin: payload.winningTeam !== null && me.team === payload.winningTeam,
+      kills: me.kills,
+      deaths: me.deaths,
+      isMvp: payload.mvpPlayerId !== null && payload.mvpPlayerId === me.playerId,
+    });
+  }
+
+  #reasonLabel(reason: ReturnType<typeof feiraUnavailableReason>): string {
+    switch (reason) {
+      case 'no-client-id': return '(login indisponivel)';
+      case 'no-product-id': return '(jogo nao cadastrado)';
+      case 'sdk-missing': return '(sem conexao google)';
+      default: return '';
+    }
   }
 
   /**

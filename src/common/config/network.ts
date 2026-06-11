@@ -17,12 +17,17 @@ export const NETWORK_TRANSPORT: NetworkTransport = 'star';
 
 // ── Platform deployment (Feira de Jogos) ──────────────────────────────────────────────────────
 // The platform serves the game same-origin under https://feira-de-jogos.dev.br/<slug>/ and reverse-
-// proxies the Socket.io connection by a SLUG-PREFIXED path (the friend's Expelled game uses
-// io({ path: '/expelled/socket.io' })). Fill GAME_SLUG with the slug the professor assigns; the
-// server must set the SAME path in `new Server(httpServer, { path: '/<slug>/socket.io' })`.
+// proxies the Socket.io connection by a SLUG-PREFIXED path: `/<slug>/socket.io`. CONFIRMED against a
+// shipped reference (the Expelled game uses io({ path: '/expelled/socket.io' }) + a matching server
+// `new Server(…, { path: '/expelled/socket.io' })`).
 //
-// EMPTY = current LAN behavior (typed IP + :3000). Set it ONLY for the platform build.
-// ASK PROF: the exact slug + whether the proxy path is `/<slug>/socket.io`.
+// TWO places must use the SAME slug for a platform build:
+//   1. this GAME_SLUG  → resolveConnection() builds the client path `/<slug>/socket.io`
+//   2. the server env  → GAME_SLUG=<slug> (game-server/src/server.ts reads process.env.GAME_SLUG)
+// (The vite build base is already './' in config/vite.config.js, so assets work under any subpath —
+//  no build-time change needed.)
+//
+// EMPTY = current LAN behavior (typed IP + :3000), unchanged. Set it ONLY for the platform build.
 export const GAME_SLUG = '';
 
 /**
