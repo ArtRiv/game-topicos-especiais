@@ -24,7 +24,7 @@ import { PauseMenuScene } from './scenes/pause-menu-scene';
 import { DebugPanel } from './debug/debug-panel';
 import { LobbyDebugPanel } from './debug/lobby-debug-panel';
 import { installCustomCursor } from './common/cursor';
-import { DEV_SKIP_TO_GAMEPLAY, SKIP_TO_LOBBY } from './common/config';
+import { DEBUG_TOOLS_ENABLED, DEV_SKIP_TO_GAMEPLAY, SKIP_TO_LOBBY } from './common/config';
 import { loadSoundVolume } from './common/sound-settings';
 import { startMenuVideoPrefetch } from './common/menu-video-prefetch';
 
@@ -145,7 +145,11 @@ void (async () => {
     game.scene.start(SCENE_KEYS.SPLASH_SCENE);
   }
 
-  new DebugPanel();
-  new LobbyDebugPanel(game);
+  // Debug panels (Tab hotkey) are dev-only — never instantiated in production
+  // builds so the hotkey and the DOM overlays simply don't exist.
+  if (DEBUG_TOOLS_ENABLED) {
+    new DebugPanel();
+    new LobbyDebugPanel(game);
+  }
   installCustomCursor();
 })();

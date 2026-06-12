@@ -2356,6 +2356,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   #handleHitboxDebugToggle(): void {
+    if (!CONFIG.DEBUG_TOOLS_ENABLED) return;
     if (!this.#controls.isDebugToggleKeyJustDown) {
       return;
     }
@@ -2379,6 +2380,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   #handlePrintCoordsKey(): void {
+    if (!CONFIG.DEBUG_TOOLS_ENABLED) return;
     if (!this.#controls.isPrintCoordsKeyJustDown) return;
     const x = Math.round(this.#player.x);
     const y = Math.round(this.#player.y);
@@ -2398,6 +2400,7 @@ export class GameScene extends Phaser.Scene {
    * COPY VALUES flow.
    */
   #handleCapturePickupSpawnKey(): void {
+    if (!CONFIG.DEBUG_TOOLS_ENABLED) return;
     if (!this.#controls.isCapturePickupSpawnKeyJustDown) return;
     if (!this.#player?.active) return;
     const x = Math.round(this.#player.x);

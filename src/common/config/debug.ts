@@ -1,6 +1,16 @@
 // Debug + dev-flow tunables. Anything that toggles diagnostic behavior or skips
 // production flow for faster iteration lives here.
 
+// MASTER switch for every in-game debug tool reachable by a player at runtime:
+//   - Tab  → gameplay DebugPanel (live spell/network tuning sliders)
+//   - Tab  → LobbyDebugPanel (connect-screen layout tuning sliders)
+//   - P    → Arcade physics hitbox overlay toggle (GameScene)
+//   - M    → print player world coords to console (spawnpoint tool)
+//   - K    → capture special-pickup spawnpoint (console + clipboard)
+// false = production: none of the above is instantiated or responds to input.
+// Set true locally when tuning; leave false when committing/shipping.
+export const DEBUG_TOOLS_ENABLED = false;
+
 export const ENABLE_LOGGING = false;
 export const ENABLE_DEBUG_ZONE_AREA = false;
 export const DEBUG_COLLISION_ALPHA = 0;
