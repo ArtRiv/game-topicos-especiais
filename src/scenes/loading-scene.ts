@@ -152,15 +152,19 @@ export class LoadingScene extends Phaser.Scene {
     typewrite(this, nameText, mapName, T_MAP_NAME_REVEAL_MS);
 
     // --- Beat 2: Map preview fade-in (y = h*0.40, scale ×4) ---
-    // Thumbnail texture key from MAP_POOL entry. Plan 05 replaces the placeholder PNG.
-    const preview = this.add
-      .image(cx, Math.round(h * 0.40), mapEntry.thumbnailKey)
-      .setOrigin(0.5)
-      .setScale(4)
-      .setAlpha(0);
-    this.time.delayedCall(T_MAP_NAME_MS, () => {
-      this.tweens.add({ targets: preview, alpha: 1, duration: T_PREVIEW_FADE_MS, ease: 'Quad.Out' });
-    });
+    // Thumbnail texture key from MAP_POOL entry. Guarded: if the thumbnail never
+    // reached the texture cache (load failed / removed), skip the beat entirely —
+    // an unguarded add.image renders Phaser's green __MISSING texture mid-screen.
+    if (this.textures.exists(mapEntry.thumbnailKey)) {
+      const preview = this.add
+        .image(cx, Math.round(h * 0.40), mapEntry.thumbnailKey)
+        .setOrigin(0.5)
+        .setScale(4)
+        .setAlpha(0);
+      this.time.delayedCall(T_MAP_NAME_MS, () => {
+        this.tweens.add({ targets: preview, alpha: 1, duration: T_PREVIEW_FADE_MS, ease: 'Quad.Out' });
+      });
+    }
 
     // --- Beat 3: Map info typewriter (2 lines, y = h*0.65, lineHeight 1.5) ---
     const infoStartT = T_MAP_NAME_MS + T_PREVIEW_FADE_MS; // t=2500

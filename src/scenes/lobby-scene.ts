@@ -324,12 +324,9 @@ export class LobbyScene extends Phaser.Scene {
   }
 
   public preload(): void {
-    // Game boots straight into LobbyScene (main.ts), so PreloadScene's loads
-    // are not available yet when map cards first render. Load the two map
-    // thumbnails here so `this.textures.exists(...)` is true by create() time
-    // and the blue fallback rectangle never shows.
-    this.load.image(ASSET_KEYS.MAP_THUMB_WORLD, 'assets/levels/world/thumbnail.png');
-    this.load.image(ASSET_KEYS.MAP_THUMB_DUNGEON_1, 'assets/levels/dungeon-1/thumbnail.png');
+    // Arena thumbnail — NOT for the lobby (the map picker was removed): LoadingScene's
+    // map-preview beat renders it, and LoadingScene runs BEFORE PreloadScene in the
+    // scene flow, so this is the only load that reaches the texture cache in time.
     this.load.image(ASSET_KEYS.MAP_THUMB_STAGES, 'assets/stages/thumbnail.png');
     this.load.bitmapFont(
       BMFONT_KEY,
@@ -1287,14 +1284,13 @@ export class LobbyScene extends Phaser.Scene {
 
     const cx = this.cameras.main.centerX;
     const cfg = lobby.config;
-    const mapDisplay = MAP_POOL.find((m) => m.id === cfg.mapId)?.displayName ?? cfg.mapId;
 
     // Subtle panel behind the whole config block (capacity header + format row +
-    // map cards + card name labels). Centered at y=144, height 132 → spans y=78
-    // to y=210 — covers capacity (y=86) through card-name labels (~y=202).
-    const panel = this.add.rectangle(cx, 144, this.cameras.main.width - 16, 132, 0x0a0f1f, 0.6).setOrigin(0.5);
+    // match/upgrades row). The map picker was removed (Arena is the only map),
+    // so the panel shrank: centered at y=102, height 48 → spans y=78 to y=126.
+    const panel = this.add.rectangle(cx, 102, this.cameras.main.width - 16, 48, 0x0a0f1f, 0.6).setOrigin(0.5);
     const panelBorder = this.add
-      .rectangle(cx, 144, this.cameras.main.width - 16, 132)
+      .rectangle(cx, 102, this.cameras.main.width - 16, 48)
       .setOrigin(0.5)
       .setStrokeStyle(1, 0x2a3a55);
     this.#configBlockObjects.push(panel, panelBorder);
@@ -1371,9 +1367,9 @@ export class LobbyScene extends Phaser.Scene {
       // right of the Match row. Server validates + broadcasts lobby:updated, which re-renders
       // this whole block, so the button label always reflects the authoritative value.
       let upgradesOn = cfg.upgradesEnabled ?? true;
-      const upLabel = this.#crispText(cx + 132, 114, 'Upgrades:', FONT_SMALL_WHITE).setOrigin(1, 0.5);
-      const upBg = this.add.rectangle(cx + 158, 114, 36, 14, BTN_COLOR).setInteractive();
-      const upValueText = this.#crispText(cx + 158, 114, upgradesOn ? 'ON' : 'OFF', FONT_SMALL_WHITE)
+      const upLabel = this.#crispText(cx + 186, 114, 'Upgrades:', FONT_SMALL_WHITE).setOrigin(1, 0.5);
+      const upBg = this.add.rectangle(cx + 212, 114, 36, 14, BTN_COLOR).setInteractive();
+      const upValueText = this.#crispText(cx + 212, 114, upgradesOn ? 'ON' : 'OFF', FONT_SMALL_WHITE)
         .setOrigin(0.5)
         .setTint(upgradesOn ? 0x66ff88 : 0xff6666);
       upBg.on('pointerover', () => upBg.setFillStyle(BTN_HOVER));
@@ -1384,33 +1380,6 @@ export class LobbyScene extends Phaser.Scene {
         NetworkManager.getInstance().sendLobbySetConfig({ upgradesEnabled: upgradesOn });
       });
       this.#configBlockObjects.push(upLabel, upBg, upValueText);
-
-      // Map label — centered above the cards row.
-      const mapLabel = this.#crispText(cx, 124, 'Map:', FONT_SMALL_WHITE).setOrigin(0.5, 0);
-      this.#configBlockObjects.push(mapLabel);
-
-      // Map preview cards (3-up). Cards are 96x64 to preserve the source
-      // thumbnail aspect ratio (PNGs are 96x64 at the asset).
-      // Center y at 158 → cards span y=126 to y=190.
-      MAP_POOL.forEach((entry, i) => {
-        const cardX = cx + (i - (MAP_POOL.length - 1) / 2) * (96 + 8);
-        const cardY = 158;
-        const isSelected = entry.id === cfg.mapId;
-        const border = this.add
-          .rectangle(cardX, cardY, 96, 64)
-          .setStrokeStyle(isSelected ? 2 : 1, isSelected ? 0xffdd55 : 0x444444);
-        const bg = this.add.rectangle(cardX, cardY, 96, 64, 0x111111).setInteractive();
-        const thumb = this.textures.exists(entry.thumbnailKey)
-          ? this.add.image(cardX, cardY, entry.thumbnailKey)
-          : this.add.rectangle(cardX, cardY, 96, 64, 0x223366);
-        const cardLabel = this.#crispText(cardX, cardY + 36, entry.displayName, FONT_SMALL_WHITE).setOrigin(0.5, 0);
-        bg.on('pointerover', () => bg.setFillStyle(0x222222));
-        bg.on('pointerout', () => bg.setFillStyle(0x111111));
-        bg.on('pointerdown', () => {
-          NetworkManager.getInstance().sendLobbySetConfig({ mapId: entry.id });
-        });
-        this.#configBlockObjects.push(border, bg, thumb, cardLabel);
-      });
     } else {
       // Non-host: read-only labels mirroring the host control positions.
       const fmtLabel = this.#crispText(cx, 100, `Format: ${cfg.format}`, FONT_SMALL_WHITE).setOrigin(0.5, 0.5);
@@ -1420,28 +1389,7 @@ export class LobbyScene extends Phaser.Scene {
         `Match: ${cfg.winTarget ?? 30} kills   Upgrades: ${(cfg.upgradesEnabled ?? true) ? 'ON' : 'OFF'}`,
         FONT_SMALL_WHITE,
       ).setOrigin(0.5, 0.5);
-      const mapReadLabel = this.#crispText(cx, 124, `Map: ${mapDisplay}`, FONT_SMALL_WHITE).setOrigin(0.5, 0);
-      this.#configBlockObjects.push(fmtLabel, wtReadLabel, mapReadLabel);
-
-      // Still render the cards (read-only — no pointer handlers, dimmer overlay
-      // on non-selected cards) so non-hosts get the same visual map preview.
-      MAP_POOL.forEach((entry, i) => {
-        const cardX = cx + (i - (MAP_POOL.length - 1) / 2) * (96 + 8);
-        const cardY = 158;
-        const isSelected = entry.id === cfg.mapId;
-        const border = this.add
-          .rectangle(cardX, cardY, 96, 64)
-          .setStrokeStyle(isSelected ? 2 : 1, isSelected ? 0xffdd55 : 0x333333);
-        const bg = this.add.rectangle(cardX, cardY, 96, 64, 0x111111);
-        const thumb = this.textures.exists(entry.thumbnailKey)
-          ? this.add.image(cardX, cardY, entry.thumbnailKey)
-          : this.add.rectangle(cardX, cardY, 96, 64, 0x223366);
-        if (!isSelected) thumb.setAlpha(0.45);
-        const cardLabel = this.#crispText(cardX, cardY + 36, entry.displayName, FONT_SMALL_WHITE)
-          .setOrigin(0.5, 0)
-          .setAlpha(isSelected ? 1 : 0.5);
-        this.#configBlockObjects.push(border, bg, thumb, cardLabel);
-      });
+      this.#configBlockObjects.push(fmtLabel, wtReadLabel);
     }
   }
 
@@ -1521,7 +1469,7 @@ export class LobbyScene extends Phaser.Scene {
     | ((pointer: Phaser.Input.Pointer, gameObjects: unknown[], deltaX: number, deltaY: number) => void)
     | null = null;
   static readonly #ROW_HEIGHT = 22; // tighter than the old 36 to fit more rows in viewport
-  static readonly #PLAYER_LIST_TOP = 214; // viewport top (below map-card name row at y=194+8)
+  static readonly #PLAYER_LIST_TOP = 134; // viewport top (below config panel bottom at y=126+8)
   static readonly #PLAYER_LIST_BOTTOM = 288; // viewport bottom (above Start button at y=304)
 
   #renderPlayerList(players: PlayerInfo[]): void {

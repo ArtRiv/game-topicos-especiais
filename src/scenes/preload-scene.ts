@@ -51,24 +51,6 @@ export class PreloadScene extends Phaser.Scene {
     // loadTracks is idempotent — no-op if the audio is already cached.
     MusicManager.instance.loadTracks(this);
 
-    // Explicit lobby thumbnail loads. The MAP_THUMB_* entries inside the
-    // levels/world and levels/dungeon-1 sub-packs in assets.json are not
-    // resolved by the MAIN-keyed pack load (Phaser only fetches entries
-    // whose pack key matches), so they would never reach the texture cache
-    // before LobbyScene renders. Loading them here guarantees presence.
-    this.load.image(
-      ASSET_KEYS.MAP_THUMB_WORLD,
-      'assets/levels/world/thumbnail.png',
-    );
-    this.load.image(
-      ASSET_KEYS.MAP_THUMB_DUNGEON_1,
-      'assets/levels/dungeon-1/thumbnail.png',
-    );
-    this.load.image(
-      ASSET_KEYS.MAP_THUMB_STAGES,
-      'assets/stages/thumbnail.png',
-    );
-
     // Combo / new-spell sprites loaded as per-frame PNGs (frameNNNN.png), assembled into
     // animations from same-prefix keys at create time.
     const loadFrameSeries = (baseKey: string, basePath: string, count: number): void => {
